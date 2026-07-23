@@ -9,7 +9,9 @@
 #include <QMimeDatabase>
 #include <QTemporaryDir>
 
-#include "protondrive-core/src/bridge.rs.h"
+#include "rust/cxx.h"
+
+#include "protondrive-core-cxxbridge/bridge.h"
 
 using namespace protondrive;
 

@@ -11,15 +11,25 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # libkf6kio-dev only exists from Ubuntu 25.10 (Questing) onward — see
+    # https://packages.ubuntu.com/search?keywords=libkf6kio-dev — but
+    # ubuntu-latest is still Noble (24.04). Build inside a newer container
+    # instead (26.04, matching this project's own target series, see
+    # publish-ppa.yml's default SERIES).
+    container: ubuntu:26.04
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Install build dependencies
+      - name: Install base tooling and build dependencies
+        # ca-certificates/git are needed for actions/checkout, curl for
+        # dtolnay/rust-toolchain (it shells out to rustup.rs) — all
+        # preinstalled on the regular ubuntu-latest VM image but not in this
+        # minimal container.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
             build-essential \
             debhelper \
             devscripts \
@@ -31,6 +41,9 @@ jobs:
             qt6-base-dev \
             libkf6kio-dev \
             libkf6coreaddons-dev
+
+      - name: Checkout code
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,6 +58,19 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Vendor Corrosion
+        # dh_auto_configure (debhelper compat 13) always passes
+        # -DFETCHCONTENT_FULLY_DISCONNECTED=ON regardless of actual network
+        # access, so CMakeLists.txt's FetchContent of Corrosion needs a
+        # pre-populated source dir — same constraint as the Launchpad PPA
+        # build (see docs/LAUNCHPAD.md). Unlike Launchpad's builders, this
+        # runner has real network access, so SKIP_CARGO_VENDOR=1: only
+        # Corrosion needs vendoring, cargo can fetch crates.io normally
+        # (also needed for Corrosion's own separate `cargo install
+        # cxxbridge-cmd` — that one isn't covered by vendoring core/'s
+        # dependencies at all, vendored or not).
+        run: SKIP_CARGO_VENDOR=1 ./debian/scripts/prepare-offline-build.sh
 
       - name: Generate debian/changelog entry for this release
         # Only on the tag release-please creates (vX.Y.Z) — regular

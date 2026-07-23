@@ -15,8 +15,25 @@ ifneq ($(wildcard $(CURDIR)/vendor),)
 export CARGO_NET_OFFLINE=true
 endif
 
+# Corrosion's FindRust.cmake normally resolves the active toolchain by
+# invoking `rustup toolchain list --verbose` and parsing its output — in the
+# CI container that call comes back empty (rustup env vars matched a working
+# standalone invocation byte for byte, so the exact cause is unclear), which
+# FindRust.cmake's regex misparses, failing the configure with "the rustc
+# executable was not found". Sidestep the whole rustup-toolchain-list path by
+# pointing Rust_COMPILER/Rust_CARGO straight at the real (non-proxy) rustc/
+# cargo inside the active toolchain's sysroot: FindRust.cmake detects (and
+# discards) a user-specified Rust_COMPILER only when it resolves to rustup's
+# proxy shim, so handing it the real binary keeps it and never calls rustup.
+RUST_SYSROOT := $(shell rustc --print sysroot)
+
 %:
 	dh $@ --buildsystem=cmake
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DRust_COMPILER=$(RUST_SYSROOT)/bin/rustc \
+		-DRust_CARGO=$(RUST_SYSROOT)/bin/cargo
 
 override_dh_auto_test:
 	# Runs the Rust unit tests (core/), which need no KF6/Qt6 runtime and no

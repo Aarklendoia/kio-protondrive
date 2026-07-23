@@ -15,25 +15,39 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # libkf6kio-dev only exists from Ubuntu 25.10 (Questing) onward — see
+    # https://packages.ubuntu.com/search?keywords=libkf6kio-dev — but
+    # ubuntu-latest is still Noble (24.04). Build inside a newer container
+    # instead (26.04, matching this project's own target series, see
+    # publish-ppa.yml's default SERIES).
+    container: ubuntu:26.04
     timeout-minutes: 30
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install KDE Frameworks / Qt6 build dependencies
+      - name: Install base tooling and KDE Frameworks / Qt6 build dependencies
+        # ca-certificates/git are needed for actions/checkout, curl for
+        # dtolnay/rust-toolchain (it shells out to rustup.rs), build-essential
+        # for the cxx bridge's C++ compile — all preinstalled on the regular
+        # ubuntu-latest VM image, but not in this minimal container.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            build-essential \
             cmake \
             extra-cmake-modules \
             pkg-config \
             qt6-base-dev \
             libkf6kio-dev \
             libkf6coreaddons-dev
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
         uses: actions/cache@v6
