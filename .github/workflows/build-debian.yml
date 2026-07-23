@@ -49,6 +49,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Debug Rust environment
+        run: |
+          echo "HOME=$HOME"
+          echo "RUSTUP_HOME=${RUSTUP_HOME:-<unset>}"
+          echo "CARGO_HOME=${CARGO_HOME:-<unset>}"
+          echo "PATH=$PATH"
+          which rustc cargo rustup || true
+          rustup toolchain list --verbose || true
+
       - name: Cache Cargo build outputs
         uses: actions/cache@v6
         with:
