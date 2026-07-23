@@ -13,10 +13,13 @@ a **separate PPA** so the two unrelated projects don't share one archive.
   `86EB1CE672402B0B104049C3D4251A0893FE3895` (`aarklendoia@proton.me`),
   already confirmed on the account with the Code of Conduct signed — no new
   personal key needed.
-- CI signing key (automated uploads): **not created yet** — generate a new,
-  project-specific key (see [Automated publishing](#automated-publishing-ci)
-  below), don't reuse linux-hello's CI key. Keeping them separate means a
-  leaked secret in one repo's Actions only compromises that one PPA.
+- CI signing key (automated uploads): generated and registered on the
+  `aarklendoia-edtech` account, fingerprint
+  `D61B393270CB976FBF38147EE8A85F33C5CF96B1` — a new, project-specific key,
+  deliberately not reusing linux-hello's CI key, so a leaked secret in one
+  repo's Actions only compromises that one PPA. Still need to add the
+  private key as the `PPA_GPG_PRIVATE_KEY` repository secret (see
+  [Automated publishing](#4-automated-publishing-ci) below).
 - PPA: `ppa:aarklendoia-edtech/kio-protondrive` — **not created yet**, see
   [step 1](#1-one-time-setup-manual-on-launchpadnet).
 
