@@ -25,13 +25,15 @@ jobs:
 
     steps:
       - name: Install base tooling and KDE Frameworks / Qt6 build dependencies
-        # ca-certificates/git are needed for actions/checkout, build-essential
+        # ca-certificates/git are needed for actions/checkout, curl for
+        # dtolnay/rust-toolchain (it shells out to rustup.rs), build-essential
         # for the cxx bridge's C++ compile — all preinstalled on the regular
         # ubuntu-latest VM image, but not in this minimal container.
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             ca-certificates \
+            curl \
             git \
             build-essential \
             cmake \

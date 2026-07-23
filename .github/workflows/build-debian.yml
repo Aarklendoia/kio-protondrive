@@ -20,13 +20,15 @@ jobs:
 
     steps:
       - name: Install base tooling and build dependencies
-        # ca-certificates/git are needed for actions/checkout, preinstalled
-        # on the regular ubuntu-latest VM image but not in this minimal
-        # container.
+        # ca-certificates/git are needed for actions/checkout, curl for
+        # dtolnay/rust-toolchain (it shells out to rustup.rs) — all
+        # preinstalled on the regular ubuntu-latest VM image but not in this
+        # minimal container.
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             ca-certificates \
+            curl \
             git \
             build-essential \
             debhelper \
