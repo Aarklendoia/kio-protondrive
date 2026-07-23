@@ -46,8 +46,9 @@ Dolphin  ──KIO protocol──▶  kio_protondrive (KF6::KIOCore plugin, C++)
   into the worker plugin.
 
 Files are fetched **on demand** when opened (like `sftp://`), not
-synchronized to a local folder in the background — see the project's design
-notes for why a sync daemon is a deliberately separate concern.
+synchronized to a local folder in the background — see
+[docs/DESIGN.md](docs/DESIGN.md) for why a sync daemon is a deliberately
+separate concern.
 
 ## Scope
 
