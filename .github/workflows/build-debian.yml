@@ -1,0 +1,102 @@
+name: Build Debian Packages
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            debhelper \
+            devscripts \
+            quilt \
+            lintian \
+            cmake \
+            extra-cmake-modules \
+            pkg-config \
+            qt6-base-dev \
+            libkf6kio-dev \
+            libkf6coreaddons-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Generate debian/changelog entry for this release
+        # Only on the tag release-please creates (vX.Y.Z) — regular
+        # branch/PR builds keep whatever entry is already committed. This is
+        # generated fresh at build time, never committed back: release-please
+        # already owns Cargo.toml's version and CHANGELOG.md (see
+        # CONTRIBUTING.md).
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DEBFULLNAME: Aarklendoia
+          DEBEMAIL: aarklendoia@proton.me
+        run: |
+          cd $GITHUB_WORKSPACE
+          VERSION="${GITHUB_REF_NAME#v}"
+          # No "-1" Debian revision suffix: "3.0 (native)" format (see
+          # debian/source/format) uses the upstream version alone.
+          dch --newversion "${VERSION}" --distribution unstable --urgency medium \
+            "Automated release ${VERSION}. See CHANGELOG.md for full details."
+
+      - name: Build Debian packages
+        run: |
+          cd $GITHUB_WORKSPACE
+          # -d: ignore missing build-deps since rustc/cargo come from rustup, not apt.
+          dpkg-buildpackage -us -uc -b -d
+          cp ../*.deb . 2>/dev/null || true
+          cp ../*.buildinfo . 2>/dev/null || true
+          cp ../*.changes . 2>/dev/null || true
+
+      - name: Run lintian checks
+        run: |
+          cd $GITHUB_WORKSPACE
+          lintian *.deb || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: debian-packages
+          path: |
+            *.deb
+            *.buildinfo
+            *.changes
+          retention-days: 30
+
+      - name: Create Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            *.deb
+            *.buildinfo
+            *.changes
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

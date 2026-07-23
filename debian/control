@@ -1,0 +1,36 @@
+Source: kio-protondrive
+Section: kde
+Priority: optional
+Maintainer: Aarklendoia <aarklendoia@proton.me>
+Build-Depends:
+  debhelper-compat (= 13),
+  cmake,
+  extra-cmake-modules,
+  cargo,
+  rustc,
+  pkg-config,
+  qt6-base-dev,
+  libkf6kio-dev,
+  libkf6coreaddons-dev
+Standards-Version: 4.6.1
+Homepage: https://github.com/Aarklendoia/kio-protondrive
+Vcs-Git: https://github.com/Aarklendoia/kio-protondrive.git
+Vcs-Browser: https://github.com/Aarklendoia/kio-protondrive
+Rules-Requires-Root: no
+
+Package: kio-protondrive
+Architecture: any
+Depends:
+  ${shlibs:Depends},
+  ${misc:Depends}
+Description: KIO worker for Proton Drive
+ Browse, download, upload and manage files stored on Proton Drive directly
+ from Dolphin (or any other KIO-aware application) via the protondrive://
+ protocol. Files are fetched on demand, like sftp:// or Google Drive's
+ kio-gdrive — there is no local sync/mirror.
+ .
+ This package only provides the KDE/Dolphin integration. It requires the
+ official Proton Drive CLI ("proton-drive", from
+ https://proton.me/drive/download) to be installed separately and
+ authenticated ("proton-drive auth login") before protondrive:/ can be
+ browsed.

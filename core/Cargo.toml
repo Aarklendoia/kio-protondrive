@@ -1,0 +1,26 @@
+[package]
+name = "protondrive-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core logic bridging the KIO protondrive:// worker to the Proton Drive CLI"
+
+[lib]
+name = "protondrive_core"
+# staticlib: linked into the C++ worker binary via CMake/Corrosion.
+# rlib: needed for `cargo test` and for the cxx-generated bridge code itself.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+cxx = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[build-dependencies]
+cxx-build = "1"
+
+[dev-dependencies]
+tempfile = "3"

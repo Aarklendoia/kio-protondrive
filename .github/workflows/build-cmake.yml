@@ -1,0 +1,50 @@
+name: Build KIO Worker (CMake)
+
+# Compiles the actual protondrive:// worker plugin against KF6::KIOCore —
+# separate from test.yml (which only builds/tests the pure-Rust core/ crate
+# and needs no KF6/Qt6 at all). This is the only CI job that exercises the
+# CMake + Corrosion + cxx integration end to end.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install KDE Frameworks / Qt6 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            extra-cmake-modules \
+            pkg-config \
+            qt6-base-dev \
+            libkf6kio-dev \
+            libkf6coreaddons-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel

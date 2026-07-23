@@ -1,0 +1,61 @@
+# Rust
+/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Vendored deps + vendored Corrosion source for offline Launchpad/PPA builds
+# (regenerated per release, see debian/scripts/prepare-offline-build.sh) —
+# not meant to live in git.
+/vendor/
+/.cargo/
+/third_party/corrosion/
+
+# CMake build directory
+/build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+build.ninja
+compile_commands.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+*.so
+*.a
+*.o
+*.dylib
+
+# Debian packaging
+debian/tmp/
+debian/.debhelper/
+debian/kio-protondrive/
+debian/*.substvars
+debian/*.debhelper
+debian/files
+debian/.debhelper.log
+debian/debhelper-build-stamp
+../*.deb
+../*.buildinfo
+../*.changes
+../*.dsc
+../*.tar.*
+*.deb
+*.buildinfo
+*.changes
+.debhelper-build-stamp
+
+# Coverage / docs
+*.profdata
+/coverage-html/
+target/doc/
+
+# Logs
+*.log

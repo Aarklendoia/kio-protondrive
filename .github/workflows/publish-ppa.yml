@@ -1,0 +1,92 @@
+name: Publish to Launchpad PPA
+
+# Automatically uploads a source package to ppa:aarklendoia-edtech/kio-protondrive
+# on every vX.Y.Z release tag (same trigger as build-debian.yml's GitHub
+# Release build). See docs/LAUNCHPAD.md for the full manual process this
+# automates, and for how the ~ppa1~<series>1 versioning scheme works.
+#
+# Signs with a CI-only GPG key, registered as an additional OpenPGP key on
+# the aarklendoia-edtech Launchpad account — deliberately separate from the
+# maintainer's personal key (and from linux-hello's own CI key), so a
+# leaked CI secret only compromises this package's PPA-upload rights. The
+# private key has no passphrase (required for unattended signing); it's
+# stored only as the PPA_GPG_PRIVATE_KEY repository secret.
+#
+# GPG_KEY_ID below is a placeholder — see docs/LAUNCHPAD.md for the one-time
+# setup (generate the CI key, register it on Launchpad, set the secret,
+# then fill in the real fingerprint here).
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      series:
+        description: 'Target Ubuntu series codename'
+        required: true
+        default: 'resolute'
+      rust_toolchain:
+        description: "That series' packaged cargo/rustc version (rmadison -u ubuntu cargo)"
+        required: true
+        default: '1.93.1'
+
+env:
+  PPA: 'ppa:aarklendoia-edtech/kio-protondrive'
+  GPG_KEY_ID: 'REPLACE_ME_SEE_DOCS_LAUNCHPAD_MD'
+  DEBFULLNAME: 'kio-protondrive CI'
+  DEBEMAIL: 'aarklendoia+ci@proton.me'
+  SERIES: ${{ github.event.inputs.series || 'resolute' }}
+  RUST_TOOLCHAIN: ${{ github.event.inputs.rust_toolchain || '1.93.1' }}
+
+jobs:
+  publish-ppa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install packaging tools
+        # No project build-dependencies needed here (qt6-base-dev,
+        # libkf6kio-dev, ...) — debuild -S only tars the source, it doesn't
+        # compile anything, and cargo vendor doesn't run build scripts either.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y devscripts dpkg-dev debhelper fakeroot quilt dput lintian gnupg jq git
+
+      - name: Install Rust matching ${{ env.SERIES }}'s packaged toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Import the CI signing key
+        env:
+          PPA_GPG_PRIVATE_KEY: ${{ secrets.PPA_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$PPA_GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys "$GPG_KEY_ID"
+
+      - name: Vendor Cargo dependencies and Corrosion
+        run: |
+          RUST_TOOLCHAIN="${{ env.RUST_TOOLCHAIN }}" ./debian/scripts/prepare-offline-build.sh
+
+      - name: Bump changelog for this PPA upload
+        env:
+          IS_TAG: ${{ github.ref_type == 'tag' }}
+        run: |
+          if [ "$IS_TAG" = "true" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            # workflow_dispatch on a branch: no vX.Y.Z tag to derive from
+            VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)"/\1/')"
+          fi
+          dch --newversion "${VERSION}~ppa1~${SERIES}1" --distribution "$SERIES" --urgency medium \
+            "Automated PPA build for ${SERIES}, release ${VERSION}."
+
+      - name: Build signed source package
+        run: |
+          rm -rf target build
+          debuild -S -sa -d -k"$GPG_KEY_ID"
+
+      - name: Upload to the PPA
+        run: |
+          dput "$PPA" ../kio-protondrive_*_source.changes

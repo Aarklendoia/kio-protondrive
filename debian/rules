@@ -1,0 +1,26 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+export DH_VERBOSE=1
+
+# If vendor/ + .cargo/config.toml are present (see
+# debian/scripts/prepare-offline-build.sh), Cargo must not touch the network
+# at all — required for a Launchpad PPA build, whose builders have no
+# general internet access. Corrosion invokes `cargo build` internally as
+# part of the CMake build below, so there's no cargo command of our own to
+# pass --offline to directly; CARGO_NET_OFFLINE is the equivalent env var
+# that reaches it transitively. Same reasoning for CMake finding a vendored
+# third_party/corrosion/ instead of fetching it (see CMakeLists.txt).
+ifneq ($(wildcard $(CURDIR)/vendor),)
+export CARGO_NET_OFFLINE=true
+endif
+
+%:
+	dh $@ --buildsystem=cmake
+
+override_dh_auto_test:
+	# Runs the Rust unit tests (core/), which need no KF6/Qt6 runtime and no
+	# Proton Drive session (see core/src/cli.rs's CommandRunner mocking).
+	# There is no C++ test suite (worker/ is a thin, mostly-untested-by-design
+	# KIO glue layer — see the "Scope v1" notes in README.md).
+	cargo test --manifest-path core/Cargo.toml --profile ci

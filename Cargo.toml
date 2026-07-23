@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Aarklendoia"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Aarklendoia/kio-protondrive"
+
+[profile.ci]
+inherits = "dev"
+opt-level = 0
+debug = false
+incremental = true

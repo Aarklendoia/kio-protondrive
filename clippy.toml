@@ -1,0 +1,4 @@
+# Clippy configuration for kio-protondrive
+
+# Warn about undocumented public items
+missing-docs-in-crate-items = true

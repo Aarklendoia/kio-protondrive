@@ -1,0 +1,25 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          # A tag/release created with the default GITHUB_TOKEN doesn't
+          # trigger other workflows (GitHub's loop-prevention) — a PAT makes
+          # the tag push look like a real user push instead, so
+          # build-debian.yml and publish-ppa.yml actually fire on release
+          # tags (see linux-hello's release-please.yml, which hit this
+          # exact issue first).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
