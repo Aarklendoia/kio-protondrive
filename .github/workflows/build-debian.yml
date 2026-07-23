@@ -30,6 +30,7 @@ jobs:
             ca-certificates \
             curl \
             git \
+            jq \
             build-essential \
             debhelper \
             devscripts \
@@ -58,6 +59,17 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Vendor Cargo dependencies and Corrosion
+        # dpkg-buildpackage builds with no network access — dh_auto_configure
+        # (debhelper compat 13) passes -DFETCHCONTENT_FULLY_DISCONNECTED=ON,
+        # and CMakeLists.txt's FetchContent of Corrosion fails without a
+        # pre-populated source dir. Same constraint as the Launchpad PPA
+        # build (see docs/LAUNCHPAD.md), same fix. RUST_TOOLCHAIN defaults to
+        # "stable" here (unlike publish-ppa.yml, which pins to the target
+        # series' packaged cargo/rustc) because this job vendors and builds
+        # with the same dtolnay/rust-toolchain@stable install.
+        run: ./debian/scripts/prepare-offline-build.sh
 
       - name: Generate debian/changelog entry for this release
         # Only on the tag release-please creates (vX.Y.Z) — regular
