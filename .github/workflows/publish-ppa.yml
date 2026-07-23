@@ -12,9 +12,10 @@ name: Publish to Launchpad PPA
 # private key has no passphrase (required for unattended signing); it's
 # stored only as the PPA_GPG_PRIVATE_KEY repository secret.
 #
-# GPG_KEY_ID below is a placeholder — see docs/LAUNCHPAD.md for the one-time
-# setup (generate the CI key, register it on Launchpad, set the secret,
-# then fill in the real fingerprint here).
+# GPG_KEY_ID below is the CI signing key's fingerprint, registered on the
+# aarklendoia-edtech Launchpad account — see docs/LAUNCHPAD.md for the
+# one-time setup this came from. The matching private key is stored as the
+# PPA_GPG_PRIVATE_KEY repository secret (not committed anywhere).
 
 on:
   push:
@@ -32,7 +33,7 @@ on:
 
 env:
   PPA: 'ppa:aarklendoia-edtech/kio-protondrive'
-  GPG_KEY_ID: 'REPLACE_ME_SEE_DOCS_LAUNCHPAD_MD'
+  GPG_KEY_ID: 'D61B393270CB976FBF38147EE8A85F33C5CF96B1'
   DEBFULLNAME: 'kio-protondrive CI'
   DEBEMAIL: 'aarklendoia+ci@proton.me'
   SERIES: ${{ github.event.inputs.series || 'resolute' }}
