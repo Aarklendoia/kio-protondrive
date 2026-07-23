@@ -30,7 +30,6 @@ jobs:
             ca-certificates \
             curl \
             git \
-            jq \
             build-essential \
             debhelper \
             devscripts \
@@ -49,15 +48,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Debug Rust environment
-        run: |
-          echo "HOME=$HOME"
-          echo "RUSTUP_HOME=${RUSTUP_HOME:-<unset>}"
-          echo "CARGO_HOME=${CARGO_HOME:-<unset>}"
-          echo "PATH=$PATH"
-          which rustc cargo rustup || true
-          rustup toolchain list --verbose || true
-
       - name: Cache Cargo build outputs
         uses: actions/cache@v6
         with:
@@ -69,16 +59,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Vendor Cargo dependencies and Corrosion
-        # dpkg-buildpackage builds with no network access — dh_auto_configure
-        # (debhelper compat 13) passes -DFETCHCONTENT_FULLY_DISCONNECTED=ON,
-        # and CMakeLists.txt's FetchContent of Corrosion fails without a
-        # pre-populated source dir. Same constraint as the Launchpad PPA
-        # build (see docs/LAUNCHPAD.md), same fix. RUST_TOOLCHAIN defaults to
-        # "stable" here (unlike publish-ppa.yml, which pins to the target
-        # series' packaged cargo/rustc) because this job vendors and builds
-        # with the same dtolnay/rust-toolchain@stable install.
-        run: ./debian/scripts/prepare-offline-build.sh
+      - name: Vendor Corrosion
+        # dh_auto_configure (debhelper compat 13) always passes
+        # -DFETCHCONTENT_FULLY_DISCONNECTED=ON regardless of actual network
+        # access, so CMakeLists.txt's FetchContent of Corrosion needs a
+        # pre-populated source dir — same constraint as the Launchpad PPA
+        # build (see docs/LAUNCHPAD.md). Unlike Launchpad's builders, this
+        # runner has real network access, so SKIP_CARGO_VENDOR=1: only
+        # Corrosion needs vendoring, cargo can fetch crates.io normally
+        # (also needed for Corrosion's own separate `cargo install
+        # cxxbridge-cmd` — that one isn't covered by vendoring core/'s
+        # dependencies at all, vendored or not).
+        run: SKIP_CARGO_VENDOR=1 ./debian/scripts/prepare-offline-build.sh
 
       - name: Generate debian/changelog entry for this release
         # Only on the tag release-please creates (vX.Y.Z) — regular
