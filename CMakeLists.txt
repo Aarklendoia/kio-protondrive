@@ -39,9 +39,11 @@ endif()
 corrosion_import_crate(MANIFEST_PATH core/Cargo.toml)
 
 corrosion_add_cxxbridge(protondrive-core-cxxbridge
-    CRATE protondrive-core
-    FILES src/bridge.rs
+    CRATE protondrive_core
+    FILES bridge.rs
 )
+kde_target_enable_exceptions(protondrive-core-cxxbridge PUBLIC)
+set_target_properties(protondrive-core-cxxbridge PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_subdirectory(worker)
 
