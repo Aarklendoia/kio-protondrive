@@ -17,11 +17,10 @@ a **separate PPA** so the two unrelated projects don't share one archive.
   `aarklendoia-edtech` account, fingerprint
   `D61B393270CB976FBF38147EE8A85F33C5CF96B1` — a new, project-specific key,
   deliberately not reusing linux-hello's CI key, so a leaked secret in one
-  repo's Actions only compromises that one PPA. Still need to add the
-  private key as the `PPA_GPG_PRIVATE_KEY` repository secret (see
-  [Automated publishing](#4-automated-publishing-ci) below).
-- PPA: `ppa:aarklendoia-edtech/kio-protondrive` — **not created yet**, see
-  [step 1](#1-one-time-setup-manual-on-launchpadnet).
+  repo's Actions only compromises that one PPA. Private key added as the
+  `PPA_GPG_PRIVATE_KEY` repository secret.
+- PPA: [`ppa:aarklendoia-edtech/kio-protondrive`](https://launchpad.net/~aarklendoia-edtech/+archive/ubuntu/kio-protondrive)
+  — created, no packages published yet.
 
 Launchpad's build farm has no general internet access, so a plain `cmake
 --build` (which triggers Corrosion's `cargo build` and, unmodified, a
