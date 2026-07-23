@@ -20,6 +20,10 @@ endif
 
 override_dh_auto_configure:
 	@echo "DEBUG HOME=$$HOME RUSTUP_HOME=$$RUSTUP_HOME CARGO_HOME=$$CARGO_HOME PATH=$$PATH"
+	@echo "DEBUG rustup=$$(command -v rustup) rustc=$$(command -v rustc)"
+	@echo "DEBUG toolchain list output BEGIN"
+	@rustup toolchain list --verbose || true
+	@echo "DEBUG toolchain list output END"
 	dh_auto_configure
 
 override_dh_auto_test:
