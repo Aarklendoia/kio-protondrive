@@ -14,7 +14,8 @@ include(ECMSetupVersion)
 include(FeatureSummary)
 
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core)
-find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS CoreAddons KIO)
+find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS CoreAddons KIO I18n)
+find_package(Gettext REQUIRED)
 
 # Corrosion drives the actual `cargo build` of the core/ Rust crate and
 # generates the cxx bridge glue consumed by worker/. Two ways to obtain it:
@@ -46,5 +47,7 @@ kde_target_enable_exceptions(protondrive-core-cxxbridge PUBLIC)
 set_target_properties(protondrive-core-cxxbridge PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_subdirectory(worker)
+
+ki18n_install(po)
 
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)

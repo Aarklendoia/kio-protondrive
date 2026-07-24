@@ -12,6 +12,7 @@ target_link_libraries(protondrive
     PUBLIC
         KF6::KIOCore
     PRIVATE
+        KF6::I18n
         protondrive-core-cxxbridge
 )
 
