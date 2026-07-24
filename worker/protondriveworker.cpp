@@ -99,6 +99,20 @@ QString ProtonDriveWorker::drivePath(const QUrl &url)
 KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
 {
     const QString path = drivePath(url);
+
+    // KIO expects a "." entry describing the listed directory itself (used
+    // for e.g. the item count/permissions of the folder being browsed) —
+    // without it, KIO::WorkerBase logs "UDSEntry for '.' not found, creating
+    // a default one" and falls back to a stub. `filesystem info` doesn't
+    // support the virtual root's sections (`/`, `/my-files`, ...) though —
+    // the CLI replies "Not implemented" — so this is best-effort: skip the
+    // "." entry rather than failing the whole listing when it's unavailable.
+    try {
+        const FfiEntry self = stat_path(path.toStdString());
+        listEntry(entryFromFfi(self, QStringLiteral(".")));
+    } catch (const rust::Error &) {
+    }
+
     try {
         const rust::Vec<FfiEntry> entries = list_dir(path.toStdString());
         for (const FfiEntry &entry : entries) {
