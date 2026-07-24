@@ -7,10 +7,26 @@
 //! don't have.
 
 use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use thiserror::Error;
 
 use crate::entry::{ListItem, NodeEntry, TransferSummary, TrashOutcome};
+
+/// `filesystem list`/`info`/`create-folder`/`trash` are plain metadata API
+/// calls — a healthy CLI answers in well under this. Deliberately short so a
+/// hang (e.g. the CLI blocking indefinitely on an unsupported virtual path
+/// like `/photos`'s `filesystem info`, rather than erroring out — see the
+/// "Not implemented"-vs-hang split observed in the wild) can't tie up a KIO
+/// worker slot for long.
+const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// `filesystem download`/`upload` transfer actual file data, so their
+/// duration legitimately scales with file size — this is a generous safety
+/// net against a truly stuck CLI, not a realistic transfer-time budget.
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DriveError {
@@ -22,6 +38,8 @@ pub enum DriveError {
     Parse(String),
     #[error("could not launch proton-drive: {0}")]
     Spawn(String),
+    #[error("proton-drive did not respond within {0:?}")]
+    Timeout(Duration),
 }
 
 impl From<serde_json::Error> for DriveError {
@@ -40,7 +58,7 @@ pub struct CommandOutput {
 /// Abstraction over "run the `proton-drive` CLI with these arguments",
 /// injectable so tests never need a real installation or session.
 pub trait CommandRunner {
-    fn run(&self, args: &[&str]) -> Result<CommandOutput, DriveError>;
+    fn run(&self, args: &[&str], timeout: Duration) -> Result<CommandOutput, DriveError>;
 }
 
 /// Real implementation: spawns the `proton-drive` binary from `$PATH`.
@@ -48,16 +66,44 @@ pub trait CommandRunner {
 pub struct RealCommandRunner;
 
 impl CommandRunner for RealCommandRunner {
-    fn run(&self, args: &[&str]) -> Result<CommandOutput, DriveError> {
-        let output = std::process::Command::new("proton-drive")
+    fn run(&self, args: &[&str], timeout: Duration) -> Result<CommandOutput, DriveError> {
+        let child = std::process::Command::new("proton-drive")
             .args(args)
-            .output()
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .map_err(|err| DriveError::Spawn(err.to_string()))?;
-        Ok(CommandOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            success: output.status.success(),
-        })
+        let pid = child.id();
+
+        // `Child::wait_with_output` (needed to drain stdout/stderr without
+        // risking the classic full-pipe deadlock) has no timeout variant, so
+        // it runs on a helper thread; a channel gives us the `recv_timeout`
+        // that's actually missing here. On timeout the child is killed by
+        // pid — `child` itself was moved into the thread, so this is the
+        // only handle left to reach it — and the thread's own `send` then
+        // just fails silently since `rx` is already dropped by then.
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(child.wait_with_output());
+        });
+
+        match rx.recv_timeout(timeout) {
+            Ok(Ok(output)) => Ok(CommandOutput {
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                success: output.status.success(),
+            }),
+            Ok(Err(err)) => Err(DriveError::Spawn(err.to_string())),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .status();
+                Err(DriveError::Timeout(timeout))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(DriveError::Spawn(
+                "proton-drive's output thread vanished without a result".to_string(),
+            )),
+        }
     }
 }
 
@@ -82,13 +128,13 @@ fn ensure_success(path: &str, out: &CommandOutput) -> Result<(), DriveError> {
 }
 
 pub fn list_dir(runner: &dyn CommandRunner, path: &str) -> Result<Vec<ListItem>, DriveError> {
-    let out = runner.run(&["filesystem", "list", "-j", path])?;
+    let out = runner.run(&["filesystem", "list", "-j", path], METADATA_TIMEOUT)?;
     ensure_success(path, &out)?;
     Ok(serde_json::from_str(&out.stdout)?)
 }
 
 pub fn stat_path(runner: &dyn CommandRunner, path: &str) -> Result<NodeEntry, DriveError> {
-    let out = runner.run(&["filesystem", "info", "-j", path])?;
+    let out = runner.run(&["filesystem", "info", "-j", path], METADATA_TIMEOUT)?;
     ensure_success(path, &out)?;
     Ok(serde_json::from_str(&out.stdout)?)
 }
@@ -98,7 +144,10 @@ pub fn create_folder(
     parent_path: &str,
     name: &str,
 ) -> Result<NodeEntry, DriveError> {
-    let out = runner.run(&["filesystem", "create-folder", "-j", parent_path, name])?;
+    let out = runner.run(
+        &["filesystem", "create-folder", "-j", parent_path, name],
+        METADATA_TIMEOUT,
+    )?;
     ensure_success(parent_path, &out)?;
     Ok(serde_json::from_str(&out.stdout)?)
 }
@@ -124,15 +173,18 @@ pub fn download(
     local_folder: &Path,
 ) -> Result<TransferSummary, DriveError> {
     let local = local_folder.to_string_lossy();
-    let out = runner.run(&[
-        "filesystem",
-        "download",
-        "-j",
-        "-f",
-        "replace",
-        remote_path,
-        &local,
-    ])?;
+    let out = runner.run(
+        &[
+            "filesystem",
+            "download",
+            "-j",
+            "-f",
+            "replace",
+            remote_path,
+            &local,
+        ],
+        TRANSFER_TIMEOUT,
+    )?;
     ensure_success(remote_path, &out)?;
     let summary: TransferSummary = serde_json::from_str(&out.stdout)?;
     ensure_no_failures(&format!("download of {remote_path}"), &summary)?;
@@ -147,15 +199,18 @@ pub fn upload(
     parent_path: &str,
 ) -> Result<TransferSummary, DriveError> {
     let local = local_path.to_string_lossy();
-    let out = runner.run(&[
-        "filesystem",
-        "upload",
-        "-j",
-        "-f",
-        "replace",
-        &local,
-        parent_path,
-    ])?;
+    let out = runner.run(
+        &[
+            "filesystem",
+            "upload",
+            "-j",
+            "-f",
+            "replace",
+            &local,
+            parent_path,
+        ],
+        TRANSFER_TIMEOUT,
+    )?;
     ensure_success(parent_path, &out)?;
     let summary: TransferSummary = serde_json::from_str(&out.stdout)?;
     ensure_no_failures(&format!("upload to {parent_path}"), &summary)?;
@@ -166,7 +221,7 @@ pub fn upload(
 /// see core/README notes on why this project doesn't expose a permanent
 /// delete through Dolphin in v1).
 pub fn trash_path(runner: &dyn CommandRunner, path: &str) -> Result<(), DriveError> {
-    let out = runner.run(&["filesystem", "trash", "-j", path])?;
+    let out = runner.run(&["filesystem", "trash", "-j", path], METADATA_TIMEOUT)?;
     ensure_success(path, &out)?;
     let outcomes: Vec<TrashOutcome> = serde_json::from_str(&out.stdout)?;
     if let Some(failed) = outcomes.iter().find(|o| !o.ok) {
@@ -213,7 +268,7 @@ mod tests {
     }
 
     impl CommandRunner for MockRunner {
-        fn run(&self, args: &[&str]) -> Result<CommandOutput, DriveError> {
+        fn run(&self, args: &[&str], _timeout: Duration) -> Result<CommandOutput, DriveError> {
             *self.last_args.borrow_mut() = args.iter().map(|s| s.to_string()).collect();
             Ok(CommandOutput {
                 stdout: self.response.stdout.clone(),
