@@ -2,11 +2,13 @@
 
 #include <KIO/WorkerBase>
 #include <KIO/WorkerFactory>
+#include <KLocalizedString>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QMimeDatabase>
 #include <QTemporaryDir>
 
@@ -74,6 +76,30 @@ KIO::UDSEntry entryFromFfi(const FfiEntry &entry, const QString &nameOverride = 
     return uds;
 }
 
+// Proton Drive's virtual root sections (`filesystem list -j /`) have fixed,
+// English, machine-oriented path segments — translated here to match the
+// labels Proton Drive's own web UI uses. The last four (albums and the
+// photos-* variants) aren't shown as top-level sidebar entries there —
+// they're nested under a "Photos" view the underlying CLI doesn't support
+// browsing yet (see the README's Scope section) — so their translations are
+// this project's best guess, not confirmed against Proton's own wording.
+QString translatedSectionName(const QString &rawName)
+{
+    static const QHash<QString, QString> labels = {
+        {QStringLiteral("my-files"), i18nd("kio_protondrive", "My files")},
+        {QStringLiteral("devices"), i18nd("kio_protondrive", "Computers")},
+        {QStringLiteral("photos"), i18nd("kio_protondrive", "Photos")},
+        {QStringLiteral("shared-by-me"), i18nd("kio_protondrive", "Shared")},
+        {QStringLiteral("shared-with-me"), i18nd("kio_protondrive", "Shared with me")},
+        {QStringLiteral("trash"), i18nd("kio_protondrive", "Trash")},
+        {QStringLiteral("albums"), i18nd("kio_protondrive", "Albums")},
+        {QStringLiteral("photos-shared-by-me"), i18nd("kio_protondrive", "Photos shared by me")},
+        {QStringLiteral("photos-shared-with-me"), i18nd("kio_protondrive", "Photos shared with me")},
+        {QStringLiteral("photos-trash"), i18nd("kio_protondrive", "Photos trash")},
+    };
+    return labels.value(rawName);
+}
+
 // Strips a trailing slash left by QUrl::adjusted(QUrl::RemoveFilename) —
 // the `proton-drive` CLI expects parent paths without one (e.g. "/my-files",
 // never "/my-files/").
@@ -130,8 +156,21 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
     } catch (const rust::Error &) {
     }
 
+    // The virtual root's entries are Proton Drive's fixed sections
+    // (my-files, devices, ...), never real user content — see entry.rs's
+    // ListItem: `filesystem list` returns one shape or the other, never a
+    // mix — so translating by raw name can't misfire on a real folder a
+    // user happened to name e.g. "trash".
+    const bool isVirtualRoot = path == QLatin1String("/");
     for (const FfiEntry &entry : entries) {
-        listEntry(entryFromFfi(entry));
+        KIO::UDSEntry uds = entryFromFfi(entry);
+        if (isVirtualRoot) {
+            const QString label = translatedSectionName(toQString(entry.name));
+            if (!label.isEmpty()) {
+                uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, label);
+            }
+        }
+        listEntry(uds);
     }
     return KIO::WorkerResult::pass();
 }

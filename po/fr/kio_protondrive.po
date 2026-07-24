@@ -1,0 +1,72 @@
+# French translations for kio-protondrive.
+# Copyright (C) 2026 This file is copyright:
+# This file is distributed under the same license as the kio-protondrive package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: kio-protondrive\n"
+"Report-Msgid-Bugs-To: https://github.com/Aarklendoia/kio-protondrive/issues\n"
+"POT-Creation-Date: 2026-07-24 00:00+0000\n"
+"PO-Revision-Date: 2026-07-24 00:00+0000\n"
+"Last-Translator: Aarklendoia <noreply@github.com>\n"
+"Language-Team: French <kde-francophone@kde.org>\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"X-Generator: manual\n"
+
+#. Virtual root section: /my-files
+#: worker/protondriveworker.cpp:0
+msgid "My files"
+msgstr "Mes fichiers"
+
+#. Virtual root section: /devices
+#: worker/protondriveworker.cpp:0
+msgid "Computers"
+msgstr "Ordinateurs"
+
+#. Virtual root section: /photos
+#: worker/protondriveworker.cpp:0
+msgid "Photos"
+msgstr "Photos"
+
+#. Virtual root section: /shared-by-me
+#: worker/protondriveworker.cpp:0
+msgid "Shared"
+msgstr "Partagé"
+
+#. Virtual root section: /shared-with-me
+#: worker/protondriveworker.cpp:0
+msgid "Shared with me"
+msgstr "Partagé avec moi"
+
+#. Virtual root section: /trash
+#: worker/protondriveworker.cpp:0
+msgid "Trash"
+msgstr "Corbeille"
+
+#. Virtual root section: /albums (not confirmed against Proton's own
+#. wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Albums"
+msgstr "Albums"
+
+#. Virtual root section: /photos-shared-by-me (not confirmed against
+#. Proton's own wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Photos shared by me"
+msgstr "Photos partagées par moi"
+
+#. Virtual root section: /photos-shared-with-me (not confirmed against
+#. Proton's own wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Photos shared with me"
+msgstr "Photos partagées avec moi"
+
+#. Virtual root section: /photos-trash (not confirmed against Proton's own
+#. wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Photos trash"
+msgstr "Corbeille photos"
