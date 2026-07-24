@@ -86,7 +86,11 @@ jobs:
         # Visibility only, not a merge gate: no --fail-under-* threshold.
         run: |
           cargo llvm-cov --workspace --profile ci --html --output-dir coverage-html
-          cargo llvm-cov report --workspace --profile ci --summary-only
+          # Unlike the run above, `report` reads already-generated coverage
+          # data rather than selecting packages to build/test — it doesn't
+          # accept --workspace ("--workspace is specific to [test,nextest,
+          # ...] and not supported for subcommand 'report'").
+          cargo llvm-cov report --profile ci --summary-only
 
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v7
