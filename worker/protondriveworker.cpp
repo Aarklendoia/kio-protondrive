@@ -2,12 +2,16 @@
 
 #include <KIO/WorkerBase>
 #include <KIO/WorkerFactory>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMimeDatabase>
 #include <QTemporaryDir>
+
+#include <cstdio>
+#include <cstdlib>
 
 #include "rust/cxx.h"
 
@@ -214,11 +218,15 @@ KIO::WorkerResult ProtonDriveWorker::del(const QUrl &url, bool /*isFile*/)
     }
 }
 
-// KIO workers are Qt plugins loaded by the generic `kioworker` host process
-// (see KDE/kio-admin's src/worker.cpp for the reference pattern this
-// mirrors): the JSON below is embedded into the compiled plugin's Qt
-// metadata by moc, so KIO can discover the "protondrive" protocol without
-// any separate file being installed at runtime.
+// The JSON below is embedded into the compiled plugin's Qt metadata by moc,
+// so KIO can discover which protocol(s) this plugin's .so supports without
+// any separate file being installed at runtime — used for the in-process
+// KIOWORKER_ENABLE_TESTMODE path and for protocol->library resolution.
+// Actual out-of-process launches go through the kdemain() entry point below
+// instead: the generic `kioworker` host process dlopen()s this plugin and
+// calls kdemain() directly (the same convention every other in-tree KIO
+// worker follows, e.g. KDE/kio-extras's sftp/kio_sftp.cpp) rather than
+// instantiating this factory.
 class ProtonDriveWorkerFactory : public KIO::WorkerFactory
 {
     Q_OBJECT
@@ -232,5 +240,22 @@ public:
         return std::make_unique<ProtonDriveWorker>(QByteArrayLiteral("protondrive"), pool, app);
     }
 };
+
+extern "C" {
+int Q_DECL_EXPORT kdemain(int argc, char **argv)
+{
+    QCoreApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("kio_protondrive"));
+
+    if (argc != 4) {
+        fprintf(stderr, "Usage: kio_protondrive protocol domain-socket1 domain-socket2\n");
+        exit(-1);
+    }
+
+    ProtonDriveWorker worker(argv[1], argv[2], argv[3]);
+    worker.dispatchLoop();
+    return 0;
+}
+}
 
 #include "protondriveworker.moc"
