@@ -68,6 +68,12 @@ separate concern.
 - Browsing Proton Drive's trash as a restorable Dolphin trash view
 - Directory listing cache, thumbnails
 
+**Blocked upstream:** the Photos section (`/photos`, `/albums` and their
+`-shared-by-me`/`-shared-with-me`/`-trash` variants) shows up when listing
+`/`, but every operation against it fails with "Path type photos is not
+supported" from the `proton-drive` CLI itself — this isn't something a KIO
+worker can work around. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
+
 ## Installing
 
 Requires the official [Proton Drive CLI](https://proton.me/drive/download)
@@ -94,13 +100,22 @@ Then open `protondrive:/` in Dolphin's location bar (or
 
 ### Pinning it to Dolphin's sidebar
 
-Browse to `protondrive:/my-files`, then right-click the breadcrumb (or drag
-it into the **Places** panel) and choose **Add to Places**. This is standard
+Browse to `protondrive:/`, then right-click the breadcrumb (or drag it into
+the **Places** panel) and choose **Add to Places**. This is standard
 Dolphin/KIO behavior, not something this package sets up for you — but once
 bookmarked, Dolphin shows it as **Proton Drive** (with a cloud icon) under
 the *Remote* section of the sidebar, and uses that name in the breadcrumb
-and window title instead of the raw `protondrive:/my-files` URL — the same
-way it does for any other bookmarked network location.
+and window title instead of the raw `protondrive:/` URL — the same way it
+does for any other bookmarked network location.
+
+Bookmarking the root (rather than `protondrive:/my-files` directly) is
+deliberate: Dolphin's Places panel has no concept of a bookmark with nested
+children (every entry is a flat leaf — see
+[KFilePlacesModel](https://github.com/KDE/kio/blob/master/src/filewidgets/kfileplacesmodel.h)),
+so there's no way to mirror the Proton Drive web UI's sidebar sections
+(My files, Computers, Shared, ...) as an actual tree in Dolphin's sidebar.
+One click into the **Proton Drive** bookmark gets you a folder listing of
+those same sections instead — the closest equivalent Dolphin supports.
 
 ## Building from source
 
