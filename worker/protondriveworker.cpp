@@ -24,15 +24,19 @@ namespace
 // Everything the Rust side raises for an Err(String) arrives here as a
 // thrown rust::Error (that's how cxx surfaces a bridged Result::Err on the
 // C++ side) — turned into the KIO error the caller actually sees.
-// DriveError::NotFound stringifies (via thiserror, see core/src/cli.rs) as
-// "path not found: ...", which is the only case worth a specific KIO error
-// code; everything else becomes a worker-defined error carrying the raw
-// message so the user still sees *why* it failed.
+// DriveError::NotFound/::Timeout stringify (via thiserror, see
+// core/src/cli.rs) as "path not found: ..."/"proton-drive did not respond
+// within ...", the only two cases worth a specific KIO error code; everything
+// else becomes a worker-defined error carrying the raw message so the user
+// still sees *why* it failed.
 KIO::WorkerResult resultFromRustError(const rust::Error &error)
 {
     const QString message = QString::fromUtf8(error.what());
     if (message.startsWith(QLatin1String("path not found:"))) {
         return KIO::WorkerResult::fail(KIO::ERR_DOES_NOT_EXIST, message);
+    }
+    if (message.startsWith(QLatin1String("proton-drive did not respond within"))) {
+        return KIO::WorkerResult::fail(KIO::ERR_SERVER_TIMEOUT, message);
     }
     return KIO::WorkerResult::fail(KIO::ERR_WORKER_DEFINED, message);
 }
@@ -100,28 +104,36 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
 {
     const QString path = drivePath(url);
 
+    rust::Vec<FfiEntry> entries;
+    try {
+        entries = list_dir(path.toStdString());
+    } catch (const rust::Error &error) {
+        // Fails fast for unsupported paths (e.g. the CLI has no listing
+        // support for the `/photos` virtual section) — checked before the
+        // "." stat below, which for some of those same unsupported paths
+        // hangs instead of erroring quickly (rather than failing the whole
+        // listing on a slow, ultimately pointless stat).
+        return resultFromRustError(error);
+    }
+
     // KIO expects a "." entry describing the listed directory itself (used
     // for e.g. the item count/permissions of the folder being browsed) —
     // without it, KIO::WorkerBase logs "UDSEntry for '.' not found, creating
-    // a default one" and falls back to a stub. `filesystem info` doesn't
-    // support the virtual root's sections (`/`, `/my-files`, ...) though —
-    // the CLI replies "Not implemented" — so this is best-effort: skip the
-    // "." entry rather than failing the whole listing when it's unavailable.
+    // a default one" and falls back to a stub. Best-effort: `filesystem info`
+    // doesn't support the virtual root's sections (`/`, `/my-files`, ...), so
+    // skip the "." entry rather than failing the whole listing when it's
+    // unavailable — list_dir() above having already succeeded is what makes
+    // this safe to still attempt here.
     try {
         const FfiEntry self = stat_path(path.toStdString());
         listEntry(entryFromFfi(self, QStringLiteral(".")));
     } catch (const rust::Error &) {
     }
 
-    try {
-        const rust::Vec<FfiEntry> entries = list_dir(path.toStdString());
-        for (const FfiEntry &entry : entries) {
-            listEntry(entryFromFfi(entry));
-        }
-        return KIO::WorkerResult::pass();
-    } catch (const rust::Error &error) {
-        return resultFromRustError(error);
+    for (const FfiEntry &entry : entries) {
+        listEntry(entryFromFfi(entry));
     }
+    return KIO::WorkerResult::pass();
 }
 
 KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
