@@ -1,0 +1,72 @@
+# Chinese (Simplified) translations for kio-protondrive.
+# Copyright (C) 2026 This file is copyright:
+# This file is distributed under the same license as the kio-protondrive package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: kio-protondrive\n"
+"Report-Msgid-Bugs-To: https://github.com/Aarklendoia/kio-protondrive/issues\n"
+"POT-Creation-Date: 2026-07-24 00:00+0000\n"
+"PO-Revision-Date: 2026-07-24 00:00+0000\n"
+"Last-Translator: Aarklendoia <noreply@github.com>\n"
+"Language-Team: Chinese Simplified <kde-china@kde.org>\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: manual\n"
+
+#. Virtual root section: /my-files
+#: worker/protondriveworker.cpp:0
+msgid "My files"
+msgstr "我的文件"
+
+#. Virtual root section: /devices
+#: worker/protondriveworker.cpp:0
+msgid "Computers"
+msgstr "电脑"
+
+#. Virtual root section: /photos
+#: worker/protondriveworker.cpp:0
+msgid "Photos"
+msgstr "照片"
+
+#. Virtual root section: /shared-by-me
+#: worker/protondriveworker.cpp:0
+msgid "Shared"
+msgstr "已分享"
+
+#. Virtual root section: /shared-with-me
+#: worker/protondriveworker.cpp:0
+msgid "Shared with me"
+msgstr "与我共享"
+
+#. Virtual root section: /trash
+#: worker/protondriveworker.cpp:0
+msgid "Trash"
+msgstr "回收站"
+
+#. Virtual root section: /albums (not confirmed against Proton's own
+#. wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Albums"
+msgstr "相册"
+
+#. Virtual root section: /photos-shared-by-me (not confirmed against
+#. Proton's own wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Photos shared by me"
+msgstr "我分享的照片"
+
+#. Virtual root section: /photos-shared-with-me (not confirmed against
+#. Proton's own wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Photos shared with me"
+msgstr "与我共享的照片"
+
+#. Virtual root section: /photos-trash (not confirmed against Proton's own
+#. wording — not shown as a top-level entry in the web UI)
+#: worker/protondriveworker.cpp:0
+msgid "Photos trash"
+msgstr "照片回收站"
