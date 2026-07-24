@@ -92,6 +92,16 @@ sudo apt install ./kio-protondrive_*.deb
 Then open `protondrive:/` in Dolphin's location bar (or
 `kioclient5 ls protondrive:/` from a terminal) to browse your Drive.
 
+### Pinning it to Dolphin's sidebar
+
+Browse to `protondrive:/my-files`, then right-click the breadcrumb (or drag
+it into the **Places** panel) and choose **Add to Places**. This is standard
+Dolphin/KIO behavior, not something this package sets up for you — but once
+bookmarked, Dolphin shows it as **Proton Drive** (with a cloud icon) under
+the *Remote* section of the sidebar, and uses that name in the breadcrumb
+and window title instead of the raw `protondrive:/my-files` URL — the same
+way it does for any other bookmarked network location.
+
 ## Building from source
 
 ```bash
