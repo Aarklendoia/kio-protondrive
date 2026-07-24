@@ -34,3 +34,29 @@ Description: KIO worker for Proton Drive
  https://proton.me/drive/download) to be installed separately and
  authenticated ("proton-drive auth login") before protondrive:/ can be
  browsed.
+
+Package: kio-protondrive-sync-daemon
+Architecture: any
+Section: net
+Depends:
+  ${shlibs:Depends},
+  ${misc:Depends}
+Description: Background upload sync daemon for Proton Drive
+ A systemd --user service that watches a configured local folder and
+ uploads new/changed files to Proton Drive automatically, via the same
+ "proton-drive" CLI used by the protondrive:// KIO worker.
+ .
+ Phase 1: one-way local -> Drive upload only. Local deletions and
+ Drive -> local sync are not yet handled by this version.
+
+Package: kio-protondrive-full
+Architecture: all
+Section: metapackages
+Depends:
+  kio-protondrive (= ${binary:Version}),
+  kio-protondrive-sync-daemon (= ${binary:Version}),
+  ${misc:Depends}
+Description: KIO worker and background sync daemon for Proton Drive (metapackage)
+ Umbrella package pulling in both the on-demand protondrive:// KIO worker
+ (kio-protondrive) and the background upload sync daemon
+ (kio-protondrive-sync-daemon). Installs no files of its own.

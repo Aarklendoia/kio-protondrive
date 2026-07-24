@@ -35,9 +35,24 @@ override_dh_auto_configure:
 		-DRust_COMPILER=$(RUST_SYSROOT)/bin/rustc \
 		-DRust_CARGO=$(RUST_SYSROOT)/bin/cargo
 
+override_dh_auto_build:
+	dh_auto_build
+	# daemon/ is plain Cargo, not part of the CMake/Corrosion graph that
+	# builds core/ + the KIO plugin above — build it separately. This does
+	# mean core/ gets compiled twice (once as a staticlib via Corrosion for
+	# the cxx bridge, once as an rlib here for daemon/ to link), which is
+	# harmless duplication, not a bug.
+	cargo build --release --locked --manifest-path daemon/Cargo.toml
+
 override_dh_auto_test:
-	# Runs the Rust unit tests (core/), which need no KF6/Qt6 runtime and no
-	# Proton Drive session (see core/src/cli.rs's CommandRunner mocking).
+	# Runs the Rust unit tests (core/ + daemon/), which need no KF6/Qt6
+	# runtime and no Proton Drive session (see core/src/cli.rs's
+	# CommandRunner mocking, reused by daemon/'s own tests the same way).
 	# There is no C++ test suite (worker/ is a thin, mostly-untested-by-design
 	# KIO glue layer — see the "Scope v1" notes in README.md).
-	cargo test --manifest-path core/Cargo.toml --profile ci
+	cargo test --workspace --profile ci
+
+override_dh_auto_install:
+	dh_auto_install
+	install -Dm755 target/release/kio-protondrive-daemon \
+		debian/tmp/usr/bin/kio-protondrive-daemon

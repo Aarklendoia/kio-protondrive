@@ -1,0 +1,13 @@
+[Unit]
+Description=Proton Drive background upload sync daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kio-protondrive-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -50,6 +50,33 @@ synchronized to a local folder in the background — see
 [docs/DESIGN.md](docs/DESIGN.md) for why a sync daemon is a deliberately
 separate concern.
 
+## Background sync daemon
+
+A separate package, `kio-protondrive-sync-daemon`, provides an optional
+background upload daemon — install `kio-protondrive-full` to get both it and
+the KIO worker. It's a `systemd --user` service watching one configured
+local folder and uploading new/changed files to Proton Drive automatically.
+
+**Phase 1 scope**: one-way local → Drive upload only. Drive → local
+download, local-delete propagation, and conflict resolution aren't
+implemented yet — see [docs/DESIGN.md](docs/DESIGN.md) and
+[#12](https://github.com/Aarklendoia/kio-protondrive/issues/12) for the
+full planned design.
+
+To configure it, write `~/.config/kio-protondrive/daemon.toml`:
+
+```toml
+local_path = "/home/you/ProtonDriveSync"
+remote_path = "/my-files/Backups"
+```
+
+Then enable and start it:
+
+```console
+$ systemctl --user enable --now kio-protondrive-sync-daemon.service
+$ journalctl --user -u kio-protondrive-sync-daemon -f
+```
+
 ## Scope
 
 **Supported (v1):**
