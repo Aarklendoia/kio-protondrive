@@ -183,7 +183,20 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
     // repeating the full path.
     try {
         const FfiEntry entry = stat_path(path.toStdString());
-        statEntry(entryFromFfi(entry, QStringLiteral(".")));
+        KIO::UDSEntry uds = entryFromFfi(entry, QStringLiteral("."));
+        // KUrlNavigator's breadcrumb label for the *current* directory is
+        // read from here, not from the sibling entry listDir() emits for it
+        // — without this, browsing into /my-files shows "Mes fichiers" in
+        // the icon grid but reverts to the raw "my-files" in the breadcrumb
+        // once you're inside it. A virtual root section is always exactly
+        // one path segment deep (e.g. "/my-files", never "/my-files/sub").
+        if (path.count(QLatin1Char('/')) == 1) {
+            const QString label = translatedSectionName(path.mid(1));
+            if (!label.isEmpty()) {
+                uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, label);
+            }
+        }
+        statEntry(uds);
         return KIO::WorkerResult::pass();
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
