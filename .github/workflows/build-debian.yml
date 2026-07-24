@@ -8,6 +8,14 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Needed for the "Create Release (on tag)" step (softprops/action-gh-release)
+# to create/update a GitHub release — the repo's default GITHUB_TOKEN
+# permissions are read-only (Settings → Actions → General), so without this
+# it fails with "Resource not accessible by integration". Same pattern as
+# release-please.yml.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
