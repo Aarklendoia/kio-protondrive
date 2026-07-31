@@ -77,6 +77,41 @@ $ systemctl --user enable --now kio-protondrive-sync-daemon.service
 $ journalctl --user -u kio-protondrive-sync-daemon -f
 ```
 
+### Credential persistence
+
+By default, the `proton-drive` CLI keeps its session in the desktop's Secret
+Service (`libsecret`/GNOME Keyring/KWallet). That's fine for the KIO worker,
+which only ever runs inside an already-unlocked Dolphin session, but it's
+the wrong fit for a `systemd --user` service that must authenticate with no
+one present to unlock a keyring — and on some setups (e.g. a Secret Service
+provider with no persistent on-disk collection) the session silently fails
+to survive a keyring-daemon restart at all, forcing a fresh
+`proton-drive auth login` every time.
+
+To avoid depending on the keyring, the packaged daemon service sets
+`PROTON_DRIVE_CREDENTIALS_STORE=unsafe_file` (an env var the CLI itself
+supports, undocumented in `--help` but present in its own source), which
+persists the session to a plain file at
+`~/.local/share/proton-drive-cli/auth-session.json` instead — created with
+`0600` permissions (readable only by you), but **not encrypted at rest**,
+unlike the keyring. If you'd rather use `pass`
+(GPG-encrypted) instead, override it:
+
+```console
+$ systemctl --user edit kio-protondrive-sync-daemon.service
+```
+
+```ini
+[Service]
+Environment=PROTON_DRIVE_CREDENTIALS_STORE=pass
+```
+
+(`pass` requires `pass` and a GPG key already set up, and `gpg-agent` able
+to decrypt without an interactive prompt for the daemon to authenticate
+unattended.) The KIO worker is unaffected either way — it keeps using
+whichever store the CLI's own default (`keychain`) or your shell
+environment already selects.
+
 ## Scope
 
 **Supported (v1):**

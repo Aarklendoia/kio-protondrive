@@ -5,6 +5,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# The proton-drive CLI's default credentials store (Secret Service /
+# libsecret) depends on a desktop keyring being unlocked and persistent —
+# not a safe assumption for a background service with no one present to
+# unlock it, and known to silently fail to persist the session on some
+# setups (e.g. a Secret Service provider with no on-disk backing
+# collection). unsafe_file instead persists the session to a plain,
+# 0600-permission file under $XDG_DATA_HOME/proton-drive-cli/ — see the
+# README's "Background sync daemon" section for the trade-off.
+Environment=PROTON_DRIVE_CREDENTIALS_STORE=unsafe_file
 ExecStart=/usr/bin/kio-protondrive-daemon
 Restart=on-failure
 RestartSec=5
