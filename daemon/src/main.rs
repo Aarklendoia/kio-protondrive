@@ -9,6 +9,7 @@
 mod config;
 mod error;
 mod journal;
+mod notification;
 mod sync;
 mod watcher;
 
@@ -16,6 +17,23 @@ use protondrive_core::cli::RealCommandRunner;
 
 use config::Config;
 use journal::Journal;
+
+/// Logs one clear, actionable line and fires a desktop notification — but
+/// only on the falling edge (the first failure after things were working),
+/// so a stuck-unauthenticated daemon doesn't spam either every cycle.
+/// `auth_notified` flips back to false as soon as a sync succeeds again, so
+/// a *later* re-expiry (e.g. days from now) still gets a fresh notification.
+fn report_authentication_failure(auth_notified: &mut bool) {
+    if *auth_notified {
+        return;
+    }
+    log::error!(
+        "Proton Drive session missing or expired — run `proton-drive auth login`, then Proton \
+         Drive sync will resume automatically (no need to restart this service)"
+    );
+    notification::auth_required();
+    *auth_notified = true;
+}
 
 fn main() {
     env_logger::init();
@@ -41,14 +59,19 @@ fn main() {
     };
 
     let runner = RealCommandRunner;
+    let mut auth_notified = false;
 
     log::info!(
         "reconciling {} -> {}",
         config.local_path.display(),
         config.remote_path
     );
-    if let Err(err) = sync::reconcile(&runner, &journal, &config) {
-        log::error!("initial reconcile failed: {err}");
+    match sync::reconcile(&runner, &journal, &config) {
+        Ok(()) => auth_notified = false,
+        Err(err) if err.is_authentication_error() => {
+            report_authentication_failure(&mut auth_notified)
+        }
+        Err(err) => log::error!("initial reconcile failed: {err}"),
     }
 
     let (_watcher, events) = match watcher::watch(&config.local_path) {
@@ -62,11 +85,19 @@ fn main() {
     log::info!("watching {} for changes", config.local_path.display());
     for paths in events {
         for path in paths {
-            if let Err(err) = sync::upload_if_needed(&runner, &journal, &config, &path) {
-                log::warn!(
+            match sync::upload_if_needed(&runner, &journal, &config, &path) {
+                Ok(()) => auth_notified = false,
+                Err(err) if err.is_authentication_error() => {
+                    report_authentication_failure(&mut auth_notified);
+                    // The rest of this batch would fail identically — skip
+                    // straight to the next debounced batch instead of
+                    // burning a CLI call per remaining path.
+                    break;
+                }
+                Err(err) => log::warn!(
                     "failed to sync {}: {err} (will retry next cycle)",
                     path.display()
-                );
+                ),
             }
         }
     }

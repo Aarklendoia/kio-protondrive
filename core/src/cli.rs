@@ -32,6 +32,8 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 pub enum DriveError {
     #[error("path not found: {0}")]
     NotFound(String),
+    #[error("not logged in to Proton Drive — run \"proton-drive auth login\"")]
+    NotAuthenticated,
     #[error("proton-drive reported an error: {0}")]
     Cli(String),
     #[error("could not parse proton-drive output: {0}")]
@@ -116,7 +118,14 @@ fn ensure_success(path: &str, out: &CommandOutput) -> Result<(), DriveError> {
     }
     let message = out.stderr.trim();
     let lower = message.to_lowercase();
-    if lower.contains("not supported") || lower.contains("not found") {
+    if lower.contains("login")
+        || lower.contains("log in")
+        || lower.contains("not authenticated")
+        || lower.contains("invalid access token")
+        || lower.contains("invalid refresh token")
+    {
+        Err(DriveError::NotAuthenticated)
+    } else if lower.contains("not supported") || lower.contains("not found") {
         Err(DriveError::NotFound(path.to_string()))
     } else if message.is_empty() {
         Err(DriveError::Cli(format!(
@@ -381,12 +390,29 @@ mod tests {
 
     #[test]
     fn list_dir_maps_unrecognized_cli_failure_to_generic_cli_error() {
-        let runner = MockRunner::failure("session expired, please log in again");
+        let runner = MockRunner::failure("internal server error, please retry");
         let err = list_dir(&runner, "/my-files").unwrap_err();
         assert_eq!(
             err,
-            DriveError::Cli("session expired, please log in again".to_string())
+            DriveError::Cli("internal server error, please retry".to_string())
         );
+    }
+
+    /// Exact message confirmed against the real CLI (`proton-drive filesystem
+    /// list -j /` with no session): stderr "You need to login first", exit
+    /// code 1, empty stdout.
+    #[test]
+    fn list_dir_maps_login_required_to_not_authenticated() {
+        let runner = MockRunner::failure("You need to login first");
+        let err = list_dir(&runner, "/my-files").unwrap_err();
+        assert_eq!(err, DriveError::NotAuthenticated);
+    }
+
+    #[test]
+    fn list_dir_maps_session_expiry_to_not_authenticated() {
+        let runner = MockRunner::failure("session expired, please log in again");
+        let err = list_dir(&runner, "/my-files").unwrap_err();
+        assert_eq!(err, DriveError::NotAuthenticated);
     }
 
     #[test]

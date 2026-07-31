@@ -142,6 +142,14 @@ Requires the official [Proton Drive CLI](https://proton.me/drive/download)
 to already be installed and logged in (`proton-drive auth login`) — this
 package only adds the Dolphin/KIO integration on top of it.
 
+Proton doesn't provide an apt/deb repository or any auto-update mechanism
+for that CLI — it's a manually-downloaded binary, so `apt upgrade` won't
+update it. Periodically re-check the
+[download page](https://proton.me/drive/download) for new versions
+yourself; see [#26](https://github.com/Aarklendoia/kio-protondrive/issues/26)
+for the tracking issue on whether this project should do more here (e.g.
+version-checking) than just this note.
+
 **Ubuntu 26.04 LTS (resolute)**, via the Launchpad PPA:
 
 ```bash

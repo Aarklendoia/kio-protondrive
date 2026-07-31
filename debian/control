@@ -41,6 +41,8 @@ Section: net
 Depends:
   ${shlibs:Depends},
   ${misc:Depends}
+Recommends:
+  libnotify-bin
 Description: Background upload sync daemon for Proton Drive
  A systemd --user service that watches a configured local folder and
  uploads new/changed files to Proton Drive automatically, via the same
