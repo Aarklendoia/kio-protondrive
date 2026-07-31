@@ -5,12 +5,27 @@
 # fetches must already be sitting in the working directory by the time
 # dpkg-source tars it up.
 #
-# It does two things CMake/Corrosion would otherwise do over the network:
-#   1. cargo vendor: pulls every crates.io dependency of core/ into vendor/,
-#      and writes .cargo/config.toml to point cargo at it instead of the
-#      registry. debian/rules sets CARGO_NET_OFFLINE=true when vendor/
-#      exists, which reaches Corrosion's internal `cargo build` call.
-#   2. Vendors a copy of Corrosion's own CMake integration into
+# It does three things CMake/Corrosion would otherwise do over the network:
+#   1. cargo vendor: pulls every crates.io dependency of the workspace
+#      (core/, daemon/) into vendor/, and writes .cargo/config.toml to point
+#      cargo at it instead of the registry. debian/rules sets
+#      CARGO_NET_OFFLINE=true when vendor/ exists, which reaches Corrosion's
+#      internal `cargo build` call.
+#   2. Also vendors cxxbridge-cmd — the cxxbridge CLI tool Corrosion builds
+#      for itself via a separate `cargo install cxxbridge-cmd --version
+#      <matching the workspace's resolved cxx crate version> --locked` (see
+#      third_party/corrosion/cmake/Corrosion.cmake's
+#      _corrosion_check_cxx_version/cxxbridge_v<version> target). That's a
+#      completely independent resolve from the workspace's own
+#      dependencies — vendoring core/'s and daemon's deps alone does NOT
+#      cover it, which is why a real (offline) Launchpad build failed with
+#      "failed to select a version for the requirement `clap = ...`
+#      (locked to ...)" even though the workspace itself vendored fine (see
+#      https://launchpad.net/~aarklendoia-edtech/+archive/ubuntu/kio-protondrive/+build/33437572).
+#      Fixed by vendoring a throwaway scratch crate that depends on
+#      cxxbridge-cmd at the exact version Corrosion will request, merged
+#      into the same vendor/ directory via `cargo vendor --sync`.
+#   3. Vendors a copy of Corrosion's own CMake integration into
 #      third_party/corrosion/ — CMakeLists.txt falls back to
 #      add_subdirectory(third_party/corrosion) instead of FetchContent-ing
 #      it from GitHub when that directory is present.
@@ -57,11 +72,51 @@ else
     echo "    RUST_TOOLCHAIN=<version> explicitly if it differs." >&2
   fi
   rustup toolchain install "$RUST_TOOLCHAIN" > /dev/null 2>&1 || true
-  rm -rf vendor .cargo
-  cargo "+$RUST_TOOLCHAIN" vendor vendor > /tmp/cargo-vendor-config.toml.tmp
+  rm -rf vendor .cargo Cargo.lock
+
+  echo "==> Resolving the workspace to find the exact cxx version Corrosion will need"
+  cargo "+$RUST_TOOLCHAIN" generate-lockfile
+  CXX_VERSION="$(awk -F'"' '/^name = "cxx"$/{f=1} f && /^version = /{print $2; exit}' Cargo.lock)"
+  if [ -z "$CXX_VERSION" ]; then
+    echo "    Could not find cxx's resolved version in Cargo.lock" >&2
+    exit 1
+  fi
+  echo "    cxx resolved to $CXX_VERSION — Corrosion will \`cargo install cxxbridge-cmd" \
+       "--version $CXX_VERSION --locked\` to match, which vendoring core/'s and daemon's" \
+       "own dependencies doesn't cover (it's a separate resolve, not a workspace dependency)"
+
+  # `--locked` makes that `cargo install` use cxxbridge-cmd's OWN published
+  # Cargo.lock verbatim rather than re-resolving — so vendoring must supply
+  # exactly those pinned versions too, not just anything matching the same
+  # semver ranges. A synthetic crate depending on `cxxbridge-cmd = "=$CXX_VERSION"`
+  # and letting Cargo re-resolve is NOT equivalent: it can legitimately land
+  # on a newer patch release within range (e.g. clap 4.6.4) than what
+  # cxxbridge-cmd's own bundled lock actually pins (e.g. clap 4.6.2),
+  # which then fails offline with "failed to select a version for the
+  # requirement `clap = ...` (locked to 4.6.2), candidate versions found
+  # which didn't match: 4.6.4" — hit for real trying to fix this the naive
+  # way. So: fetch the real published crate and vendor from its own
+  # Cargo.toml + Cargo.lock as-is.
+  SCRATCH_DIR="$(mktemp -d)"
+  CRATE_UA="kio-protondrive-packaging (https://github.com/Aarklendoia/kio-protondrive)"
+  curl -sL -A "$CRATE_UA" \
+    "https://crates.io/api/v1/crates/cxxbridge-cmd/$CXX_VERSION/download" \
+    -o "$SCRATCH_DIR/cxxbridge-cmd.crate"
+  tar -xzf "$SCRATCH_DIR/cxxbridge-cmd.crate" -C "$SCRATCH_DIR"
+  CRATE_SRC_DIR="$SCRATCH_DIR/cxxbridge-cmd-$CXX_VERSION"
+  if [ ! -f "$CRATE_SRC_DIR/Cargo.lock" ]; then
+    echo "    cxxbridge-cmd $CXX_VERSION's published package doesn't bundle a" >&2
+    echo "    Cargo.lock — cannot vendor matching --locked's exact pins. Check" >&2
+    echo "    https://crates.io/crates/cxxbridge-cmd/$CXX_VERSION" >&2
+    exit 1
+  fi
+
+  echo "==> Vendoring the workspace + cxxbridge-cmd =$CXX_VERSION (its own pinned deps) into the same vendor/"
+  cargo "+$RUST_TOOLCHAIN" vendor vendor --sync "$CRATE_SRC_DIR/Cargo.toml" > /tmp/cargo-vendor-config.toml.tmp
   mkdir -p .cargo
   cat /tmp/cargo-vendor-config.toml.tmp > .cargo/config.toml
   rm -f /tmp/cargo-vendor-config.toml.tmp
+  rm -rf "$SCRATCH_DIR"
   echo "    $(du -sh vendor | cut -f1) in vendor/, $(find vendor -name '*.orig' | wc -l) .orig files"
 
   echo "==> Disabling cargo's per-file checksum verification for vendored crates"
