@@ -7,7 +7,11 @@
 //! Failures are logged and skipped rather than propagated: the journal row
 //! for a failed file is left untouched, so it's naturally retried on the
 //! next reconcile pass or the next time it's touched — no separate retry/
-//! backoff queue, per docs/DESIGN.md.
+//! backoff queue, per docs/DESIGN.md. The one exception is a missing/expired
+//! session (`DriveError::NotAuthenticated`): every remaining file would fail
+//! identically, so [`reconcile`] propagates that instead of logging it once
+//! per file — `main.rs` is responsible for reacting to it (see
+//! `DaemonError::is_authentication_error`).
 
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -136,6 +140,13 @@ fn walk_and_upload(
             walk_and_upload(runner, journal, config, &path)?;
         } else if file_type.is_file() {
             if let Err(err) = upload_if_needed(runner, journal, config, &path) {
+                // Every remaining file would fail identically until the user
+                // re-authenticates — stop the whole walk immediately instead
+                // of burning a CLI call (and a log line) per file. Propagates
+                // up through the recursive calls above via `?`.
+                if err.is_authentication_error() {
+                    return Err(err);
+                }
                 log::warn!(
                     "failed to sync {}: {err} (will retry next cycle)",
                     path.display()
@@ -312,5 +323,24 @@ mod tests {
         assert!(!journal
             .needs_upload(&file, mtime, metadata.len() as i64)
             .unwrap());
+    }
+
+    #[test]
+    fn reconcile_stops_the_whole_walk_on_the_first_authentication_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.pdf"), b"hello").unwrap();
+        std::fs::write(dir.path().join("b.pdf"), b"world").unwrap();
+
+        let db_path = dir.path().join("journal.sqlite3");
+        let journal = Journal::open(&db_path).unwrap();
+        let cfg = config(dir.path());
+
+        let runner = ScriptedRunner::new(vec![failure("You need to login first")]);
+        let err = reconcile(&runner, &journal, &cfg).unwrap_err();
+        assert!(err.is_authentication_error());
+        // Only the first file's ensure_remote_dir_chain "info" call
+        // happened — the walk stopped immediately rather than also trying
+        // the second file, which would fail identically.
+        assert_eq!(runner.calls.borrow().len(), 1);
     }
 }

@@ -26,16 +26,22 @@ namespace
 // Everything the Rust side raises for an Err(String) arrives here as a
 // thrown rust::Error (that's how cxx surfaces a bridged Result::Err on the
 // C++ side) — turned into the KIO error the caller actually sees.
-// DriveError::NotFound/::Timeout stringify (via thiserror, see
-// core/src/cli.rs) as "path not found: ..."/"proton-drive did not respond
-// within ...", the only two cases worth a specific KIO error code; everything
-// else becomes a worker-defined error carrying the raw message so the user
-// still sees *why* it failed.
+// DriveError::NotFound/::NotAuthenticated/::Timeout stringify (via thiserror,
+// see core/src/cli.rs) as "path not found: ...", "not logged in to Proton
+// Drive — ...", "proton-drive did not respond within ..." — the only cases
+// worth a specific KIO error code; everything else becomes a worker-defined
+// error carrying the raw message so the user still sees *why* it failed.
 KIO::WorkerResult resultFromRustError(const rust::Error &error)
 {
     const QString message = QString::fromUtf8(error.what());
     if (message.startsWith(QLatin1String("path not found:"))) {
         return KIO::WorkerResult::fail(KIO::ERR_DOES_NOT_EXIST, message);
+    }
+    if (message.startsWith(QLatin1String("not logged in to Proton Drive"))) {
+        // KIO's own "could not log in" dialog — actionable (the message
+        // tells the user to run `proton-drive auth login`), unlike the
+        // generic ERR_WORKER_DEFINED fallback below.
+        return KIO::WorkerResult::fail(KIO::ERR_CANNOT_LOGIN, message);
     }
     if (message.startsWith(QLatin1String("proton-drive did not respond within"))) {
         return KIO::WorkerResult::fail(KIO::ERR_SERVER_TIMEOUT, message);
