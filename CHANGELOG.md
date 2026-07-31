@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.2.0...v0.3.0) (2026-07-31)
+
+
+### Features
+
+* **daemon:** add Phase 1 sync daemon (one-way local -&gt; Drive upload) ([5162812](https://github.com/Aarklendoia/kio-protondrive/commit/5162812af557f842098ae1dc6deb98a957753b17))
+* **daemon:** Phase 1 sync daemon — one-way local -&gt; Drive upload ([4ea34ad](https://github.com/Aarklendoia/kio-protondrive/commit/4ea34ad5bb8252a9783274481204e6edd0ec076c))
+* surface missing/expired Proton Drive authentication actionably ([2632c57](https://github.com/Aarklendoia/kio-protondrive/commit/2632c576faee9ad931b4e6dccad9138e8dc67833))
+* surface missing/expired Proton Drive authentication actionably ([aae13ae](https://github.com/Aarklendoia/kio-protondrive/commit/aae13ae267cca504b5216076f9bab7ee001978b0))
+
+
+### Bug Fixes
+
+* **daemon:** default to a non-keyring credentials store for the CLI ([506636d](https://github.com/Aarklendoia/kio-protondrive/commit/506636d7936b19f71f74213942a4169353bc64a6))
+* **packaging:** vendor cxxbridge-cmd's own deps for real offline builds ([0aa3e3e](https://github.com/Aarklendoia/kio-protondrive/commit/0aa3e3e0786c7b12371d073bd6f37f053095ac0c))
+* **packaging:** vendor cxxbridge-cmd's own deps for real offline builds ([107deea](https://github.com/Aarklendoia/kio-protondrive/commit/107deea9e4ba62fe395355b8543eb4f4d9541806))
+* **worker:** translate the breadcrumb label too, not just the icon grid ([4f8babb](https://github.com/Aarklendoia/kio-protondrive/commit/4f8babb91224ec647d0715a89b658e3c105ab672))
+* **worker:** translate the breadcrumb label too, not just the icon grid ([f394bf6](https://github.com/Aarklendoia/kio-protondrive/commit/f394bf6ffc46cdaa6804977641ad055b99de14da))
+
 ## [0.2.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.1.0...v0.2.0) (2026-07-24)
 
 
