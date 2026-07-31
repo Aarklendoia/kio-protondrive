@@ -11,8 +11,12 @@ Cargo.lock
 /.cargo/
 /third_party/corrosion/
 
-# CMake build directory
+# CMake build directories: /build/ for a manual `cmake -B build`, obj-*/ for
+# debhelper's cmake buildsystem (dh_auto_configure names it
+# obj-$(DEB_HOST_GNU_TYPE), e.g. obj-x86_64-linux-gnu, when driven by
+# dpkg-buildpackage).
 /build/
+/obj-*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -37,6 +41,8 @@ compile_commands.json
 debian/tmp/
 debian/.debhelper/
 debian/kio-protondrive/
+debian/kio-protondrive-sync-daemon/
+debian/kio-protondrive-full/
 debian/*.substvars
 debian/*.debhelper
 debian/files
