@@ -70,3 +70,9 @@ msgstr "与我共享的照片"
 #: worker/protondriveworker.cpp:0
 msgid "Photos trash"
 msgstr "照片回收站"
+
+#. Shown as a KIO "could not log in" error when the proton-drive CLI
+#. reports no active session.
+#: worker/protondriveworker.cpp:0
+msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
+msgstr "尚未登录 Proton Drive。请在终端中运行“proton-drive auth login”,然后重试。"

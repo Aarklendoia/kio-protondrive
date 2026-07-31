@@ -70,3 +70,9 @@ msgstr "الصور التي شوركت معي"
 #: worker/protondriveworker.cpp:0
 msgid "Photos trash"
 msgstr "سلة مهملات الصور"
+
+#. Shown as a KIO "could not log in" error when the proton-drive CLI
+#. reports no active session.
+#: worker/protondriveworker.cpp:0
+msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
+msgstr "لم يتم تسجيل الدخول إلى Proton Drive. شغّل «proton-drive auth login» في الطرفية، ثم أعد المحاولة."

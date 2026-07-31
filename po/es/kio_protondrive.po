@@ -70,3 +70,9 @@ msgstr "Fotos compartidas conmigo"
 #: worker/protondriveworker.cpp:0
 msgid "Photos trash"
 msgstr "Papelera de fotos"
+
+#. Shown as a KIO "could not log in" error when the proton-drive CLI
+#. reports no active session.
+#: worker/protondriveworker.cpp:0
+msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
+msgstr "No has iniciado sesión en Proton Drive. Ejecuta «proton-drive auth login» en una terminal y vuelve a intentarlo."
