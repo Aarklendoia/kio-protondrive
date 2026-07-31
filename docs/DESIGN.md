@@ -30,10 +30,15 @@ That's a deliberate boundary, not a missing feature:
 That stateful, background half of the picture is the planned **sync
 daemon** — see below.
 
-## Sync daemon (planned, not yet implemented)
+## Sync daemon
 
 Tracked in [#12](https://github.com/Aarklendoia/kio-protondrive/issues/12).
-Design decisions made so far:
+Being built in phases; **Phase 1** (`daemon/`, package
+`kio-protondrive-sync-daemon`) implements one-way local → Drive upload with
+`inotify` change detection and a SQLite journal used for upload idempotency
+only. Everything else below — bi-directional sync, conflict resolution,
+Drive → local download — is still design-only, not yet implemented. Design
+decisions made so far:
 
 - **Direction: bi-directional.** Not just local → Drive; changes on either
   side propagate to the other. This is what makes persistent local state
@@ -76,4 +81,5 @@ Design decisions made so far:
   separate backoff/retry-queue mechanism needed on top of the sync
   journal that already exists.
 
-None of this is implemented yet. See #12 for the tracking issue.
+Bi-directional sync, conflict handling, and Drive → local download are not
+implemented yet. See #12 for the tracking issue.

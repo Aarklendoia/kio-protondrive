@@ -36,7 +36,7 @@ jobs:
           components: clippy
 
       - name: Run clippy
-        run: cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   security:
     runs-on: ubuntu-latest
@@ -85,8 +85,12 @@ jobs:
       - name: Generate coverage report
         # Visibility only, not a merge gate: no --fail-under-* threshold.
         run: |
-          cargo llvm-cov --manifest-path core/Cargo.toml --profile ci --html --output-dir coverage-html
-          cargo llvm-cov report --manifest-path core/Cargo.toml --profile ci --summary-only
+          cargo llvm-cov --workspace --profile ci --html --output-dir coverage-html
+          # Unlike the run above, `report` reads already-generated coverage
+          # data rather than selecting packages to build/test — it doesn't
+          # accept --workspace ("--workspace is specific to [test,nextest,
+          # ...] and not supported for subcommand 'report'").
+          cargo llvm-cov report --profile ci --summary-only
 
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v7
