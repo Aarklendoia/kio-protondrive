@@ -40,8 +40,14 @@ KIO::WorkerResult resultFromRustError(const rust::Error &error)
     if (message.startsWith(QLatin1String("not logged in to Proton Drive"))) {
         // KIO's own "could not log in" dialog — actionable (the message
         // tells the user to run `proton-drive auth login`), unlike the
-        // generic ERR_WORKER_DEFINED fallback below.
-        return KIO::WorkerResult::fail(KIO::ERR_CANNOT_LOGIN, message);
+        // generic ERR_WORKER_DEFINED fallback below. Translated rather than
+        // passed through as-is (unlike the other branches here): this one is
+        // a fixed, user-facing instruction, not data-carrying like a path or
+        // a raw CLI message, so it's worth localizing like the section names
+        // below.
+        return KIO::WorkerResult::fail(
+            KIO::ERR_CANNOT_LOGIN,
+            i18nd("kio_protondrive", "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."));
     }
     if (message.startsWith(QLatin1String("proton-drive did not respond within"))) {
         return KIO::WorkerResult::fail(KIO::ERR_SERVER_TIMEOUT, message);

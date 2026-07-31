@@ -70,3 +70,9 @@ msgstr "Фото, которыми поделились со мной"
 #: worker/protondriveworker.cpp:0
 msgid "Photos trash"
 msgstr "Корзина фото"
+
+#. Shown as a KIO "could not log in" error when the proton-drive CLI
+#. reports no active session.
+#: worker/protondriveworker.cpp:0
+msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
+msgstr "Вход в Proton Drive не выполнен. Выполните «proton-drive auth login» в терминале, затем повторите попытку."

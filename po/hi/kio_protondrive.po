@@ -70,3 +70,9 @@ msgstr "मेरे साथ साझा की गई तस्वीरे�
 #: worker/protondriveworker.cpp:0
 msgid "Photos trash"
 msgstr "तस्वीरों का ट्रैश"
+
+#. Shown as a KIO "could not log in" error when the proton-drive CLI
+#. reports no active session.
+#: worker/protondriveworker.cpp:0
+msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
+msgstr "Proton Drive में लॉग इन नहीं है। टर्मिनल में \"proton-drive auth login\" चलाएँ, फिर पुनः प्रयास करें।"
