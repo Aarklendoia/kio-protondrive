@@ -37,6 +37,8 @@ compile_commands.json
 debian/tmp/
 debian/.debhelper/
 debian/kio-protondrive/
+debian/kio-protondrive-sync-daemon/
+debian/kio-protondrive-full/
 debian/*.substvars
 debian/*.debhelper
 debian/files
