@@ -66,12 +66,20 @@ Launchpad identity.
 
 ## 2. Vendoring (required before every PPA upload)
 
-Launchpad's builders can't reach crates.io or GitHub during a build. Two
+Launchpad's builders can't reach crates.io or GitHub during a build. Three
 things in this repo assume network access unmodified:
 
 1. **Cargo dependencies** — Corrosion's internal `cargo build` (triggered by
    `cmake --build` during `dh_auto_build`) fetches crates from crates.io.
-2. **Corrosion itself** — `CMakeLists.txt` normally `FetchContent`-clones
+2. **cxxbridge-cmd** — Corrosion separately `cargo install`s this CLI tool
+   for itself (to match the workspace's resolved `cxx` version), entirely
+   independent of the workspace's own dependency resolution — vendoring (1)
+   alone does not cover it. Missing this caused a real PPA build to fail
+   offline with "failed to select a version for the requirement `clap =
+   ...`"; see the script's comments for how it's vendored (from
+   cxxbridge-cmd's own published Cargo.lock, not a freshly-resolved one —
+   the two can legitimately disagree on which patch version to use).
+3. **Corrosion itself** — `CMakeLists.txt` normally `FetchContent`-clones
    `corrosion-rs/corrosion` from GitHub at configure time.
 
 Both work fine on GitHub Actions and locally. The fix, needed only for a PPA
