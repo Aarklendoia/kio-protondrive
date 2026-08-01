@@ -52,6 +52,9 @@ KIO::WorkerResult resultFromRustError(const rust::Error &error)
     if (message.startsWith(QLatin1String("proton-drive did not respond within"))) {
         return KIO::WorkerResult::fail(KIO::ERR_SERVER_TIMEOUT, message);
     }
+    // "a file or folder with this name already exists" isn't handled here:
+    // the only caller that can produce it is mkdir(), which treats it as
+    // success rather than an error at all — see its own comment for why.
     return KIO::WorkerResult::fail(KIO::ERR_WORKER_DEFINED, message);
 }
 
@@ -293,6 +296,18 @@ KIO::WorkerResult ProtonDriveWorker::mkdir(const QUrl &url, int /*permissions*/)
         make_dir(parentPath.toStdString(), name.toStdString());
         return KIO::WorkerResult::pass();
     } catch (const rust::Error &error) {
+        const QString message = QString::fromUtf8(error.what());
+        if (message.startsWith(QLatin1String("a file or folder with this name already exists"))) {
+            // Tried mapping this to ERR_DIR_ALREADY_EXIST and letting
+            // KIO::CopyJob's own merge handling take it from there — verified
+            // live that it doesn't: kioclient still surfaced a hard "a folder
+            // named ... already exists" dialog for a plain folder copy into
+            // an existing destination. Treating "already there" as success
+            // instead (this call's whole point was making sure the folder
+            // exists, which it does) is what actually makes the copy proceed
+            // into the existing folder, confirmed live.
+            return KIO::WorkerResult::pass();
+        }
         return resultFromRustError(error);
     }
 }
