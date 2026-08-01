@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.3.0...v0.3.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* **core,worker:** escape upload glob metacharacters + treat already-existing folder as success ([b86e5bc](https://github.com/Aarklendoia/kio-protondrive/commit/b86e5bc2559a25c5d9d32cf5124ce018ff8c9122))
+* **core,worker:** treat an already-existing folder as success, not a hard failure ([5596359](https://github.com/Aarklendoia/kio-protondrive/commit/55963590c5db8f4b478681d0aef6936c16cbaec4))
+* **core:** escape glob metacharacters in upload's local path ([dc1c515](https://github.com/Aarklendoia/kio-protondrive/commit/dc1c51556996952d09cf2ae0ded9d7cb5bbf91dd))
+* **daemon:** stop the systemd unit retrying forever with no config ([d35a4d4](https://github.com/Aarklendoia/kio-protondrive/commit/d35a4d4f61155ccb013425d6c5d4623370cc090f))
+* **daemon:** stop the systemd unit retrying forever with no config ([013488f](https://github.com/Aarklendoia/kio-protondrive/commit/013488f851c342ab9001de1f0284a291ff12fff8))
+* **worker:** call dataReq() before readData() in put() ([f341756](https://github.com/Aarklendoia/kio-protondrive/commit/f341756f4996705f8a4a03f6117a5edac6fc1289))
+* **worker:** call dataReq() before readData() in put() ([b342eab](https://github.com/Aarklendoia/kio-protondrive/commit/b342eab0416e51a1d8ea11b26abdc8941b3c0865))
+
 ## [0.3.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.2.0...v0.3.0) (2026-07-31)
 
 
