@@ -84,6 +84,20 @@ impl Journal {
         Ok(())
     }
 
+    /// Rekeys a record from `old_path` to `new_path` — used when a local
+    /// rename/move is propagated to Drive instead of re-uploaded, since the
+    /// content (and so the recorded mtime/size) didn't change, just the
+    /// path. A no-op if `old_path` has no record (nothing to rekey).
+    pub fn rename(&self, old_path: &Path, new_path: &Path) -> Result<(), DaemonError> {
+        let old_key = old_path.to_string_lossy();
+        let new_key = new_path.to_string_lossy();
+        self.conn.execute(
+            "UPDATE files SET local_path = ?1 WHERE local_path = ?2",
+            params![new_key, old_key],
+        )?;
+        Ok(())
+    }
+
     /// Whether `local_path` needs uploading, given its current mtime/size —
     /// true when we have no record, or the file changed since we last synced
     /// it.
@@ -145,6 +159,32 @@ mod tests {
         journal.mark_synced(path, 100, 200).unwrap();
         assert!(journal.needs_upload(path, 101, 200).unwrap());
         assert!(journal.needs_upload(path, 100, 201).unwrap());
+    }
+
+    #[test]
+    fn rename_moves_the_record_to_the_new_key() {
+        let (_dir, journal) = journal();
+        let old_path = Path::new("/local/old-name.pdf");
+        let new_path = Path::new("/local/new-name.pdf");
+        journal.mark_synced(old_path, 100, 200).unwrap();
+
+        journal.rename(old_path, new_path).unwrap();
+
+        assert!(journal.get(old_path).unwrap().is_none());
+        let record = journal.get(new_path).unwrap().unwrap();
+        assert_eq!(record.local_mtime, 100);
+        assert_eq!(record.local_size, 200);
+    }
+
+    #[test]
+    fn rename_is_a_noop_when_the_old_path_has_no_record() {
+        let (_dir, journal) = journal();
+        let old_path = Path::new("/local/old-name.pdf");
+        let new_path = Path::new("/local/new-name.pdf");
+
+        journal.rename(old_path, new_path).unwrap();
+
+        assert!(journal.get(new_path).unwrap().is_none());
     }
 
     #[test]
