@@ -2,9 +2,11 @@
 //!
 //! Watches a single configured local folder (see [`config`]) and uploads
 //! new/changed files, using a SQLite journal (see [`journal`]) purely to
-//! avoid re-uploading unchanged files. Drive -> local download, local-delete
-//! propagation, and conflict resolution are later phases — see
-//! docs/DESIGN.md.
+//! avoid re-uploading unchanged files. Renames/moves within the watched
+//! folder are propagated as renames/moves on Drive rather than uploaded as
+//! new files (see [`sync::handle_rename`]). Drive -> local download,
+//! local-delete propagation, and conflict resolution are later phases —
+//! see docs/DESIGN.md.
 
 mod config;
 mod error;
@@ -17,6 +19,7 @@ use protondrive_core::cli::RealCommandRunner;
 
 use config::Config;
 use journal::Journal;
+use watcher::WatchEvent;
 
 /// Logs one clear, actionable line and fires a desktop notification — but
 /// only on the falling edge (the first failure after things were working),
@@ -83,21 +86,32 @@ fn main() {
     };
 
     log::info!("watching {} for changes", config.local_path.display());
-    for paths in events {
-        for path in paths {
-            match sync::upload_if_needed(&runner, &journal, &config, &path) {
+    for batch in events {
+        for event in batch {
+            let label = match &event {
+                WatchEvent::Changed(path) => path.display().to_string(),
+                WatchEvent::Renamed { from, to } => {
+                    format!("{} -> {}", from.display(), to.display())
+                }
+            };
+            let result = match &event {
+                WatchEvent::Changed(path) => {
+                    sync::upload_if_needed(&runner, &journal, &config, path)
+                }
+                WatchEvent::Renamed { from, to } => {
+                    sync::handle_rename(&runner, &journal, &config, from, to)
+                }
+            };
+            match result {
                 Ok(()) => auth_notified = false,
                 Err(err) if err.is_authentication_error() => {
                     report_authentication_failure(&mut auth_notified);
                     // The rest of this batch would fail identically — skip
                     // straight to the next debounced batch instead of
-                    // burning a CLI call per remaining path.
+                    // burning a CLI call per remaining event.
                     break;
                 }
-                Err(err) => log::warn!(
-                    "failed to sync {}: {err} (will retry next cycle)",
-                    path.display()
-                ),
+                Err(err) => log::warn!("failed to sync {label}: {err} (will retry next cycle)"),
             }
         }
     }

@@ -72,6 +72,74 @@ fn remote_parent_for(config: &Config, local_file: &Path) -> String {
     }
 }
 
+/// The full remote path `local_file` maps to: [`remote_parent_for`] plus its
+/// own filename.
+fn remote_path_for(config: &Config, local_file: &Path) -> String {
+    let parent = remote_parent_for(config, local_file);
+    let name = local_file.file_name().unwrap_or_default().to_string_lossy();
+    format!("{parent}/{name}")
+}
+
+/// Propagates a local rename/move (`from` -> `to`, both inside the watched
+/// tree) to Drive, instead of letting it upload as a brand new file and
+/// leaving a stale duplicate at the old remote path.
+///
+/// If `from` has no journal record, nothing was ever successfully uploaded
+/// under that path, so there's no remote counterpart to rename — this is
+/// just a fresh upload of `to`. Otherwise, the remote file is renamed
+/// in place (same directory) or moved (different directory) or both, in
+/// that order — `proton-drive`'s `move` doesn't also take a new name.
+///
+/// If the remote rename/move fails, falls back to a plain upload of `to`
+/// rather than propagating the error: a future reconcile walk only ever
+/// sees `to` on disk (never `from` again, since it's gone locally), so
+/// simply failing here would silently drop the file from sync forever
+/// instead of just leaving a stale duplicate at the old remote path.
+pub fn handle_rename(
+    runner: &dyn CommandRunner,
+    journal: &Journal,
+    config: &Config,
+    from: &Path,
+    to: &Path,
+) -> Result<(), DaemonError> {
+    if journal.get(from)?.is_none() {
+        return upload_if_needed(runner, journal, config, to);
+    }
+
+    let remote_result = (|| -> Result<(), DriveError> {
+        let old_remote_parent = remote_parent_for(config, from);
+        let new_remote_parent = remote_parent_for(config, to);
+        let old_remote_path = remote_path_for(config, from);
+        let new_name = to.file_name().unwrap_or_default().to_string_lossy();
+
+        ensure_remote_dir_chain(runner, &new_remote_parent)?;
+        if old_remote_parent == new_remote_parent {
+            cli::rename_path(runner, &old_remote_path, &new_name)?;
+        } else {
+            cli::move_path(runner, &old_remote_path, &new_remote_parent)?;
+            let old_name = from.file_name().unwrap_or_default().to_string_lossy();
+            if old_name != new_name {
+                let moved_path = format!("{new_remote_parent}/{old_name}");
+                cli::rename_path(runner, &moved_path, &new_name)?;
+            }
+        }
+        Ok(())
+    })();
+
+    match remote_result {
+        Ok(()) => journal.rename(from, to),
+        Err(err) => {
+            log::warn!(
+                "failed to rename/move {} -> {} on Drive ({err}), falling back to a fresh \
+                 upload (the old remote copy may now be a stale duplicate)",
+                from.display(),
+                to.display()
+            );
+            upload_if_needed(runner, journal, config, to)
+        }
+    }
+}
+
 /// Uploads `local_file` if its mtime/size changed since the last successful
 /// upload (per the journal), skipping it otherwise. Not-a-file paths (e.g. a
 /// directory create event) are silently ignored.
@@ -336,6 +404,193 @@ mod tests {
             .as_secs() as i64;
         assert!(!journal
             .needs_upload(&file, mtime, metadata.len() as i64)
+            .unwrap());
+    }
+
+    /// A single-node JSON response shaped like `rename_path`'s real output
+    /// (confirmed live — see core/src/cli.rs's `rename_path`).
+    const RENAMED_NODE_JSON: &str = r#"{
+        "uid":"uid-1",
+        "name":{"ok":true,"value":"new-name.pdf"},
+        "type":"file",
+        "isShared":false,
+        "creationTime":"2026-01-01T00:00:00.000Z",
+        "modificationTime":"2026-01-01T00:00:00.000Z"
+    }"#;
+
+    /// A `[{uid, ok}]` response shaped like `move_path`'s real output.
+    const MOVE_OK: &str = r#"[{"uid":"uid-1","ok":true}]"#;
+
+    fn seed_journal_record(journal: &Journal, path: &Path) {
+        journal.mark_synced(path, 100, 5).unwrap();
+    }
+
+    #[test]
+    fn handle_rename_renames_in_place_for_a_same_directory_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = Journal::open(&dir.path().join("journal.sqlite3")).unwrap();
+        let cfg = config(dir.path());
+        let from = dir.path().join("old-name.pdf");
+        let to = dir.path().join("new-name.pdf");
+        seed_journal_record(&journal, &from);
+
+        // ensure_remote_dir_chain's single "info" on /my-files/Backups
+        // (already exists), then the rename itself.
+        let runner = ScriptedRunner::new(vec![success(NODE_JSON), success(RENAMED_NODE_JSON)]);
+        handle_rename(&runner, &journal, &cfg, &from, &to).unwrap();
+
+        let calls = runner.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[1],
+            vec![
+                "filesystem",
+                "rename",
+                "-j",
+                "/my-files/Backups/old-name.pdf",
+                "new-name.pdf",
+            ]
+        );
+        assert!(journal.get(&from).unwrap().is_none());
+        assert!(journal.get(&to).unwrap().is_some());
+    }
+
+    #[test]
+    fn handle_rename_moves_for_a_cross_directory_move_with_the_same_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let journal = Journal::open(&dir.path().join("journal.sqlite3")).unwrap();
+        let cfg = config(dir.path());
+        let from = dir.path().join("report.pdf");
+        let to = dir.path().join("sub").join("report.pdf");
+        seed_journal_record(&journal, &from);
+
+        // ensure_remote_dir_chain walks two segments to reach
+        // /my-files/Backups/sub ("Backups", then "sub"), both already
+        // existing ("info" x2), then the move itself.
+        let runner = ScriptedRunner::new(vec![
+            success(NODE_JSON),
+            success(NODE_JSON),
+            success(MOVE_OK),
+        ]);
+        handle_rename(&runner, &journal, &cfg, &from, &to).unwrap();
+
+        let calls = runner.calls.borrow();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(
+            calls[2],
+            vec![
+                "filesystem",
+                "move",
+                "-j",
+                "/my-files/Backups/report.pdf",
+                "/my-files/Backups/sub",
+            ]
+        );
+        assert!(journal.get(&to).unwrap().is_some());
+    }
+
+    #[test]
+    fn handle_rename_moves_then_renames_for_a_cross_directory_move_with_a_new_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let journal = Journal::open(&dir.path().join("journal.sqlite3")).unwrap();
+        let cfg = config(dir.path());
+        let from = dir.path().join("old-name.pdf");
+        let to = dir.path().join("sub").join("new-name.pdf");
+        seed_journal_record(&journal, &from);
+
+        let runner = ScriptedRunner::new(vec![
+            success(NODE_JSON),
+            success(NODE_JSON),
+            success(MOVE_OK),
+            success(RENAMED_NODE_JSON),
+        ]);
+        handle_rename(&runner, &journal, &cfg, &from, &to).unwrap();
+
+        let calls = runner.calls.borrow();
+        assert_eq!(calls.len(), 4);
+        assert_eq!(
+            calls[2],
+            vec![
+                "filesystem",
+                "move",
+                "-j",
+                "/my-files/Backups/old-name.pdf",
+                "/my-files/Backups/sub",
+            ]
+        );
+        assert_eq!(
+            calls[3],
+            vec![
+                "filesystem",
+                "rename",
+                "-j",
+                "/my-files/Backups/sub/old-name.pdf",
+                "new-name.pdf",
+            ]
+        );
+    }
+
+    #[test]
+    fn handle_rename_falls_back_to_upload_when_the_old_path_has_no_journal_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let to = dir.path().join("new-name.pdf");
+        std::fs::write(&to, b"hello").unwrap();
+        let journal = Journal::open(&dir.path().join("journal.sqlite3")).unwrap();
+        let cfg = config(dir.path());
+        let from = dir.path().join("old-name.pdf"); // never uploaded
+
+        let runner = ScriptedRunner::new(vec![success(NODE_JSON), success(TRANSFER_OK)]);
+        handle_rename(&runner, &journal, &cfg, &from, &to).unwrap();
+
+        let calls = runner.calls.borrow();
+        assert_eq!(calls[1][0..3], ["filesystem", "upload", "-j"]);
+    }
+
+    #[test]
+    fn handle_rename_falls_back_to_upload_when_the_remote_rename_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let to = dir.path().join("new-name.pdf");
+        std::fs::write(&to, b"hello").unwrap();
+        let journal = Journal::open(&dir.path().join("journal.sqlite3")).unwrap();
+        let cfg = config(dir.path());
+        let from = dir.path().join("old-name.pdf");
+        seed_journal_record(&journal, &from);
+
+        // ensure_remote_dir_chain's "info" for the (failed) rename attempt,
+        // the failing rename itself, then the fallback upload's own
+        // ensure_remote_dir_chain "info" and the upload.
+        let runner = ScriptedRunner::new(vec![
+            success(NODE_JSON),
+            failure("internal server error, please retry"),
+            success(NODE_JSON),
+            success(TRANSFER_OK),
+        ]);
+        handle_rename(&runner, &journal, &cfg, &from, &to).unwrap();
+
+        let calls = runner.calls.borrow();
+        assert_eq!(
+            calls[1],
+            vec![
+                "filesystem",
+                "rename",
+                "-j",
+                "/my-files/Backups/old-name.pdf",
+                "new-name.pdf",
+            ]
+        );
+        assert_eq!(calls[3][0..3], ["filesystem", "upload", "-j"]);
+        // The fallback upload should have recorded `to` as synced.
+        let metadata = std::fs::metadata(&to).unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!(!journal
+            .needs_upload(&to, mtime, metadata.len() as i64)
             .unwrap());
     }
 

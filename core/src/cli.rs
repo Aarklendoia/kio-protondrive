@@ -267,6 +267,42 @@ pub fn trash_path(runner: &dyn CommandRunner, path: &str) -> Result<(), DriveErr
     Ok(())
 }
 
+/// Renames the node at `path` in place to `new_name`, without moving it to a
+/// different folder (that's [`move_path`]). Confirmed live that the response
+/// is a single node object, same shape as `create_folder`'s.
+pub fn rename_path(
+    runner: &dyn CommandRunner,
+    path: &str,
+    new_name: &str,
+) -> Result<NodeEntry, DriveError> {
+    let out = runner.run(
+        &["filesystem", "rename", "-j", path, new_name],
+        METADATA_TIMEOUT,
+    )?;
+    ensure_success(path, &out)?;
+    Ok(serde_json::from_str(&out.stdout)?)
+}
+
+/// Moves `source_path` into `target_parent_path`, keeping its name (use
+/// [`rename_path`] to also change the name). Confirmed live that the
+/// response is the same `[{uid, ok}, ...]` shape as `trash_path`'s.
+pub fn move_path(
+    runner: &dyn CommandRunner,
+    source_path: &str,
+    target_parent_path: &str,
+) -> Result<(), DriveError> {
+    let out = runner.run(
+        &["filesystem", "move", "-j", source_path, target_parent_path],
+        METADATA_TIMEOUT,
+    )?;
+    ensure_success(source_path, &out)?;
+    let outcomes: Vec<TrashOutcome> = serde_json::from_str(&out.stdout)?;
+    if let Some(failed) = outcomes.iter().find(|o| !o.ok) {
+        return Err(DriveError::Cli(format!("failed to move {}", failed.uid)));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -520,6 +556,54 @@ mod tests {
     fn trash_path_errors_when_any_outcome_failed() {
         let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
         let err = trash_path(&runner, "/my-files").unwrap_err();
+        assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn rename_path_parses_the_renamed_node() {
+        const RENAMED: &str = r#"{
+            "uid":"uid-file",
+            "name":{"ok":true,"value":"new-name.txt"},
+            "type":"file",
+            "isShared":false,
+            "creationTime":"2026-01-01T00:00:00.000Z",
+            "modificationTime":"2026-01-01T00:00:00.000Z"
+        }"#;
+        let runner = MockRunner::success(RENAMED);
+        let node = rename_path(&runner, "/my-files/old-name.txt", "new-name.txt").unwrap();
+        assert_eq!(node.display_name(), "new-name.txt");
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "filesystem",
+                "rename",
+                "-j",
+                "/my-files/old-name.txt",
+                "new-name.txt",
+            ]
+        );
+    }
+
+    #[test]
+    fn move_path_succeeds_when_all_outcomes_are_ok() {
+        let runner = MockRunner::success(TRASH_OK);
+        move_path(&runner, "/my-files/a.txt", "/my-files/Sub").unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "filesystem",
+                "move",
+                "-j",
+                "/my-files/a.txt",
+                "/my-files/Sub",
+            ]
+        );
+    }
+
+    #[test]
+    fn move_path_errors_when_any_outcome_failed() {
+        let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
+        let err = move_path(&runner, "/my-files/a.txt", "/my-files/Sub").unwrap_err();
         assert!(matches!(err, DriveError::Cli(_)));
     }
 
