@@ -266,6 +266,13 @@ KIO::WorkerResult ProtonDriveWorker::put(const QUrl &url, int /*permissions*/, K
 
     int result = 0;
     do {
+        // dataReq() must be sent before each readData() call — it's what
+        // actually asks the job for the next chunk. Without it, readData()
+        // only ever sees whatever the job sent unprompted, which happens to
+        // cover an entire tiny file but leaves both sides blocked forever on
+        // anything bigger (confirmed live: uploads under ~1 MB completed,
+        // larger ones hung indefinitely with zero bytes ever written).
+        dataReq();
         QByteArray chunk;
         result = readData(chunk);
         if (result < 0) {
