@@ -200,6 +200,23 @@ pub fn download(
     Ok(summary)
 }
 
+/// `filesystem upload`'s `localPath...` argument is glob-matched by the CLI
+/// (it's how it supports uploading several files at once, e.g. `*.pdf`) —
+/// but every call site here always means one literal, already-resolved
+/// path, never a pattern. `[`, `]`, `{` and `}` are the metacharacters that
+/// actually trip this up in practice: confirmed live that e.g. a file named
+/// "report [2026].pdf" fails with the CLI's own "No paths matched: ..."
+/// error unless those are backslash-escaped first. `*`, `?` and `!` were
+/// checked too and do *not* need escaping — escaping them when there's
+/// nothing to escape instead makes the CLI silently skip the file, so this
+/// deliberately only touches the characters confirmed to need it.
+fn escape_glob_metacharacters(path: &str) -> String {
+    path.replace('[', "\\[")
+        .replace(']', "\\]")
+        .replace('{', "\\{")
+        .replace('}', "\\}")
+}
+
 /// Uploads `local_path` into `parent_path`. Forces `replace` for the same
 /// reason as [`download`] — an interactive prompt would hang the worker.
 pub fn upload(
@@ -207,7 +224,7 @@ pub fn upload(
     local_path: &Path,
     parent_path: &str,
 ) -> Result<TransferSummary, DriveError> {
-    let local = local_path.to_string_lossy();
+    let local = escape_glob_metacharacters(&local_path.to_string_lossy());
     let out = runner.run(
         &[
             "filesystem",
@@ -454,6 +471,29 @@ mod tests {
                 "-f",
                 "replace",
                 "/tmp/report.pdf",
+                "/my-files",
+            ]
+        );
+    }
+
+    #[test]
+    fn upload_escapes_glob_metacharacters_in_the_local_path() {
+        let runner = MockRunner::success(TRANSFER_SUMMARY_OK);
+        upload(
+            &runner,
+            Path::new("/tmp/report [2026] {final}.pdf"),
+            "/my-files",
+        )
+        .unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "filesystem",
+                "upload",
+                "-j",
+                "-f",
+                "replace",
+                "/tmp/report \\[2026\\] \\{final\\}.pdf",
                 "/my-files",
             ]
         );
