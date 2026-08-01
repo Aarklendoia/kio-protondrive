@@ -34,6 +34,8 @@ pub enum DriveError {
     NotFound(String),
     #[error("not logged in to Proton Drive — run \"proton-drive auth login\"")]
     NotAuthenticated,
+    #[error("a file or folder with this name already exists: {0}")]
+    AlreadyExists(String),
     #[error("proton-drive reported an error: {0}")]
     Cli(String),
     #[error("could not parse proton-drive output: {0}")]
@@ -127,6 +129,15 @@ fn ensure_success(path: &str, out: &CommandOutput) -> Result<(), DriveError> {
         Err(DriveError::NotAuthenticated)
     } else if lower.contains("not supported") || lower.contains("not found") {
         Err(DriveError::NotFound(path.to_string()))
+    } else if lower.contains("already exist") || lower.contains("existe déjà") {
+        // Confirmed live that this specific message comes back in French
+        // ("Un fichier ou un dossier portant ce nom existe déjà.") even with
+        // LC_ALL=C / LANG=en_US.UTF-8 forced — so it's not driven by the
+        // usual locale env vars this process sees, unlike "You need to login
+        // first" and other messages, which do stay in English regardless.
+        // The English phrasing here is a best-effort guess, not something
+        // observed directly.
+        Err(DriveError::AlreadyExists(path.to_string()))
     } else if message.is_empty() {
         Err(DriveError::Cli(format!(
             "proton-drive exited with an error for {path}"
@@ -200,6 +211,23 @@ pub fn download(
     Ok(summary)
 }
 
+/// `filesystem upload`'s `localPath...` argument is glob-matched by the CLI
+/// (it's how it supports uploading several files at once, e.g. `*.pdf`) —
+/// but every call site here always means one literal, already-resolved
+/// path, never a pattern. `[`, `]`, `{` and `}` are the metacharacters that
+/// actually trip this up in practice: confirmed live that e.g. a file named
+/// "report [2026].pdf" fails with the CLI's own "No paths matched: ..."
+/// error unless those are backslash-escaped first. `*`, `?` and `!` were
+/// checked too and do *not* need escaping — escaping them when there's
+/// nothing to escape instead makes the CLI silently skip the file, so this
+/// deliberately only touches the characters confirmed to need it.
+fn escape_glob_metacharacters(path: &str) -> String {
+    path.replace('[', "\\[")
+        .replace(']', "\\]")
+        .replace('{', "\\{")
+        .replace('}', "\\}")
+}
+
 /// Uploads `local_path` into `parent_path`. Forces `replace` for the same
 /// reason as [`download`] — an interactive prompt would hang the worker.
 pub fn upload(
@@ -207,7 +235,7 @@ pub fn upload(
     local_path: &Path,
     parent_path: &str,
 ) -> Result<TransferSummary, DriveError> {
-    let local = local_path.to_string_lossy();
+    let local = escape_glob_metacharacters(&local_path.to_string_lossy());
     let out = runner.run(
         &[
             "filesystem",
@@ -460,6 +488,29 @@ mod tests {
     }
 
     #[test]
+    fn upload_escapes_glob_metacharacters_in_the_local_path() {
+        let runner = MockRunner::success(TRANSFER_SUMMARY_OK);
+        upload(
+            &runner,
+            Path::new("/tmp/report [2026] {final}.pdf"),
+            "/my-files",
+        )
+        .unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "filesystem",
+                "upload",
+                "-j",
+                "-f",
+                "replace",
+                "/tmp/report \\[2026\\] \\{final\\}.pdf",
+                "/my-files",
+            ]
+        );
+    }
+
+    #[test]
     fn trash_path_succeeds_when_all_outcomes_are_ok() {
         let runner = MockRunner::success(TRASH_OK);
         trash_path(&runner, "/my-files/Photos").unwrap();
@@ -486,6 +537,20 @@ mod tests {
         let node = create_folder(&runner, "/my-files", "New Folder").unwrap();
         assert_eq!(node.display_name(), "New Folder");
         assert!(node.is_folder());
+    }
+
+    #[test]
+    fn create_folder_maps_already_exists_in_english() {
+        let runner = MockRunner::failure("A file or folder with this name already exists.");
+        let err = create_folder(&runner, "/my-files", "Backups").unwrap_err();
+        assert!(matches!(err, DriveError::AlreadyExists(_)));
+    }
+
+    #[test]
+    fn create_folder_maps_already_exists_in_french() {
+        let runner = MockRunner::failure("Un fichier ou un dossier portant ce nom existe déjà.");
+        let err = create_folder(&runner, "/my-files", "Backups").unwrap_err();
+        assert!(matches!(err, DriveError::AlreadyExists(_)));
     }
 
     #[test]

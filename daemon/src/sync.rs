@@ -45,9 +45,10 @@ pub fn ensure_remote_dir_chain(
         current.push_str(segment);
         match cli::stat_path(runner, &current) {
             Ok(_) => continue,
-            Err(DriveError::NotFound(_)) => {
-                cli::create_folder(runner, &parent, segment)?;
-            }
+            Err(DriveError::NotFound(_)) => match cli::create_folder(runner, &parent, segment) {
+                Ok(_) | Err(DriveError::AlreadyExists(_)) => continue,
+                Err(err) => return Err(err),
+            },
             Err(err) => return Err(err),
         }
     }
@@ -264,6 +265,19 @@ mod tests {
             calls[1],
             vec!["filesystem", "create-folder", "-j", "/my-files", "Backups"]
         );
+    }
+
+    #[test]
+    fn ensure_remote_dir_chain_treats_a_racing_create_as_success() {
+        // stat says missing, but by the time create-folder runs something
+        // else (another sync cycle, a concurrent process) already made it —
+        // that's still the outcome this function exists to guarantee, so it
+        // shouldn't surface as an error.
+        let runner = ScriptedRunner::new(vec![
+            failure(r#"Path not found"#),
+            failure("Un fichier ou un dossier portant ce nom existe déjà."),
+        ]);
+        ensure_remote_dir_chain(&runner, "/my-files/Backups").unwrap();
     }
 
     #[test]
