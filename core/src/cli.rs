@@ -548,8 +548,7 @@ mod tests {
 
     #[test]
     fn create_folder_maps_already_exists_in_french() {
-        let runner =
-            MockRunner::failure("Un fichier ou un dossier portant ce nom existe déjà.");
+        let runner = MockRunner::failure("Un fichier ou un dossier portant ce nom existe déjà.");
         let err = create_folder(&runner, "/my-files", "Backups").unwrap_err();
         assert!(matches!(err, DriveError::AlreadyExists(_)));
     }
