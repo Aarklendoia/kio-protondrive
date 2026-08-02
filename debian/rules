@@ -37,12 +37,15 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	dh_auto_build
-	# daemon/ is plain Cargo, not part of the CMake/Corrosion graph that
-	# builds core/ + the KIO plugin above — build it separately. This does
-	# mean core/ gets compiled twice (once as a staticlib via Corrosion for
-	# the cxx bridge, once as an rlib here for daemon/ to link), which is
-	# harmless duplication, not a bug.
-	cargo build --release --locked --manifest-path daemon/Cargo.toml
+	# daemon/ and wizard/ are plain Cargo, not part of the CMake/Corrosion
+	# graph that builds core/ + the KIO plugin above — build the whole
+	# workspace separately in one go (wizard/ depends on daemon/'s lib,
+	# which depends on core/, so a single --workspace build lets Cargo
+	# resolve that once instead of two independent --manifest-path
+	# invocations). This does mean core/ gets compiled twice overall (once
+	# as a staticlib via Corrosion for the cxx bridge, once as an rlib here
+	# for daemon/wizard to link), which is harmless duplication, not a bug.
+	cargo build --release --locked --workspace
 
 override_dh_auto_test:
 	# Runs the Rust unit tests (core/ + daemon/), which need no KF6/Qt6
@@ -56,3 +59,8 @@ override_dh_auto_install:
 	dh_auto_install
 	install -Dm755 target/release/kio-protondrive-daemon \
 		debian/tmp/usr/bin/kio-protondrive-daemon
+	install -Dm755 target/release/kio-protondrive-wizard \
+		debian/tmp/usr/bin/kio-protondrive-wizard
+	install -d debian/tmp/usr/share/kio-protondrive-wizard/qml
+	install -m644 wizard/qml/*.qml \
+		debian/tmp/usr/share/kio-protondrive-wizard/qml/

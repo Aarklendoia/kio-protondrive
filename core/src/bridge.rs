@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use crate::cache::Cache;
 use crate::cli::{self, RealCommandRunner};
 use crate::entry::{ListItem, NodeEntry};
 
@@ -34,6 +35,9 @@ mod ffi {
         fn download_to(remote_path: &str, local_folder: &str) -> Result<()>;
         fn upload_from(local_path: &str, parent_path: &str) -> Result<()>;
         fn trash(path: &str) -> Result<()>;
+        fn lookup_pin(remote_path: &str) -> Result<String>;
+        fn pin_path(remote_path: &str) -> Result<String>;
+        fn unpin_path(remote_path: &str) -> Result<()>;
     }
 }
 
@@ -99,4 +103,30 @@ fn upload_from(local_path: &str, parent_path: &str) -> Result<(), String> {
 fn trash(path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     cli::trash_path(&runner, path).map_err(|e| e.to_string())
+}
+
+fn open_cache() -> Result<Cache, String> {
+    Cache::open(&Cache::default_db_path(), &Cache::default_root()).map_err(|e| e.to_string())
+}
+
+/// Empty string means "not pinned" — same "no `Option<String>` across cxx"
+/// convention as [`FfiEntry`]'s `media_type`/`modification_time`.
+fn lookup_pin(remote_path: &str) -> Result<String, String> {
+    let cache = open_cache()?;
+    let local = cache.lookup(remote_path).map_err(|e| e.to_string())?;
+    Ok(local
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default())
+}
+
+fn pin_path(remote_path: &str) -> Result<String, String> {
+    let cache = open_cache()?;
+    let runner = RealCommandRunner;
+    let local_path = cache.pin(&runner, remote_path).map_err(|e| e.to_string())?;
+    Ok(local_path.to_string_lossy().into_owned())
+}
+
+fn unpin_path(remote_path: &str) -> Result<(), String> {
+    let cache = open_cache()?;
+    cache.unpin(remote_path).map_err(|e| e.to_string())
 }

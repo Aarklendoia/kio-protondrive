@@ -2,10 +2,10 @@
 Description=Proton Drive background upload sync daemon
 After=network-online.target
 Wants=network-online.target
-# Without a limit, a persistent startup failure (e.g. no
-# ~/.config/kio-protondrive/daemon.toml yet — there's no first-run wizard
-# yet, see issue #25) makes systemd retry every RestartSec forever: seen
-# live climbing past 5000 restarts over a few hours before this was added.
+# Without a limit, a persistent startup failure (e.g. not yet
+# authenticated with Proton Drive) makes systemd retry every RestartSec
+# forever: seen live climbing past 5000 restarts over a few hours before
+# this was added.
 # Giving up after a handful of quick attempts turns that into a single
 # visible "failed" unit instead of a silent, endless restart loop.
 StartLimitIntervalSec=60

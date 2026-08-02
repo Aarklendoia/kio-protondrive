@@ -30,56 +30,75 @@ That's a deliberate boundary, not a missing feature:
 That stateful, background half of the picture is the planned **sync
 daemon** — see below.
 
-## Sync daemon
+## Sync daemon: pin/cache model
 
-Tracked in [#12](https://github.com/Aarklendoia/kio-protondrive/issues/12).
-Being built in phases; **Phase 1** (`daemon/`, package
-`kio-protondrive-sync-daemon`) implements one-way local → Drive upload with
-`inotify` change detection and a SQLite journal used for upload idempotency
-only. Everything else below — bi-directional sync, conflict resolution,
-Drive → local download — is still design-only, not yet implemented. Design
-decisions made so far:
+Tracked in [#30](https://github.com/Aarklendoia/kio-protondrive/issues/30),
+**implemented**. Originally scoped as [#12](https://github.com/Aarklendoia/kio-protondrive/issues/12)'s
+one-configured-folder, bi-directional mirror (see "Superseded #12 design"
+below) — that model was abandoned before being finished because it doesn't
+match how `protondrive:/` is actually used: on demand, browsed directly,
+the same way `sftp://` is, with no separate "sync folder" most users would
+have to think about maintaining. What people actually wanted was a way to
+mark *specific* files/folders for guaranteed local availability, not a
+second folder to keep mentally in sync with the first.
 
-- **Direction: bi-directional.** Not just local → Drive; changes on either
-  side propagate to the other. This is what makes persistent local state
-  (below) a hard requirement rather than a nice-to-have — see the next
-  point.
-- **Change detection: `inotify`.** Real-time local watch rather than
-  polling. Needs to handle common editor save patterns (write-to-temp +
-  rename) and debounce rapid successive writes to the same file.
-- **Scope: one configured folder.** A single local path mapped to a single
-  Proton Drive path, not an arbitrary multi-folder setup. Keeps the first
-  version's state model and UX simple; multi-folder can be a later
-  extension if there's demand.
-- **State: persistent, local (SQLite).** This follows directly from
-  choosing bi-directional sync. Without knowing what the *last
-  successfully synced* state of a file was, there's no way to distinguish
-  "changed locally only" (normal upload) from "changed on both sides since
-  last sync" (real conflict) — timestamp comparison alone is fragile
-  (clock skew, mtime granularity). This is why Dropbox, Nextcloud's
-  desktop client, Google Drive, and `rclone bisync` all keep a local
-  sync journal: for each file, local path, local mtime/size, remote path,
-  and the remote revision/hash as of the last successful sync. Same
-  pattern here.
-- **Conflict handling: rename and keep both.** When a file changed on both
-  sides since the last sync, keep the remote version under the original
-  name and upload the local version under a renamed copy (e.g. `file
-  (conflict YYYY-MM-DD).ext`, matching the Dropbox/Nextcloud convention).
-  No data is ever silently discarded; the user reconciles the duplicate
-  afterward if needed.
-- **Process model: a new `daemon/` Rust crate**, depending on `core/` for
-  all `proton-drive` CLI interaction (same `CommandRunner` abstraction
-  `core/src/cli.rs` already uses for testability) — not duplicated logic.
-  Runs as a `systemd --user` service, started with the desktop session.
-  Separate binary from the KIO worker plugin; they share `core/` as a
-  library dependency but have independent lifecycles (the worker is
-  spawned per-session by `kioworker`, the daemon runs continuously).
-- **Error/retry handling: natural retry on the next cycle.** Because sync
-  state is already persisted, a file that fails to upload/download simply
-  stays marked "not yet synced" in the local database and gets retried
-  automatically on the next `inotify` event or reconciliation pass — no
-  separate backoff/retry-queue mechanism needed on top of the sync
-  journal that already exists.
+- **Everything stays on-demand by default.** `protondrive:/` browsing is
+  unchanged from the stateless model described above — nothing is cached
+  opportunistically.
+- **Pinning is the only thing that persists a local copy.** A Dolphin
+  ServiceMenu (`daemon/kio-protondrive-pin.desktop`, filtered to
+  `protondrive://` via `X-KDE-Protocols`) adds "Garder en local" / "Supprimer
+  la copie locale" to the right-click menu, each shelling out to
+  `kio-protondrive-daemon pin|unpin <url>`. That's a one-shot client for the
+  already-running daemon's own local control server (`daemon/src/control.rs`,
+  same hand-rolled local-HTTP pattern as the wizard's), keeping the pin index
+  single-writer.
+- **Pin index: `core/src/cache.rs`.** A SQLite table (`remote_path ->
+  local_path, local_mtime, local_size, last_synced_at`) — persistent, at
+  `$XDG_DATA_HOME/kio-protondrive/cache-index.sqlite3`, since pin *state* is
+  user intent, not disposable. The actual downloaded bytes live under
+  `$XDG_CACHE_HOME/kio-protondrive/files/` (mirroring remote paths) —
+  regenerable, safe to wipe (a pin just re-downloads next access).
+- **Worker reads the pin index directly.** `get`/`stat` on a pinned path are
+  served straight from the local copy — no CLI round-trip, no daemon
+  involvement — via cxx bridge functions (`lookup_pin`/`pin_path`/
+  `unpin_path`) that call into `core::cache` from C++. This is the "instant"
+  case the whole feature exists for.
+- **Change detection: `inotify`, scoped to the fixed cache root.** Same
+  debounced-watch mechanism as the original design, just watching
+  `Cache::default_root()` instead of a user-configured path — a local edit
+  to a pinned file's cached copy triggers an upload of just that file, via
+  `Cache::lookup_by_local_path` to recover which remote path it belongs to.
+- **Direction: one-way local → Drive, for pinned files only.** Picking up a
+  remote change made elsewhere (another device, the web app) to a pinned
+  file happens the next time it's accessed through the worker (which
+  re-downloads it), not via continuous background polling of Drive — chosen
+  deliberately to keep the daemon's job close to "upload what changed
+  locally," not a new poller against Drive's API.
+- **No conflict resolution, no eviction.** Both existed only because the old
+  design cached opportunistically and synced bi-directionally. Neither
+  applies here: nothing is ever cached without the user explicitly pinning
+  it, so there's nothing to age out ("cleanup" is just unpinning), and
+  there's no continuous two-way sync to produce a same-file-changed-on-
+  both-sides conflict in the first place.
+- **Process model: unchanged from the original design** — `daemon/`, a
+  `systemd --user` service depending on `core/` for all `proton-drive` CLI
+  interaction, independent lifecycle from the per-session KIO worker
+  process. It now also runs the pin control server described above.
+- **Error/retry handling: unchanged in spirit.** A pinned file that fails to
+  upload keeps its stale `last_synced_at` in the pin index and is retried
+  automatically on the next `inotify` event or the startup reconciliation
+  pass — no separate backoff/retry-queue mechanism.
 
-Bi-directional sync, conflict handling, and Drive → local download are not
-implemented yet. See #12 for the tracking issue.
+### Superseded #12 design (not built)
+
+The original plan for #12 was a single configured local folder mapped to a
+single Drive folder, synced bi-directionally, using a local SQLite journal
+to distinguish "changed locally" from "changed on both sides since last
+sync" (the same approach Dropbox/Nextcloud/`rclone bisync` use), with
+same-name conflicts resolved by renaming the local copy (e.g. `file
+(conflict YYYY-MM-DD).ext`) rather than discarding either version. None of
+that was implemented before the pivot to the pin/cache model above — kept
+here only as a record of the design considered and abandoned, in case
+bi-directional whole-folder sync is revisited later as a distinct feature
+from pinning.

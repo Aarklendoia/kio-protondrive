@@ -43,6 +43,7 @@ debian/.debhelper/
 debian/kio-protondrive/
 debian/kio-protondrive-sync-daemon/
 debian/kio-protondrive-full/
+debian/kio-protondrive-wizard/
 debian/*.substvars
 debian/*.debhelper
 debian/files

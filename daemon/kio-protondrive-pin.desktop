@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Service
+X-KDE-ServiceTypes=KonqPopupMenu/Plugin
+X-KDE-Protocols=protondrive
+Actions=pinLocal;unpinLocal;
+
+[Desktop Action pinLocal]
+Name=Garder en local
+Icon=folder-download
+Exec=kio-protondrive-daemon pin %U
+
+[Desktop Action unpinLocal]
+Name=Supprimer la copie locale
+Icon=edit-delete
+Exec=kio-protondrive-daemon unpin %U

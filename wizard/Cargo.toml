@@ -1,0 +1,18 @@
+[package]
+name = "kio-protondrive-wizard"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "First-run setup wizard for kio-protondrive (authentication, credentials store)"
+
+# Deliberately dependency-free, same as linux-hello-rust's linux_hello_config
+# (its GUI launcher): this binary spawns Qt's own `qml6` runtime for the UI
+# and talks to it over a hand-rolled local HTTP control server, rather than
+# pulling in a Qt/GUI binding crate. protondrive-core and
+# kio-protondrive-daemon are path dependencies onto crates already in this
+# workspace, not new external dependencies.
+[dependencies]
+protondrive-core = { path = "../core" }
+kio-protondrive-daemon = { path = "../daemon" }

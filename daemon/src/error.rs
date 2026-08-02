@@ -7,8 +7,8 @@ pub enum DaemonError {
     Io(#[from] std::io::Error),
     #[error("invalid config: {0}")]
     Config(#[from] toml::de::Error),
-    #[error("journal database error: {0}")]
-    Journal(#[from] rusqlite::Error),
+    #[error("could not serialize config: {0}")]
+    ConfigWrite(#[from] toml::ser::Error),
     #[error(transparent)]
     Drive(#[from] DriveError),
     #[error("failed to watch {path}: {source}")]

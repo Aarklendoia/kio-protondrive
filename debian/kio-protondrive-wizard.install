@@ -1,0 +1,3 @@
+usr/bin/kio-protondrive-wizard
+usr/share/kio-protondrive-wizard/qml/*
+wizard/kio-protondrive-wizard.desktop usr/share/applications

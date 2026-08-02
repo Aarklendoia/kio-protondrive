@@ -1,1 +1,2 @@
 usr/bin/kio-protondrive-daemon
+daemon/kio-protondrive-pin.desktop usr/share/kio/servicemenus

@@ -193,6 +193,28 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
 KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
 {
     const QString path = drivePath(url);
+
+    // Same pinned-cache short-circuit as get() — a pinned file's size/mtime
+    // come from its local copy instantly rather than a CLI round-trip.
+    try {
+        const rust::String pinned = lookup_pin(path.toStdString());
+        if (!pinned.empty()) {
+            const QString localPath = QString::fromUtf8(pinned.data(), static_cast<int>(pinned.size()));
+            const QFileInfo info(localPath);
+            KIO::UDSEntry uds;
+            uds.reserve(4);
+            uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+            uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFREG);
+            uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0644);
+            uds.fastInsert(KIO::UDSEntry::UDS_SIZE, static_cast<long long>(info.size()));
+            uds.fastInsert(KIO::UDSEntry::UDS_MODIFICATION_TIME, info.lastModified().toSecsSinceEpoch());
+            statEntry(uds);
+            return KIO::WorkerResult::pass();
+        }
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+
     // KIO's convention for the entry describing the URL itself (as opposed
     // to an entry inside a directory listing) is to name it "." rather than
     // repeating the full path.
@@ -218,9 +240,41 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
     }
 }
 
+KIO::WorkerResult ProtonDriveWorker::streamLocalFile(const QString &localPath, const QString &originalPath)
+{
+    QFile file(localPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return KIO::WorkerResult::fail(KIO::ERR_CANNOT_READ, originalPath);
+    }
+
+    mimeType(QMimeDatabase().mimeTypeForFile(file.fileName()).name());
+    totalSize(static_cast<KIO::filesize_t>(file.size()));
+
+    constexpr qint64 chunkSize = 256 * 1024;
+    while (!file.atEnd()) {
+        data(file.read(chunkSize));
+    }
+    data(QByteArray());
+    return KIO::WorkerResult::pass();
+}
+
 KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
 {
     const QString path = drivePath(url);
+
+    // Pinned files (kept local via the Dolphin "Garder en local" ServiceMenu
+    // action — see issue #30) are served straight from their cached copy:
+    // no CLI call at all, instant instead of a network round-trip every
+    // time this path is opened.
+    try {
+        const rust::String pinned = lookup_pin(path.toStdString());
+        if (!pinned.empty()) {
+            return streamLocalFile(QString::fromUtf8(pinned.data(), static_cast<int>(pinned.size())), path);
+        }
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+
     const QString fileName = QFileInfo(path).fileName();
 
     QTemporaryDir tmpDir;
@@ -234,21 +288,7 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
         return resultFromRustError(error);
     }
 
-    QFile file(tmpDir.filePath(fileName));
-    if (!file.open(QIODevice::ReadOnly)) {
-        return KIO::WorkerResult::fail(KIO::ERR_CANNOT_READ, path);
-    }
-
-    mimeType(QMimeDatabase().mimeTypeForFile(file.fileName()).name());
-    totalSize(static_cast<KIO::filesize_t>(file.size()));
-
-    constexpr qint64 chunkSize = 256 * 1024;
-    while (!file.atEnd()) {
-        data(file.read(chunkSize));
-    }
-    data(QByteArray());
-
-    return KIO::WorkerResult::pass();
+    return streamLocalFile(tmpDir.filePath(fileName), path);
 }
 
 KIO::WorkerResult ProtonDriveWorker::put(const QUrl &url, int /*permissions*/, KIO::JobFlags /*flags*/)
