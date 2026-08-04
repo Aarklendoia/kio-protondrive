@@ -11,7 +11,7 @@ description = "Background daemon that pins/unpins and syncs local copies of Prot
 protondrive-core = { path = "../core" }
 notify = "6"
 notify-debouncer-full = "0.3"
-toml = "0.8"
+toml = "1.1"
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
