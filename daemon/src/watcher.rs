@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use notify::event::{ModifyKind, RenameMode};
-use notify::{Event, EventKind, RecursiveMode, Watcher as _};
+use notify::{Event, EventKind, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 
 use crate::error::DaemonError;
@@ -132,7 +132,6 @@ pub fn watch(
         })?;
 
     debouncer
-        .watcher()
         .watch(local_path, RecursiveMode::Recursive)
         .map_err(|source| DaemonError::Watch {
             path: local_path.to_path_buf(),
