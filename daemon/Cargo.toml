@@ -10,7 +10,7 @@ description = "Background one-way local -> Proton Drive upload sync daemon"
 [dependencies]
 protondrive-core = { path = "../core" }
 notify = "6"
-notify-debouncer-full = "0.3"
+notify-debouncer-full = "0.7"
 rusqlite = { version = "0.31", features = ["bundled"] }
 toml = "1.1"
 serde = { version = "1", features = ["derive"] }
