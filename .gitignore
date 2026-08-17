@@ -11,11 +11,14 @@ Cargo.lock
 /.cargo/
 /third_party/corrosion/
 
-# CMake build directories: /build/ for a manual `cmake -B build`, obj-*/ for
-# debhelper's cmake buildsystem (dh_auto_configure names it
+# CMake build directories: /build/ for a manual `cmake -B build`, /build-*/
+# for an alternate local one (e.g. a separate `~/.local`-prefixed install
+# used to manually test a change without touching the system install),
+# obj-*/ for debhelper's cmake buildsystem (dh_auto_configure names it
 # obj-$(DEB_HOST_GNU_TYPE), e.g. obj-x86_64-linux-gnu, when driven by
 # dpkg-buildpackage).
 /build/
+/build-*/
 /obj-*/
 CMakeFiles/
 CMakeCache.txt
