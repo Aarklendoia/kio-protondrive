@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use protondrive_core::cli::CommandRunner;
 
-use crate::notification;
+use crate::notification::Notifier;
 
 /// `--version`'s own network check times out at 5s internally (seen in the
 /// CLI's source); this leaves headroom for process startup on top of that.
@@ -36,7 +36,11 @@ const UPDATE_AVAILABLE_MARKER: &str = "A newer version is available";
 /// notifications for the same message across check cycles — reset once the
 /// message changes (e.g. the user updates, or a further release ships) —
 /// same falling-edge pattern as `main::report_authentication_failure`.
-pub fn check(runner: &dyn CommandRunner, already_notified: &mut Option<String>) {
+pub fn check(
+    runner: &dyn CommandRunner,
+    notifier: &dyn Notifier,
+    already_notified: &mut Option<String>,
+) {
     let output = match runner.run(&["--version"], CHECK_TIMEOUT) {
         Ok(output) => output,
         Err(err) => {
@@ -48,7 +52,7 @@ pub fn check(runner: &dyn CommandRunner, already_notified: &mut Option<String>) 
     if let Some(line) = find_update_message(&output.stdout) {
         log::warn!("{line} — see https://proton.me/drive/download");
         if already_notified.as_deref() != Some(line) {
-            notification::cli_update_available(line);
+            notifier.cli_update_available(line);
             *already_notified = Some(line.to_string());
         }
     } else if output.stdout.contains(UP_TO_DATE_MARKER) {
@@ -77,6 +81,7 @@ fn find_update_message(stdout: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use protondrive_core::cli::{self, DriveError};
+    use std::cell::RefCell;
 
     struct ScriptedRunner(cli::CommandOutput);
 
@@ -88,6 +93,19 @@ mod tests {
                 stderr: self.0.stderr.clone(),
                 success: self.0.success,
             })
+        }
+    }
+
+    /// Records calls instead of shelling out to a real `notify-send` — a
+    /// developer running `cargo test` on a real desktop must never see a
+    /// notification pop up from a test fixture's made-up "0.9.0" (this is
+    /// exactly what happened before this trait existed).
+    #[derive(Default)]
+    struct RecordingNotifier(RefCell<Vec<String>>);
+
+    impl Notifier for RecordingNotifier {
+        fn cli_update_available(&self, message: &str) {
+            self.0.borrow_mut().push(message.to_string());
         }
     }
 
@@ -132,21 +150,23 @@ mod tests {
             "Proton Drive CLI cli-drive@0.8.0+06e8c605\n\
              A newer version is available: 0.9.0 (you have 0.8.0).\n",
         ));
+        let notifier = RecordingNotifier::default();
         let mut notified = None;
-        check(&runner, &mut notified);
+        check(&runner, &notifier, &mut notified);
         assert_eq!(
             notified.as_deref(),
             Some("A newer version is available: 0.9.0 (you have 0.8.0).")
         );
 
-        // A second cycle with the same message shouldn't be treated as new
-        // (re-notifying is notification::cli_update_available's job to
-        // dedupe against, not observable from here — this only checks the
-        // tracked state itself doesn't spuriously reset).
-        check(&runner, &mut notified);
+        // A second cycle with the same message shouldn't notify again.
+        check(&runner, &notifier, &mut notified);
         assert_eq!(
             notified.as_deref(),
             Some("A newer version is available: 0.9.0 (you have 0.8.0).")
+        );
+        assert_eq!(
+            notifier.0.into_inner(),
+            vec!["A newer version is available: 0.9.0 (you have 0.8.0).".to_string()]
         );
     }
 
@@ -158,7 +178,9 @@ mod tests {
             "Proton Drive CLI cli-drive@0.9.0+deadbeef\n\
              You are running the latest version.\n",
         ));
-        check(&runner, &mut notified);
+        let notifier = RecordingNotifier::default();
+        check(&runner, &notifier, &mut notified);
         assert_eq!(notified, None);
+        assert!(notifier.0.into_inner().is_empty());
     }
 }
