@@ -61,6 +61,7 @@ fn main() {
     }
 
     env_logger::init();
+    notification::init();
 
     let config_path = Config::default_path();
     let config = match Config::load_or_default(&config_path) {
