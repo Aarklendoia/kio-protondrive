@@ -243,8 +243,24 @@ fn route_auth_login() -> String {
     }
 }
 
+/// Persists the chosen credentials store to `daemon.toml` *and* applies it
+/// to this wizard process's own environment — called right after
+/// Credentials.qml, before Auth.qml runs `proton-drive auth login`, so that
+/// login lands in the same store the daemon will actually read from
+/// afterward. Without this, login would go to the CLI's own default
+/// (the desktop keyring) regardless of what gets saved to daemon.toml,
+/// leaving the daemon's chosen store empty — exactly the
+/// "Dolphin works, the daemon says not logged in" bug this wizard exists to
+/// prevent. `None`/empty means "unsafe_file" here even though that's saved
+/// to disk as an absent key (see `Config::credentials_store`'s doc comment)
+/// — the systemd unit's own `Environment=` only takes effect on the
+/// *daemon's* next start, not in this already-running wizard process.
 fn route_save_config(req: &str) -> String {
     let credentials_store = extract_query_param(req, "credentials_store").filter(|s| !s.is_empty());
+    std::env::set_var(
+        "PROTON_DRIVE_CREDENTIALS_STORE",
+        credentials_store.as_deref().unwrap_or("unsafe_file"),
+    );
     let config = Config { credentials_store };
     match config.save(&Config::default_path()) {
         Ok(()) => r#"{"ok":true}"#.to_string(),
@@ -466,6 +482,47 @@ mod tests {
             1,
             "the bookmark should only be inserted once"
         );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // Both scenarios live in one test (rather than two `#[test]`s) because
+    // they mutate the process-wide PROTON_DRIVE_CREDENTIALS_STORE env var —
+    // cargo runs tests in parallel threads by default, so two separate
+    // tests race on it (confirmed live: intermittent failures asserting the
+    // other test's value).
+    #[test]
+    fn save_config_applies_the_credentials_store_to_the_live_env() {
+        let dir = std::env::temp_dir().join(format!(
+            "kio-protondrive-wizard-save-config-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+
+        let result = route_save_config("GET /save-config HTTP/1.1");
+        assert!(result.contains("\"ok\":true"));
+        assert_eq!(
+            std::env::var("PROTON_DRIVE_CREDENTIALS_STORE").as_deref(),
+            Ok("unsafe_file"),
+            "an unspecified store must still resolve to the daemon's actual \
+             default, not the CLI's own (the desktop keyring) — otherwise \
+             the login this triggers next lands in the wrong place"
+        );
+        let saved = std::fs::read_to_string(dir.join("kio-protondrive/daemon.toml")).unwrap();
+        assert!(
+            !saved.contains("credentials_store"),
+            "unsafe_file is the implicit default and shouldn't be written out"
+        );
+
+        let result = route_save_config("GET /save-config?credentials_store=pass HTTP/1.1");
+        assert!(result.contains("\"ok\":true"));
+        assert_eq!(
+            std::env::var("PROTON_DRIVE_CREDENTIALS_STORE").as_deref(),
+            Ok("pass")
+        );
+        let saved = std::fs::read_to_string(dir.join("kio-protondrive/daemon.toml")).unwrap();
+        assert!(saved.contains("credentials_store = \"pass\""));
 
         std::fs::remove_dir_all(&dir).ok();
     }

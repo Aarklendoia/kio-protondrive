@@ -14,6 +14,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::process::Command;
 use std::thread;
 
 use protondrive_core::cache::Cache;
@@ -22,6 +23,8 @@ use protondrive_core::local_ctrl::{
     self, constant_time_eq, extract_header, extract_query_param, generate_ctrl_token, json_escape,
     percent_encode, request_path, write_owner_only_file,
 };
+
+use crate::notification;
 
 const APP_NAME: &str = "kio-protondrive-daemon";
 const TOKEN_HEADER: &str = "x-kio-protondrive-daemon-token";
@@ -115,11 +118,25 @@ fn route_pin(req: &str) -> String {
         }
     };
     let runner = RealCommandRunner;
-    match cache.pin(&runner, &path, force_param(req)) {
-        Ok(local) => format!(
-            r#"{{"ok":true,"local_path":"{}"}}"#,
-            json_escape(&local.to_string_lossy())
-        ),
+    // Started *before* the (possibly slow) download, not after — the whole
+    // point is feedback while it's still running, mirroring Dolphin's own
+    // copy-progress notification (see notification::pin_started's doc
+    // comment for why this can't show a real percentage).
+    let notification_id = notification::pin_started(&path);
+    let result = cache.pin(&runner, &path, force_param(req));
+    notification::pin_finished(
+        notification_id.as_deref(),
+        &path,
+        result.as_ref().err().map(|e| e.to_string()).as_deref(),
+    );
+    match result {
+        Ok(local) => {
+            notify_pin_changed(&path);
+            format!(
+                r#"{{"ok":true,"local_path":"{}"}}"#,
+                json_escape(&local.to_string_lossy())
+            )
+        }
         Err(e) => format!(
             r#"{{"ok":false,"error":"{}"}}"#,
             json_escape(&e.to_string())
@@ -141,11 +158,48 @@ fn route_unpin(req: &str) -> String {
         }
     };
     match cache.unpin(&path, force_param(req)) {
-        Ok(()) => r#"{"ok":true}"#.to_string(),
+        Ok(()) => {
+            notify_pin_changed(&path);
+            r#"{"ok":true}"#.to_string()
+        }
         Err(e) => format!(
             r#"{{"ok":false,"error":"{}"}}"#,
             json_escape(&e.to_string())
         ),
+    }
+}
+
+/// Tells `protondrive_overlayicon.so` (see `worker/overlayplugin.cpp`) that
+/// `remote_path`'s pin status changed, so it can repaint just that item's
+/// checkmark — without this, the icon only updates on the view's next
+/// unrelated refresh (F5, navigating away and back), since pin/unpin
+/// happens through this daemon's own control server, entirely outside any
+/// KIO job Dolphin initiated, so nothing would otherwise tell it anything
+/// changed.
+///
+/// Deliberately *not* `org.kde.KDirNotify.FilesChanged` (an earlier version
+/// of this used that instead): confirmed live that it does make Dolphin
+/// visibly refresh — its loading indicator activates — but re-stats/re-lists
+/// the whole item, which is both slower and, per the same live testing, no
+/// more effective at actually updating the overlay (whatever Dolphin's item
+/// model does with a re-fetched UDSEntry, it wasn't reliably picking up a
+/// changed icon-overlay field). This is a small, purpose-built broadcast the
+/// overlay plugin listens for directly instead.
+///
+/// Best-effort, same stance as every other side-channel here (`notify-send`,
+/// the wizard's `pass` setup, ...) — no session bus (e.g. inside a
+/// container) just means the icon lags until the next natural refresh, not
+/// a failure worth surfacing.
+fn notify_pin_changed(remote_path: &str) {
+    let result = Command::new("dbus-send")
+        .arg("--session")
+        .arg("--type=signal")
+        .arg("/")
+        .arg("org.kde.protondrive.OverlayIcon.PinChanged")
+        .arg(format!("string:{remote_path}"))
+        .status();
+    if let Err(err) = result {
+        log::debug!("could not notify the overlay icon plugin (dbus-send missing?): {err}");
     }
 }
 

@@ -12,26 +12,13 @@ Kirigami.Page {
     property QtObject app: null
 
     property bool working: true
-    property string statusText: qsTr("Saving your settings…")
+    property string statusText: qsTr("Finishing setup…")
     property string errorText: ""
 
-    Component.onCompleted: saveConfig()
-
-    function saveConfig() {
-        var root = page.app;
-        var params = "";
-        if (root.chosenCredentialsStore !== "")
-            params = "credentials_store=" + encodeURIComponent(root.chosenCredentialsStore);
-
-        root.apiPost("/save-config?" + params, function (ok, data) {
-            if (!ok || !data.ok) {
-                page.working = false;
-                page.errorText = data.error || qsTr("Could not save the configuration.");
-                return;
-            }
-            addFavoriteIfNeeded();
-        });
-    }
+    // The credentials store choice was already saved back in Credentials.qml
+    // (has to happen before Auth.qml's login, see route_save_config's doc
+    // comment) — this page just finishes the remaining steps.
+    Component.onCompleted: addFavoriteIfNeeded()
 
     function addFavoriteIfNeeded() {
         var root = page.app;

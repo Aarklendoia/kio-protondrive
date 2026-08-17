@@ -37,7 +37,6 @@ mod ffi {
         fn trash(path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
         fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
-        fn list_pinned_paths() -> Result<Vec<String>>;
     }
 }
 
@@ -126,21 +125,4 @@ fn lookup_pin(remote_path: &str) -> Result<String, String> {
 fn unpin_path(remote_path: &str, force: bool) -> Result<(), String> {
     let cache = open_cache()?;
     cache.unpin(remote_path, force).map_err(|e| e.to_string())
-}
-
-/// Every currently pinned remote path — `listDir()` calls this once per
-/// directory listing (rather than a `lookup_pin` per entry) so it can flag
-/// pinned entries with an icon overlay, matching every mainstream cloud
-/// client's convention of a locally-available indicator in the normal file
-/// browser view (OneDrive's green checkmark, Nextcloud's "available
-/// locally" emblem, etc.) rather than only revealing pin status when an
-/// entry is individually stat()'d.
-fn list_pinned_paths() -> Result<Vec<String>, String> {
-    let cache = open_cache()?;
-    Ok(cache
-        .all_pinned()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|record| record.remote_path)
-        .collect())
 }

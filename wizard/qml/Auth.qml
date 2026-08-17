@@ -94,7 +94,7 @@ Kirigami.Page {
             text: qsTr("Next")
             enabled: page.authenticated
             Layout.alignment: Qt.AlignHCenter
-            onClicked: page.app.pageStack.push(Qt.resolvedUrl("Credentials.qml"), {app: page.app})
+            onClicked: page.app.pageStack.push(Qt.resolvedUrl("Favorite.qml"), {app: page.app})
         }
     }
 }

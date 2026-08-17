@@ -2,6 +2,7 @@
 Type=Service
 X-KDE-ServiceTypes=KonqPopupMenu/Plugin
 X-KDE-Protocols=protondrive
+MimeType=all/allfiles;
 Actions=pinLocal;unpinLocal;
 
 [Desktop Action pinLocal]
@@ -16,6 +17,7 @@ Name[pt_BR]=Manter disponível offline
 Name[ru]=Сделать доступным офлайн
 Name[zh_CN]=保持离线可用
 Icon=folder-download
+X-KDE-StartupNotify=false
 Exec=kio-protondrive-daemon pin %u
 
 [Desktop Action unpinLocal]
@@ -30,4 +32,5 @@ Name[pt_BR]=Remover cópia local
 Name[ru]=Удалить локальную копию
 Name[zh_CN]=移除本地副本
 Icon=edit-delete
+X-KDE-StartupNotify=false
 Exec=kio-protondrive-daemon unpin %u

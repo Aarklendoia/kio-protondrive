@@ -43,6 +43,7 @@ Depends:
   ${misc:Depends}
 Recommends:
   libnotify-bin,
+  dbus-bin,
   kio-protondrive,
   kio-protondrive-wizard
 Description: Background upload sync daemon for Proton Drive

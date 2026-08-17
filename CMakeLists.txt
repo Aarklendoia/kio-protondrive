@@ -13,7 +13,7 @@ include(KDECompilerSettings NO_POLICY_SCOPE)
 include(ECMSetupVersion)
 include(FeatureSummary)
 
-find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core)
+find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core DBus)
 find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS CoreAddons KIO I18n)
 find_package(Gettext REQUIRED)
 

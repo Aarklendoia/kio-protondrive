@@ -48,7 +48,7 @@ Kirigami.Page {
         Button {
             text: qsTr("Get Started")
             Layout.alignment: Qt.AlignHCenter
-            onClicked: page.app.pageStack.push(Qt.resolvedUrl("Auth.qml"), {app: page.app})
+            onClicked: page.app.pageStack.push(Qt.resolvedUrl("Credentials.qml"), {app: page.app})
         }
     }
 }

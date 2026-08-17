@@ -16,6 +16,7 @@ Kirigami.Page {
     property bool gpgInstalled: false
     property bool hasKey: false
     property bool settingUp: false
+    property bool saving: false
     property string errorText: ""
     property bool useUnsafeFile: true
 
@@ -31,9 +32,29 @@ Kirigami.Page {
 
     Component.onCompleted: refreshStatus()
 
+    // Saved here rather than at Finish.qml — this choice has to be
+    // committed (both to daemon.toml and to this wizard process's own
+    // PROTON_DRIVE_CREDENTIALS_STORE, see route_save_config's doc comment)
+    // before Auth.qml runs `proton-drive auth login`, so the login lands in
+    // the same store the daemon will actually read from. Otherwise it'd
+    // always go to the CLI's own default (the desktop keyring) no matter
+    // what's picked here, and the user would have to sign in a second time
+    // to fix it.
     function goNext() {
         page.app.chosenCredentialsStore = page.useUnsafeFile ? "" : "pass";
-        page.app.pageStack.push(Qt.resolvedUrl("Favorite.qml"), {app: page.app});
+        page.saving = true;
+        page.errorText = "";
+        var params = "";
+        if (page.app.chosenCredentialsStore !== "")
+            params = "credentials_store=" + encodeURIComponent(page.app.chosenCredentialsStore);
+        page.app.apiPost("/save-config?" + params, function (ok, data) {
+            page.saving = false;
+            if (!ok || !data.ok) {
+                page.errorText = data.error || qsTr("Could not save the configuration.");
+                return;
+            }
+            page.app.pageStack.push(Qt.resolvedUrl("Auth.qml"), {app: page.app});
+        });
     }
 
     ColumnLayout {
@@ -134,6 +155,12 @@ Kirigami.Page {
             Layout.fillHeight: true
         }
 
+        Kirigami.LoadingPlaceholder {
+            visible: page.saving
+            text: qsTr("Saving…")
+            Layout.fillWidth: true
+        }
+
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
             spacing: Kirigami.Units.largeSpacing
@@ -141,6 +168,7 @@ Kirigami.Page {
             Button {
                 text: qsTr("Skip for now")
                 flat: true
+                enabled: !page.saving
                 onClicked: {
                     page.useUnsafeFile = true;
                     page.goNext();
@@ -148,7 +176,7 @@ Kirigami.Page {
             }
             Button {
                 text: qsTr("Next")
-                enabled: page.useUnsafeFile || page.hasKey
+                enabled: !page.saving && (page.useUnsafeFile || page.hasKey)
                 onClicked: page.goNext()
             }
         }

@@ -11,7 +11,6 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QMimeDatabase>
-#include <QSet>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -128,16 +127,6 @@ QString stripTrailingSlash(QString path)
     return path;
 }
 
-// The Drive path a `listDir(parentPath)` entry named `name` would have —
-// used to check it against the pinned-paths set fetched for the listing.
-QString remotePathForEntry(const QString &parentPath, const QString &name)
-{
-    if (parentPath == QLatin1String("/")) {
-        return QLatin1Char('/') + name;
-    }
-    return parentPath + QLatin1Char('/') + name;
-}
-
 }
 
 ProtonDriveWorker::ProtonDriveWorker(const QByteArray &protocol, const QByteArray &poolSocket, const QByteArray &appSocket)
@@ -169,21 +158,6 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
         return resultFromRustError(error);
     }
 
-    // One batch lookup for the whole listing rather than a lookup_pin() per
-    // entry — matches every mainstream cloud client's convention of
-    // flagging locally-available files right in the normal folder view
-    // (OneDrive's green checkmark, Nextcloud's "available locally" emblem)
-    // instead of only on an individual stat(). Best-effort: an empty set on
-    // failure just means no entries get the overlay this listing, not a
-    // failed directory listing.
-    QSet<QString> pinnedPaths;
-    try {
-        for (const rust::String &pinned : list_pinned_paths()) {
-            pinnedPaths.insert(QString::fromUtf8(pinned.data(), static_cast<int>(pinned.size())));
-        }
-    } catch (const rust::Error &) {
-    }
-
     // KIO expects a "." entry describing the listed directory itself (used
     // for e.g. the item count/permissions of the folder being browsed) —
     // without it, KIO::WorkerBase logs "UDSEntry for '.' not found, creating
@@ -212,9 +186,6 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
                 uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, label);
             }
         }
-        if (pinnedPaths.contains(remotePathForEntry(path, toQString(entry.name)))) {
-            uds.fastInsert(KIO::UDSEntry::UDS_ICON_OVERLAY_NAMES, QStringLiteral("emblem-checked"));
-        }
         listEntry(uds);
     }
     return KIO::WorkerResult::pass();
@@ -237,13 +208,18 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
             const QString localPath = QString::fromUtf8(pinned.data(), static_cast<int>(pinned.size()));
             const QFileInfo info(localPath);
             KIO::UDSEntry uds;
-            uds.reserve(5);
+            uds.reserve(4);
             uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
             uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFREG);
             uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0644);
             uds.fastInsert(KIO::UDSEntry::UDS_SIZE, static_cast<long long>(info.size()));
             uds.fastInsert(KIO::UDSEntry::UDS_MODIFICATION_TIME, info.lastModified().toSecsSinceEpoch());
-            uds.fastInsert(KIO::UDSEntry::UDS_ICON_OVERLAY_NAMES, QStringLiteral("emblem-checked"));
+            // The "pinned" checkmark itself is protondrive_overlayicon.so's
+            // job now (see overlayplugin.cpp) — kept out of this UDSEntry
+            // since a re-fetched entry's overlay field turned out not to
+            // reliably repaint an already-visible item in Dolphin (confirmed
+            // live: the daemon's KDirNotify signal made Dolphin visibly
+            // refresh, but the checkmark never actually updated either way).
             statEntry(uds);
             return KIO::WorkerResult::pass();
         }
