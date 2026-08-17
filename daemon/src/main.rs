@@ -71,6 +71,7 @@ fn main() {
     };
 
     let runner = RealCommandRunner;
+    let notifier = notification::RealNotifier;
     let mut auth_notified = false;
 
     log::info!(
@@ -103,7 +104,7 @@ fn main() {
     // computed below ~INTERVAL (not ~0) — that would silently delay the
     // first check by a full day instead of running it at startup.
     let mut cli_update_notified: Option<String> = None;
-    version_check::check(&runner, &mut cli_update_notified);
+    version_check::check(&runner, &notifier, &mut cli_update_notified);
     let mut last_version_check = Instant::now();
     loop {
         let wait = VERSION_CHECK_INTERVAL.saturating_sub(last_version_check.elapsed());
@@ -147,7 +148,7 @@ fn main() {
         }
 
         if last_version_check.elapsed() >= VERSION_CHECK_INTERVAL {
-            version_check::check(&runner, &mut cli_update_notified);
+            version_check::check(&runner, &notifier, &mut cli_update_notified);
             last_version_check = Instant::now();
         }
     }
