@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Proton Drive Setup
+Comment=Sign in and configure the Proton Drive sync daemon
+Exec=/usr/bin/kio-protondrive-wizard
+Icon=folder-cloud
+Terminal=false
+Categories=Qt;KDE;Network;
+NoDisplay=false
+StartupNotify=true

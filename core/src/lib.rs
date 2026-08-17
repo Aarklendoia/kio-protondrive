@@ -6,5 +6,7 @@
 //! ([`bridge`]) consumed by the C++ `KIO::WorkerBase` shim in `worker/`.
 
 pub mod bridge;
+pub mod cache;
 pub mod cli;
 pub mod entry;
+pub mod local_ctrl;

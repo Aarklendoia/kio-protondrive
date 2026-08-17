@@ -50,27 +50,32 @@ synchronized to a local folder in the background — see
 [docs/DESIGN.md](docs/DESIGN.md) for why a sync daemon is a deliberately
 separate concern.
 
-## Background sync daemon
+## Pinning files for offline/instant access
 
-A separate package, `kio-protondrive-sync-daemon`, provides an optional
-background upload daemon — install `kio-protondrive-full` to get both it and
-the KIO worker. It's a `systemd --user` service watching one configured
-local folder and uploading new/changed files to Proton Drive automatically.
+Everything under `protondrive:/` is fetched on demand by default — nothing
+is kept locally. If you want a specific file or folder to always be
+available instantly (no download wait) and offline, right-click it in
+Dolphin and choose **Garder en local** ("Keep it local"). This downloads a
+local copy that the KIO worker then serves straight from disk for `get`/
+`stat`, no CLI round-trip. **Supprimer la copie locale** ("Remove the local
+copy") un-pins it again — the local copy is deleted, the file on Drive is
+untouched.
 
-**Phase 1 scope**: one-way local → Drive upload only. Drive → local
-download, local-delete propagation, and conflict resolution aren't
-implemented yet — see [docs/DESIGN.md](docs/DESIGN.md) and
-[#12](https://github.com/Aarklendoia/kio-protondrive/issues/12) for the
-full planned design.
+A separate package, `kio-protondrive-sync-daemon`, provides the background
+piece this needs — install `kio-protondrive-full` to get both it and the
+KIO worker. It's a `systemd --user` service that does two things: runs the
+`pin`/`unpin` action requested from Dolphin's context menu, and watches
+already-pinned files for local edits, uploading changed ones back to Drive
+automatically.
 
-To configure it, write `~/.config/kio-protondrive/daemon.toml`:
+**Scope**: one-way local → Drive upload for *pinned* files only. Picking up
+changes made to a pinned file from elsewhere (another device, the web app)
+happens on next access, not via continuous background polling — see
+[docs/DESIGN.md](docs/DESIGN.md) and
+[#30](https://github.com/Aarklendoia/kio-protondrive/issues/30) for the
+full design.
 
-```toml
-local_path = "/home/you/ProtonDriveSync"
-remote_path = "/my-files/Backups"
-```
-
-Then enable and start it:
+No configuration file is required to get started. Enable and start it:
 
 ```console
 $ systemctl --user enable --now kio-protondrive-sync-daemon.service

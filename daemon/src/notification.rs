@@ -70,6 +70,79 @@ pub fn cli_update_available(message: &str) {
     }
 }
 
+/// The last path segment, for display in a notification — a bare filename
+/// reads better than the full Drive path, and (unlike the path) never needs
+/// translation, so it's kept out of any gettext msgid.
+fn display_name(remote_path: &str) -> &str {
+    remote_path
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(remote_path)
+}
+
+/// Fires a persistent "downloading…" notification for a pin's download —
+/// mirrors what Dolphin shows for a copy job. `proton-drive filesystem
+/// download` is a single blocking CLI call with no incremental progress to
+/// report, so this is deliberately indeterminate (no percentage), just
+/// enough to answer "is anything happening?" — previously the answer was a
+/// silent wait with no feedback either way, success or failure.
+///
+/// Returns the notification's id (`notify-send --print-id`'s stdout) so
+/// [`pin_finished`] can replace it in place rather than leaving a stale
+/// "downloading…" notification sitting next to a new one; `None` (id
+/// unavailable, e.g. `notify-send` missing) just means `pin_finished` sends
+/// a fresh notification instead of replacing.
+pub fn pin_started(remote_path: &str) -> Option<String> {
+    let output = Command::new("notify-send")
+        .arg("--app-name=Proton Drive")
+        .arg("--urgency=low")
+        .arg("--expire-time=0")
+        .arg("--print-id")
+        .arg(display_name(remote_path))
+        .arg(gettext("Downloading to keep available offline…"))
+        .output();
+    match output {
+        Ok(out) if out.status.success() => {
+            let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            (!id.is_empty()).then_some(id)
+        }
+        Ok(_) => None,
+        Err(err) => {
+            log::debug!("could not send a desktop notification (notify-send missing?): {err}");
+            None
+        }
+    }
+}
+
+/// Replaces (or, absent an `id`, sends fresh) the [`pin_started`]
+/// notification with the outcome — `error` being `Some` also fixes what
+/// used to be a silent failure (the pin CLI's stderr is never seen, since
+/// the ServiceMenu that invokes it runs with no visible terminal): a failed
+/// pin was previously indistinguishable from "still downloading" and from
+/// "succeeded", all three looking exactly like nothing happened.
+pub fn pin_finished(id: Option<&str>, remote_path: &str, error: Option<&str>) {
+    let mut cmd = Command::new("notify-send");
+    cmd.arg("--app-name=Proton Drive");
+    if let Some(id) = id {
+        cmd.arg(format!("--replace-id={id}"));
+    }
+    let body = match error {
+        None => {
+            cmd.arg("--urgency=low").arg("--expire-time=5000");
+            gettext("Now available offline.")
+        }
+        Some(error) => {
+            cmd.arg("--urgency=critical").arg("--expire-time=0");
+            format!("{} {error}", gettext("Could not keep available offline:"))
+        }
+    };
+    cmd.arg(display_name(remote_path)).arg(body);
+    if let Err(err) = cmd.status() {
+        log::debug!("could not send a desktop notification (notify-send missing?): {err}");
+    }
+}
+
 /// Abstraction over "send the CLI-update-available notification", injectable
 /// so [`crate::version_check`]'s tests never fire a real `notify-send` —
 /// unlike `auth_required`, which no test calls into, this one *is* driven by

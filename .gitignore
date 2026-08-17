@@ -46,6 +46,7 @@ debian/.debhelper/
 debian/kio-protondrive/
 debian/kio-protondrive-sync-daemon/
 debian/kio-protondrive-full/
+debian/kio-protondrive-wizard/
 debian/*.substvars
 debian/*.debhelper
 debian/files
@@ -60,6 +61,10 @@ debian/debhelper-build-stamp
 *.buildinfo
 *.changes
 .debhelper-build-stamp
+
+# Compiled from wizard/translations/*.ts by debian/rules at package-build
+# time (lrelease) — same source-vs-build-artifact split as po/*.po -> *.mo.
+/wizard/translations/*.qm
 
 # Coverage / docs
 *.profdata

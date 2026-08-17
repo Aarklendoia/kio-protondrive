@@ -32,4 +32,9 @@ private:
     // protondrive:// is host-less (like trash:// or recentdocuments://): the
     // path component alone is the address, an empty path means the root "/".
     static QString drivePath(const QUrl &url);
+
+    // Shared by get()'s two sources of file bytes (a pinned local cache hit,
+    // or a freshly downloaded temp file) — both stream identically once the
+    // bytes are sitting at some local path.
+    KIO::WorkerResult streamLocalFile(const QString &localPath, const QString &originalPath);
 };

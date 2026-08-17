@@ -17,3 +17,22 @@ target_link_libraries(protondrive
 )
 
 set_target_properties(protondrive PROPERTIES OUTPUT_NAME "protondrive")
+
+# See overlayplugin.cpp's doc comment for why this exists alongside the
+# worker's own UDS_ICON_OVERLAY_NAMES — this is Dolphin's purpose-built,
+# on-demand path to the same "is this pinned?" answer, the same mechanism
+# Nextcloud's/ownCloud's desktop clients use for their sync-status emblems.
+kcoreaddons_add_plugin(protondrive_overlayicon
+    SOURCES
+        overlayplugin.cpp
+    INSTALL_NAMESPACE "kf6/overlayicon"
+)
+
+target_link_libraries(protondrive_overlayicon
+    PRIVATE
+        KF6::KIOCore
+        Qt6::DBus
+        protondrive-core-cxxbridge
+)
+
+set_target_properties(protondrive_overlayicon PROPERTIES OUTPUT_NAME "protondrive_overlayicon")

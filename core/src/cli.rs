@@ -44,6 +44,10 @@ pub enum DriveError {
     Spawn(String),
     #[error("proton-drive did not respond within {0:?}")]
     Timeout(Duration),
+    #[error("i/o error: {0}")]
+    Io(String),
+    #[error("cache database error: {0}")]
+    Sqlite(String),
 }
 
 impl From<serde_json::Error> for DriveError {
@@ -172,6 +176,41 @@ pub fn create_folder(
     Ok(serde_json::from_str(&out.stdout)?)
 }
 
+/// Ensures every path segment of `remote_dir` exists as a real folder,
+/// creating missing ones one level at a time (no recursive mkdir on the
+/// CLI side). The first segment is always a fixed virtual section (e.g.
+/// "/my-files") — assumed to already exist rather than stat'd or created,
+/// since stat'ing a bare virtual section is unreliable (some sections
+/// respond "not implemented", `/photos` is known to hang — see
+/// METADATA_TIMEOUT's comment above). Shared by the daemon (building the
+/// remote folder chain for a local subdirectory) and the setup wizard
+/// (validating/creating the configured remote folder).
+pub fn ensure_remote_dir_chain(
+    runner: &dyn CommandRunner,
+    remote_dir: &str,
+) -> Result<(), DriveError> {
+    let segments: Vec<&str> = remote_dir.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() <= 1 {
+        return Ok(());
+    }
+
+    let mut current = format!("/{}", segments[0]);
+    for segment in &segments[1..] {
+        let parent = current.clone();
+        current.push('/');
+        current.push_str(segment);
+        match stat_path(runner, &current) {
+            Ok(_) => continue,
+            Err(DriveError::NotFound(_)) => match create_folder(runner, &parent, segment) {
+                Ok(_) | Err(DriveError::AlreadyExists(_)) => continue,
+                Err(err) => return Err(err),
+            },
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(())
+}
+
 fn ensure_no_failures(context: &str, summary: &TransferSummary) -> Result<(), DriveError> {
     if summary.failed_items > 0 {
         return Err(DriveError::Cli(format!(
@@ -183,10 +222,13 @@ fn ensure_no_failures(context: &str, summary: &TransferSummary) -> Result<(), Dr
 }
 
 /// Downloads `remote_path` into `local_folder` (which must already exist).
-/// Always forces the `replace` file-conflict strategy: the worker downloads
-/// into a fresh temporary directory it controls, so there is never a
-/// legitimate local file to preserve, and the CLI would otherwise block
-/// waiting for interactive input the worker process has no way to provide.
+/// Always forces the `remove` file-conflict strategy (`download`'s own
+/// equivalent of `upload`'s `replace` — confirmed via `filesystem download
+/// --help`, whose accepted `-f` values are `rename`/`remove`/`skip`, not
+/// `replace`): the worker downloads into a fresh temporary directory it
+/// controls, so there is never a legitimate local file to preserve, and the
+/// CLI would otherwise block waiting for interactive input the worker
+/// process has no way to provide.
 pub fn download(
     runner: &dyn CommandRunner,
     remote_path: &str,
@@ -199,7 +241,7 @@ pub fn download(
             "download",
             "-j",
             "-f",
-            "replace",
+            "remove",
             remote_path,
             &local,
         ],
@@ -351,6 +393,53 @@ mod tests {
         }
     }
 
+    /// Like `MockRunner`, but returns a different pre-set response per call
+    /// (in order) instead of the same one every time — needed for functions
+    /// like `ensure_remote_dir_chain` that make more than one CLI call per
+    /// invocation and expect different outcomes from each.
+    struct ScriptedRunner {
+        responses: RefCell<std::collections::VecDeque<CommandOutput>>,
+        calls: RefCell<Vec<Vec<String>>>,
+    }
+
+    impl ScriptedRunner {
+        fn new(responses: Vec<CommandOutput>) -> Self {
+            Self {
+                responses: RefCell::new(responses.into_iter().collect()),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl CommandRunner for ScriptedRunner {
+        fn run(&self, args: &[&str], _timeout: Duration) -> Result<CommandOutput, DriveError> {
+            self.calls
+                .borrow_mut()
+                .push(args.iter().map(|s| s.to_string()).collect());
+            Ok(self
+                .responses
+                .borrow_mut()
+                .pop_front()
+                .expect("no more scripted responses"))
+        }
+    }
+
+    fn success(stdout: &str) -> CommandOutput {
+        CommandOutput {
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+            success: true,
+        }
+    }
+
+    fn failure(stderr: &str) -> CommandOutput {
+        CommandOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            success: false,
+        }
+    }
+
     const ROOT_LISTING: &str = r#"[
         {"path":"/my-files"},
         {"path":"/devices"},
@@ -480,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn download_forces_replace_conflict_strategy() {
+    fn download_forces_remove_conflict_strategy() {
         let runner = MockRunner::success(TRANSFER_SUMMARY_OK);
         let dest = Path::new("/tmp/kio-protondrive-test-dest");
         download(&runner, "/my-files/report.pdf", dest).unwrap();
@@ -491,7 +580,7 @@ mod tests {
                 "download",
                 "-j",
                 "-f",
-                "replace",
+                "remove",
                 "/my-files/report.pdf",
                 "/tmp/kio-protondrive-test-dest",
             ]
@@ -635,6 +724,54 @@ mod tests {
         let runner = MockRunner::failure("Un fichier ou un dossier portant ce nom existe déjà.");
         let err = create_folder(&runner, "/my-files", "Backups").unwrap_err();
         assert!(matches!(err, DriveError::AlreadyExists(_)));
+    }
+
+    const CREATED_FOLDER_NODE: &str = r#"{
+        "uid":"uid-new-folder",
+        "name":{"ok":true,"value":"Backups"},
+        "type":"folder",
+        "isShared":false,
+        "creationTime":"2026-01-01T00:00:00.000Z",
+        "modificationTime":"2026-01-01T00:00:00.000Z"
+    }"#;
+
+    #[test]
+    fn ensure_remote_dir_chain_is_a_noop_for_a_bare_virtual_section() {
+        let runner = ScriptedRunner::new(Vec::new());
+        ensure_remote_dir_chain(&runner, "/my-files").unwrap();
+        assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn ensure_remote_dir_chain_creates_a_missing_folder() {
+        let runner = ScriptedRunner::new(vec![
+            failure("Path not found"),
+            success(CREATED_FOLDER_NODE),
+        ]);
+        ensure_remote_dir_chain(&runner, "/my-files/Backups").unwrap();
+        let calls = runner.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0],
+            vec!["filesystem", "info", "-j", "/my-files/Backups"]
+        );
+        assert_eq!(
+            calls[1],
+            vec!["filesystem", "create-folder", "-j", "/my-files", "Backups"]
+        );
+    }
+
+    #[test]
+    fn ensure_remote_dir_chain_treats_a_racing_create_as_success() {
+        // stat says missing, but by the time create-folder runs something
+        // else (another sync cycle, a concurrent process) already made it —
+        // that's still the outcome this function exists to guarantee, so it
+        // shouldn't surface as an error.
+        let runner = ScriptedRunner::new(vec![
+            failure("Path not found"),
+            failure("Un fichier ou un dossier portant ce nom existe déjà."),
+        ]);
+        ensure_remote_dir_chain(&runner, "/my-files/Backups").unwrap();
     }
 
     #[test]

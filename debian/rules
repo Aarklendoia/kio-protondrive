@@ -27,6 +27,12 @@ endif
 # proxy shim, so handing it the real binary keeps it and never calls rustup.
 RUST_SYSROOT := $(shell rustc --print sysroot)
 
+# Same "ask qtpaths6 instead of hardcoding a path" reasoning as the wizard's
+# own QML/plugin path discovery at runtime (see wizard/src/main.rs) —
+# QT_INSTALL_BINS varies by distro/architecture, unlike the wizard runtime's
+# QT_INSTALL_QML/QT_INSTALL_PLUGINS lookups this mirrors build-time.
+QT_BINS := $(shell qtpaths6 --query QT_INSTALL_BINS)
+
 %:
 	dh $@ --buildsystem=cmake
 
@@ -37,12 +43,15 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	dh_auto_build
-	# daemon/ is plain Cargo, not part of the CMake/Corrosion graph that
-	# builds core/ + the KIO plugin above — build it separately. This does
-	# mean core/ gets compiled twice (once as a staticlib via Corrosion for
-	# the cxx bridge, once as an rlib here for daemon/ to link), which is
-	# harmless duplication, not a bug.
-	cargo build --release --locked --manifest-path daemon/Cargo.toml
+	# daemon/ and wizard/ are plain Cargo, not part of the CMake/Corrosion
+	# graph that builds core/ + the KIO plugin above — build the whole
+	# workspace separately in one go (wizard/ depends on daemon/'s lib,
+	# which depends on core/, so a single --workspace build lets Cargo
+	# resolve that once instead of two independent --manifest-path
+	# invocations). This does mean core/ gets compiled twice overall (once
+	# as a staticlib via Corrosion for the cxx bridge, once as an rlib here
+	# for daemon/wizard to link), which is harmless duplication, not a bug.
+	cargo build --release --locked --workspace
 
 override_dh_auto_test:
 	# Runs the Rust unit tests (core/ + daemon/), which need no KF6/Qt6
@@ -56,3 +65,18 @@ override_dh_auto_install:
 	dh_auto_install
 	install -Dm755 target/release/kio-protondrive-daemon \
 		debian/tmp/usr/bin/kio-protondrive-daemon
+	install -Dm755 target/release/kio-protondrive-wizard \
+		debian/tmp/usr/bin/kio-protondrive-wizard
+	install -d debian/tmp/usr/share/kio-protondrive-wizard/qml
+	install -m644 wizard/qml/*.qml \
+		debian/tmp/usr/share/kio-protondrive-wizard/qml/
+	# Compiled here (not committed) — same source-vs-build-artifact split as
+	# the KI18n .po -> .mo compilation ki18n_install(po) does for the worker
+	# and daemon's own translations. Loaded by wizard/src/main.rs's
+	# resolve_locale()/find_qml_translation_path() via `qml6 --translation`.
+	install -d debian/tmp/usr/share/kio-protondrive-wizard/translations
+	for ts in wizard/translations/*.ts; do \
+		lang=$$(basename $$ts .ts); \
+		$(QT_BINS)/lrelease $$ts \
+			-qm debian/tmp/usr/share/kio-protondrive-wizard/translations/$$lang.qm; \
+	done
