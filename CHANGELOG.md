@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.3.1...v0.4.0) (2026-08-17)
+
+
+### Features
+
+* **daemon:** localize desktop notification strings ([#31](https://github.com/Aarklendoia/kio-protondrive/issues/31)) ([#49](https://github.com/Aarklendoia/kio-protondrive/issues/49)) ([10f1839](https://github.com/Aarklendoia/kio-protondrive/commit/10f1839c7f06602744eb2bc9387ca94f6d1bcd6c))
+* **daemon:** notify when a newer proton-drive CLI is available ([#46](https://github.com/Aarklendoia/kio-protondrive/issues/46)) ([29680cb](https://github.com/Aarklendoia/kio-protondrive/commit/29680cb5d98f8c1c08fdb7b24e7a5b340dc6a682))
+* **worker:** add standalone mimetype() KIO method ([#45](https://github.com/Aarklendoia/kio-protondrive/issues/45)) ([43a9677](https://github.com/Aarklendoia/kio-protondrive/commit/43a9677aec1181372c095e385a369cda6cce466f))
+
+
+### Bug Fixes
+
+* **daemon:** run the CLI version check at startup, not after 24h ([#48](https://github.com/Aarklendoia/kio-protondrive/issues/48)) ([37c5f90](https://github.com/Aarklendoia/kio-protondrive/commit/37c5f901536c49d0053d0fc3fe4d1cb77cb5ea2a))
+
 ## [0.3.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.3.0...v0.3.1) (2026-08-01)
 
 
