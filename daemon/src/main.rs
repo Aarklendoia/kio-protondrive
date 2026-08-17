@@ -13,13 +13,22 @@ mod error;
 mod journal;
 mod notification;
 mod sync;
+mod version_check;
 mod watcher;
+
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::{Duration, Instant};
 
 use protondrive_core::cli::RealCommandRunner;
 
 use config::Config;
 use journal::Journal;
 use watcher::WatchEvent;
+
+/// How often to ask the installed `proton-drive` CLI whether a newer
+/// release exists (see [`version_check`]) — infrequent by design, this is a
+/// convenience nudge, not something latency-sensitive.
+const VERSION_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Logs one clear, actionable line and fires a desktop notification — but
 /// only on the falling edge (the first failure after things were working),
@@ -86,33 +95,55 @@ fn main() {
     };
 
     log::info!("watching {} for changes", config.local_path.display());
-    for batch in events {
-        for event in batch {
-            let label = match &event {
-                WatchEvent::Changed(path) => path.display().to_string(),
-                WatchEvent::Renamed { from, to } => {
-                    format!("{} -> {}", from.display(), to.display())
+    let mut cli_update_notified: Option<String> = None;
+    // Checked once immediately below (elapsed() on a fresh Instant is ~0, so
+    // the first loop iteration's wait is ~0 and fires right away), then
+    // every VERSION_CHECK_INTERVAL after that.
+    let mut last_version_check = Instant::now();
+    loop {
+        let wait = VERSION_CHECK_INTERVAL.saturating_sub(last_version_check.elapsed());
+        match events.recv_timeout(wait) {
+            Ok(batch) => {
+                for event in batch {
+                    let label = match &event {
+                        WatchEvent::Changed(path) => path.display().to_string(),
+                        WatchEvent::Renamed { from, to } => {
+                            format!("{} -> {}", from.display(), to.display())
+                        }
+                    };
+                    let result = match &event {
+                        WatchEvent::Changed(path) => {
+                            sync::upload_if_needed(&runner, &journal, &config, path)
+                        }
+                        WatchEvent::Renamed { from, to } => {
+                            sync::handle_rename(&runner, &journal, &config, from, to)
+                        }
+                    };
+                    match result {
+                        Ok(()) => auth_notified = false,
+                        Err(err) if err.is_authentication_error() => {
+                            report_authentication_failure(&mut auth_notified);
+                            // The rest of this batch would fail identically —
+                            // skip straight to the next debounced batch
+                            // instead of burning a CLI call per remaining
+                            // event.
+                            break;
+                        }
+                        Err(err) => {
+                            log::warn!("failed to sync {label}: {err} (will retry next cycle)")
+                        }
+                    }
                 }
-            };
-            let result = match &event {
-                WatchEvent::Changed(path) => {
-                    sync::upload_if_needed(&runner, &journal, &config, path)
-                }
-                WatchEvent::Renamed { from, to } => {
-                    sync::handle_rename(&runner, &journal, &config, from, to)
-                }
-            };
-            match result {
-                Ok(()) => auth_notified = false,
-                Err(err) if err.is_authentication_error() => {
-                    report_authentication_failure(&mut auth_notified);
-                    // The rest of this batch would fail identically — skip
-                    // straight to the next debounced batch instead of
-                    // burning a CLI call per remaining event.
-                    break;
-                }
-                Err(err) => log::warn!("failed to sync {label}: {err} (will retry next cycle)"),
             }
+            Err(RecvTimeoutError::Timeout) => {}
+            // The watcher's sender half is gone — nothing more will ever
+            // arrive, so there's nothing left for this loop to do.
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+
+        if last_version_check.elapsed() >= VERSION_CHECK_INTERVAL {
+            version_check::check(&runner, &mut cli_update_notified);
+            last_version_check = Instant::now();
         }
     }
 }
