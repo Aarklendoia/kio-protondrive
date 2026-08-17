@@ -10,6 +10,8 @@ Build-Depends:
   rustc,
   pkg-config,
   qt6-base-dev,
+  qt6-base-dev-tools,
+  qt6-l10n-tools,
   libkf6kio-dev,
   libkf6coreaddons-dev
 Standards-Version: 4.6.1

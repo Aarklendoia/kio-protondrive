@@ -91,6 +91,9 @@ fn main() {
     // the whole wizard UI would hang on "Checking…" with no visible error.
     // Must stay the last argument (QML reads it by position).
     let mut cmd = Command::new("qml6");
+    if let Some(qm_path) = resolve_locale().and_then(find_qml_translation_path) {
+        cmd.arg("--translation").arg(qm_path);
+    }
     cmd.arg(&qml_path)
         .arg("--")
         .arg(runtime_dir.to_string_lossy().into_owned())
@@ -153,6 +156,51 @@ fn find_qml_path() -> String {
         .join("main.qml")
         .to_string_lossy()
         .to_string()
+}
+
+/// The 9 languages this project already covers for the KIO worker (KF6::I18n)
+/// and the daemon (gettext, see `po/`) — kept in sync with those by hand,
+/// since there's no shared source of truth across three different i18n
+/// systems (KF6::I18n's `.po`, gettext's `.po`, and Qt Linguist's `.ts` here).
+const SUPPORTED_LOCALES: &[&str] = &["ar", "de", "es", "fr", "hi", "ja", "pt_BR", "ru", "zh_CN"];
+
+/// Resolves the user's locale to one of [`SUPPORTED_LOCALES`], following the
+/// same `LC_ALL` > `LC_MESSAGES` > `LANG` precedence gettext/glibc use.
+/// Tries the full value first (needed for `pt_BR`/`zh_CN`, which are
+/// region-specific), then just the language part before `_` (so e.g.
+/// `fr_FR.UTF-8` or `de_AT` still match `fr`/`de`) — `None` for an
+/// unsupported or unset locale, which leaves `qsTr()` falling back to its
+/// source (English) text, the correct default.
+fn resolve_locale() -> Option<&'static str> {
+    let raw = std::env::var("LC_ALL")
+        .or_else(|_| std::env::var("LC_MESSAGES"))
+        .or_else(|_| std::env::var("LANG"))
+        .ok()?;
+    let base = raw.split(['.', '@']).next().unwrap_or(&raw);
+    SUPPORTED_LOCALES
+        .iter()
+        .copied()
+        .find(|&l| l == base)
+        .or_else(|| {
+            let lang = base.split('_').next().unwrap_or(base);
+            SUPPORTED_LOCALES.iter().copied().find(|&l| l == lang)
+        })
+}
+
+/// The compiled `.qm` for `locale`, if this install (or dev tree) has one —
+/// same install-then-dev-tree fallback pattern as [`find_qml_path`].
+fn find_qml_translation_path(locale: &str) -> Option<PathBuf> {
+    let installed = PathBuf::from(format!(
+        "/usr/share/kio-protondrive-wizard/translations/kio_protondrive_wizard_{locale}.qm"
+    ));
+    if installed.is_file() {
+        return Some(installed);
+    }
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let dev_path = PathBuf::from(&manifest_dir)
+        .join("translations")
+        .join(format!("kio_protondrive_wizard_{locale}.qm"));
+    dev_path.is_file().then_some(dev_path)
 }
 
 fn start_control_server(token: String) -> u16 {
@@ -525,5 +573,59 @@ mod tests {
         assert!(saved.contains("credentials_store = \"pass\""));
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // One test, sequential scenarios — same reasoning as
+    // save_config_applies_the_credentials_store_to_the_live_env above:
+    // LC_ALL/LC_MESSAGES/LANG are process-wide, so parallel `#[test]`s
+    // mutating them would race.
+    #[test]
+    fn resolve_locale_matches_supported_languages_with_fallback() {
+        for var in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+            std::env::remove_var(var);
+        }
+
+        std::env::set_var("LANG", "fr_FR.UTF-8");
+        assert_eq!(resolve_locale(), Some("fr"), "language part of LANG");
+
+        std::env::set_var("LANG", "pt_BR.UTF-8");
+        assert_eq!(
+            resolve_locale(),
+            Some("pt_BR"),
+            "full region-specific value must be tried before the bare language part"
+        );
+
+        std::env::set_var("LANG", "de_AT@euro");
+        assert_eq!(resolve_locale(), Some("de"), "modifier suffix stripped");
+
+        std::env::set_var("LC_MESSAGES", "ja_JP.UTF-8");
+        assert_eq!(
+            resolve_locale(),
+            Some("ja"),
+            "LC_MESSAGES takes priority over LANG"
+        );
+
+        std::env::set_var("LC_ALL", "ru_RU.UTF-8");
+        assert_eq!(
+            resolve_locale(),
+            Some("ru"),
+            "LC_ALL takes priority over LC_MESSAGES and LANG"
+        );
+
+        std::env::remove_var("LC_ALL");
+        std::env::remove_var("LC_MESSAGES");
+        std::env::set_var("LANG", "pt_PT.UTF-8");
+        assert_eq!(
+            resolve_locale(),
+            None,
+            "a region variant this project doesn't cover (only pt_BR) must not \
+             fall back to some other pt_* match"
+        );
+
+        std::env::set_var("LANG", "C");
+        assert_eq!(resolve_locale(), None);
+
+        std::env::remove_var("LANG");
+        assert_eq!(resolve_locale(), None, "no locale env vars set at all");
     }
 }

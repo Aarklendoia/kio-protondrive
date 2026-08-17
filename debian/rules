@@ -27,6 +27,12 @@ endif
 # proxy shim, so handing it the real binary keeps it and never calls rustup.
 RUST_SYSROOT := $(shell rustc --print sysroot)
 
+# Same "ask qtpaths6 instead of hardcoding a path" reasoning as the wizard's
+# own QML/plugin path discovery at runtime (see wizard/src/main.rs) —
+# QT_INSTALL_BINS varies by distro/architecture, unlike the wizard runtime's
+# QT_INSTALL_QML/QT_INSTALL_PLUGINS lookups this mirrors build-time.
+QT_BINS := $(shell qtpaths6 --query QT_INSTALL_BINS)
+
 %:
 	dh $@ --buildsystem=cmake
 
@@ -64,3 +70,13 @@ override_dh_auto_install:
 	install -d debian/tmp/usr/share/kio-protondrive-wizard/qml
 	install -m644 wizard/qml/*.qml \
 		debian/tmp/usr/share/kio-protondrive-wizard/qml/
+	# Compiled here (not committed) — same source-vs-build-artifact split as
+	# the KI18n .po -> .mo compilation ki18n_install(po) does for the worker
+	# and daemon's own translations. Loaded by wizard/src/main.rs's
+	# resolve_locale()/find_qml_translation_path() via `qml6 --translation`.
+	install -d debian/tmp/usr/share/kio-protondrive-wizard/translations
+	for ts in wizard/translations/*.ts; do \
+		lang=$$(basename $$ts .ts); \
+		$(QT_BINS)/lrelease $$ts \
+			-qm debian/tmp/usr/share/kio-protondrive-wizard/translations/$$lang.qm; \
+	done

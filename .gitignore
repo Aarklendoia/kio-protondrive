@@ -62,6 +62,10 @@ debian/debhelper-build-stamp
 *.changes
 .debhelper-build-stamp
 
+# Compiled from wizard/translations/*.ts by debian/rules at package-build
+# time (lrelease) — same source-vs-build-artifact split as po/*.po -> *.mo.
+/wizard/translations/*.qm
+
 # Coverage / docs
 *.profdata
 /coverage-html/

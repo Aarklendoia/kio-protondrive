@@ -1,3 +1,4 @@
 usr/bin/kio-protondrive-wizard
 usr/share/kio-protondrive-wizard/qml/*
+usr/share/kio-protondrive-wizard/translations/*
 wizard/kio-protondrive-wizard.desktop usr/share/applications

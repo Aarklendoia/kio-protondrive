@@ -31,3 +31,18 @@ msgstr "Exécutez « proton-drive auth login » dans un terminal, puis la synchr
 #: daemon/src/notification.rs:0
 msgid "Proton Drive: CLI update available"
 msgstr "Proton Drive : mise à jour du CLI disponible"
+
+#. Body of the persistent notification shown while a pinned file downloads (see pin_started) — no percentage shown, since the CLI reports none.
+#: daemon/src/notification.rs:0
+msgid "Downloading to keep available offline…"
+msgstr "Téléchargement en cours pour garder disponible hors ligne…"
+
+#. Body of the notification replacing pin_started's once a pin succeeds.
+#: daemon/src/notification.rs:0
+msgid "Now available offline."
+msgstr "Maintenant disponible hors ligne."
+
+#. Prefix of the notification replacing pin_started's once a pin fails — the CLI's own error text is appended as-is, untranslated (same convention as the CLI-update-available notification's body).
+#: daemon/src/notification.rs:0
+msgid "Could not keep available offline:"
+msgstr "Impossible de garder disponible hors ligne :"
