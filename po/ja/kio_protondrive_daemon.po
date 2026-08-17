@@ -1,0 +1,33 @@
+# Japanese translations for kio-protondrive.
+# Copyright (C) 2026 This file is copyright:
+# This file is distributed under the same license as the kio-protondrive package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: kio-protondrive\n"
+"Report-Msgid-Bugs-To: https://github.com/Aarklendoia/kio-protondrive/issues\n"
+"POT-Creation-Date: 2026-08-17 00:00+0000\n"
+"PO-Revision-Date: 2026-08-17 00:00+0000\n"
+"Last-Translator: Aarklendoia <noreply@github.com>\n"
+"Language-Team: Japanese <kde-jp@kde.org>\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: manual\n"
+
+#. Title of the desktop notification fired when the daemon detects a missing/expired Proton Drive session.
+#: daemon/src/notification.rs:0
+msgid "Proton Drive: authentication required"
+msgstr "Proton Drive: 認証が必要です"
+
+#. Body of the desktop notification fired when the daemon detects a missing/expired Proton Drive session.
+#: daemon/src/notification.rs:0
+msgid "Run \"proton-drive auth login\" in a terminal, then Proton Drive sync will resume automatically."
+msgstr "ターミナルで「proton-drive auth login」を実行してください。その後、Proton Drive の同期は自動的に再開されます。"
+
+#. Title of the desktop notification fired when the installed proton-drive CLI itself reports a newer release exists (see version_check.rs) — the notification body is the CLI's own message, relayed as-is and not translated here.
+#: daemon/src/notification.rs:0
+msgid "Proton Drive: CLI update available"
+msgstr "Proton Drive: CLI の更新が利用可能です"
