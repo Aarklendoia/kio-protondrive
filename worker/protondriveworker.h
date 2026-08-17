@@ -20,6 +20,7 @@ public:
 
     KIO::WorkerResult listDir(const QUrl &url) override;
     KIO::WorkerResult stat(const QUrl &url) override;
+    KIO::WorkerResult mimetype(const QUrl &url) override;
     KIO::WorkerResult get(const QUrl &url) override;
     KIO::WorkerResult put(const QUrl &url, int permissions, KIO::JobFlags flags) override;
     KIO::WorkerResult mkdir(const QUrl &url, int permissions) override;
