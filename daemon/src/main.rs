@@ -95,10 +95,15 @@ fn main() {
     };
 
     log::info!("watching {} for changes", config.local_path.display());
+    // Checked once immediately here (same shape as the reconcile() call
+    // above), then every VERSION_CHECK_INTERVAL from inside the loop below.
+    // Note this must NOT be `Instant::now()` followed by relying on the
+    // loop's own elapsed() >= INTERVAL check to fire it "right away": a
+    // freshly-started Instant has elapsed() ~0, which makes the *wait*
+    // computed below ~INTERVAL (not ~0) — that would silently delay the
+    // first check by a full day instead of running it at startup.
     let mut cli_update_notified: Option<String> = None;
-    // Checked once immediately below (elapsed() on a fresh Instant is ~0, so
-    // the first loop iteration's wait is ~0 and fires right away), then
-    // every VERSION_CHECK_INTERVAL after that.
+    version_check::check(&runner, &mut cli_update_notified);
     let mut last_version_check = Instant::now();
     loop {
         let wait = VERSION_CHECK_INTERVAL.saturating_sub(last_version_check.elapsed());
