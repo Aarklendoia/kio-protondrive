@@ -11,4 +11,5 @@ pub mod control;
 pub mod error;
 pub mod notification;
 pub mod sync;
+pub mod version_check;
 pub mod watcher;

@@ -11,12 +11,20 @@
 //! actually invokes (talking to the *already-running* instance of this
 //! same binary over its local control server, started by the branch below).
 
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::{Duration, Instant};
+
 use protondrive_core::cache::Cache;
 use protondrive_core::cli::RealCommandRunner;
 
 use kio_protondrive_daemon::config::Config;
 use kio_protondrive_daemon::watcher::{self, WatchEvent};
-use kio_protondrive_daemon::{control, notification, sync};
+use kio_protondrive_daemon::{control, notification, sync, version_check};
+
+/// How often to ask the installed `proton-drive` CLI whether a newer
+/// release exists (see [`version_check`]) — infrequent by design, this is a
+/// convenience nudge, not something latency-sensitive.
+const VERSION_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Logs one clear, actionable line and fires a desktop notification — but
 /// only on the falling edge (the first failure after things were working),
@@ -84,6 +92,7 @@ fn main() {
     control::start();
 
     let runner = RealCommandRunner;
+    let notifier = notification::RealNotifier;
     let mut auth_notified = false;
 
     log::info!("reconciling pinned files under {}", cache.root().display());
@@ -104,29 +113,58 @@ fn main() {
     };
 
     log::info!("watching {} for changes", cache.root().display());
-    for batch in events {
-        for event in batch {
-            let label = match &event {
-                WatchEvent::Changed(path) => path.display().to_string(),
-                WatchEvent::Renamed { from, to } => {
-                    format!("{} -> {}", from.display(), to.display())
+    // Checked once immediately here (same shape as the reconcile() call
+    // above), then every VERSION_CHECK_INTERVAL from inside the loop below.
+    // Note this must NOT be `Instant::now()` followed by relying on the
+    // loop's own elapsed() >= INTERVAL check to fire it "right away": a
+    // freshly-started Instant has elapsed() ~0, which makes the *wait*
+    // computed below ~INTERVAL (not ~0) — that would silently delay the
+    // first check by a full day instead of running it at startup.
+    let mut cli_update_notified: Option<String> = None;
+    version_check::check(&runner, &notifier, &mut cli_update_notified);
+    let mut last_version_check = Instant::now();
+    loop {
+        let wait = VERSION_CHECK_INTERVAL.saturating_sub(last_version_check.elapsed());
+        match events.recv_timeout(wait) {
+            Ok(batch) => {
+                for event in batch {
+                    let label = match &event {
+                        WatchEvent::Changed(path) => path.display().to_string(),
+                        WatchEvent::Renamed { from, to } => {
+                            format!("{} -> {}", from.display(), to.display())
+                        }
+                    };
+                    let result = match &event {
+                        WatchEvent::Changed(path) => sync::upload_if_needed(&runner, &cache, path),
+                        WatchEvent::Renamed { from, to } => {
+                            sync::handle_rename(&runner, &cache, from, to)
+                        }
+                    };
+                    match result {
+                        Ok(()) => auth_notified = false,
+                        Err(err) if err.is_authentication_error() => {
+                            report_authentication_failure(&mut auth_notified);
+                            // The rest of this batch would fail identically —
+                            // skip straight to the next debounced batch
+                            // instead of burning a CLI call per remaining
+                            // event.
+                            break;
+                        }
+                        Err(err) => {
+                            log::warn!("failed to sync {label}: {err} (will retry next cycle)")
+                        }
+                    }
                 }
-            };
-            let result = match &event {
-                WatchEvent::Changed(path) => sync::upload_if_needed(&runner, &cache, path),
-                WatchEvent::Renamed { from, to } => sync::handle_rename(&runner, &cache, from, to),
-            };
-            match result {
-                Ok(()) => auth_notified = false,
-                Err(err) if err.is_authentication_error() => {
-                    report_authentication_failure(&mut auth_notified);
-                    // The rest of this batch would fail identically — skip
-                    // straight to the next debounced batch instead of
-                    // burning a CLI call per remaining event.
-                    break;
-                }
-                Err(err) => log::warn!("failed to sync {label}: {err} (will retry next cycle)"),
             }
+            Err(RecvTimeoutError::Timeout) => {}
+            // The watcher's sender half is gone — nothing more will ever
+            // arrive, so there's nothing left for this loop to do.
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+
+        if last_version_check.elapsed() >= VERSION_CHECK_INTERVAL {
+            version_check::check(&runner, &notifier, &mut cli_update_notified);
+            last_version_check = Instant::now();
         }
     }
 }

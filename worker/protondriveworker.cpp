@@ -258,6 +258,27 @@ KIO::WorkerResult ProtonDriveWorker::streamLocalFile(const QString &localPath, c
     return KIO::WorkerResult::pass();
 }
 
+KIO::WorkerResult ProtonDriveWorker::mimetype(const QUrl &url)
+{
+    const QString path = drivePath(url);
+    try {
+        const FfiEntry entry = stat_path(path.toStdString());
+        if (entry.is_folder) {
+            mimeType(QStringLiteral("inode/directory"));
+        } else {
+            const QString mediaType = toQString(entry.media_type);
+            // Proton Drive doesn't always report a media type (e.g. files
+            // uploaded by other clients) — fall back to a filename-only
+            // guess rather than the full download() a generic get() would
+            // require just to sniff the content.
+            mimeType(mediaType.isEmpty() ? QMimeDatabase().mimeTypeForFile(path, QMimeDatabase::MatchExtension).name() : mediaType);
+        }
+        return KIO::WorkerResult::pass();
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+}
+
 KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
 {
     const QString path = drivePath(url);
