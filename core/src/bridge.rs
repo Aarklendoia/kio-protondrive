@@ -36,8 +36,7 @@ mod ffi {
         fn upload_from(local_path: &str, parent_path: &str) -> Result<()>;
         fn trash(path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
-        fn pin_path(remote_path: &str) -> Result<String>;
-        fn unpin_path(remote_path: &str) -> Result<()>;
+        fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
     }
 }
 
@@ -119,14 +118,11 @@ fn lookup_pin(remote_path: &str) -> Result<String, String> {
         .unwrap_or_default())
 }
 
-fn pin_path(remote_path: &str) -> Result<String, String> {
+/// Called from `del()` after a successful trash — with `force: true`,
+/// always dropping the local cache copy regardless of unsynced edits, since
+/// the remote it would otherwise be uploaded to no longer exists. A no-op
+/// (via [`crate::cache::Cache::unpin`]) if `remote_path` wasn't pinned.
+fn unpin_path(remote_path: &str, force: bool) -> Result<(), String> {
     let cache = open_cache()?;
-    let runner = RealCommandRunner;
-    let local_path = cache.pin(&runner, remote_path).map_err(|e| e.to_string())?;
-    Ok(local_path.to_string_lossy().into_owned())
-}
-
-fn unpin_path(remote_path: &str) -> Result<(), String> {
-    let cache = open_cache()?;
-    cache.unpin(remote_path).map_err(|e| e.to_string())
+    cache.unpin(remote_path, force).map_err(|e| e.to_string())
 }

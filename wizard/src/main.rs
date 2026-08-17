@@ -9,23 +9,33 @@
 //! Dolphin favorite. No cxx-qt, no GUI/HTTP crate dependency; `core`/
 //! `daemon` are path dependencies onto crates already in this workspace,
 //! called in-process like any other Rust library.
+//!
+//! The control-server plumbing (port/token files, request parsing, JSON
+//! escaping, the token check) lives in `protondrive_core::local_ctrl`,
+//! shared with `daemon/src/control.rs`'s equivalent server — see that
+//! module's doc comment for why a shared crate replaced what used to be
+//! two independently-maintained copies.
 
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 
 use kio_protondrive_daemon::config::Config;
 use protondrive_core::cli::{self, DriveError, RealCommandRunner};
+use protondrive_core::local_ctrl::{
+    self, constant_time_eq, extract_header, extract_query_param, generate_ctrl_token, json_escape,
+    request_method, request_path, which, write_owner_only_file,
+};
 
 const APP_NAME: &str = "kio-protondrive-wizard";
+const TOKEN_HEADER: &str = "x-kio-protondrive-wizard-token";
 
 fn main() {
     let qml_path = find_qml_path();
-    let uid = get_current_uid();
+    let uid = local_ctrl::current_uid();
+    let runtime_dir = local_ctrl::runtime_dir(uid);
 
-    let lock_path = format!("{}/{APP_NAME}.lock", runtime_dir(uid));
+    let lock_path = runtime_dir.join(format!("{APP_NAME}.lock"));
     if let Ok(content) = std::fs::read_to_string(&lock_path) {
         if let Ok(pid) = content.trim().parse::<u32>() {
             if Path::new(&format!("/proc/{pid}")).exists() {
@@ -38,34 +48,52 @@ fn main() {
 
     let ctrl_token = generate_ctrl_token();
     let ctrl_port = start_control_server(ctrl_token.clone());
-    if let Err(e) = write_owner_only_file(&ctrl_port_path(uid), &ctrl_port.to_string()) {
+    let ctrl_port_path = runtime_dir.join(format!("{APP_NAME}-ctrl.port"));
+    let ctrl_token_path = runtime_dir.join(format!("{APP_NAME}-ctrl.token"));
+    if let Err(e) = write_owner_only_file(&ctrl_port_path, &ctrl_port.to_string()) {
         eprintln!("Could not write the control port file: {e}");
     }
-    if let Err(e) = write_owner_only_file(&ctrl_token_path(uid), &ctrl_token) {
+    if let Err(e) = write_owner_only_file(&ctrl_token_path, &ctrl_token) {
         eprintln!("Could not write the control token file: {e}");
     }
 
-    let qml_import_paths = [
-        "/usr/lib/x86_64-linux-gnu/qt6/qml",
-        "/usr/share/qt6/qml",
-        "/usr/share/kio-protondrive-wizard/qml-modules",
-    ]
-    .join(":");
-    let qt_plugin_paths = [
-        "/usr/lib/x86_64-linux-gnu/qt6/plugins",
-        "/usr/lib/qt6/plugins",
-    ]
-    .join(":");
+    // Queried via `qtpaths6` rather than a hardcoded multiarch triplet
+    // (e.g. "x86_64-linux-gnu") — this package is `Architecture: any`, and
+    // a hardcoded triplet silently fails to resolve QML/plugins on any
+    // other one (e.g. arm64's "aarch64-linux-gnu"). Falls back to the
+    // generic, non-arch-specific install paths if `qtpaths6` itself is
+    // unavailable for some reason.
+    let mut qml_import_dirs = vec![
+        "/usr/share/qt6/qml".to_string(),
+        "/usr/share/kio-protondrive-wizard/qml-modules".to_string(),
+    ];
+    if let Some(dir) = qt_query("QT_INSTALL_QML") {
+        qml_import_dirs.insert(0, dir);
+    }
+    let qml_import_paths = qml_import_dirs.join(":");
 
-    // Trailing `-- <uid>` is how the QML side learns its own UID (to find
-    // its own namespaced port/token files under $XDG_RUNTIME_DIR) —
-    // Qt.environmentVariable isn't reliably available to plain QML, but
-    // qml6 forwards anything after `--` into Qt.application.arguments,
-    // which is. Must stay the last argument (QML reads it by position).
+    let mut qt_plugin_dirs = vec!["/usr/lib/qt6/plugins".to_string()];
+    if let Some(dir) = qt_query("QT_INSTALL_PLUGINS") {
+        qt_plugin_dirs.insert(0, dir);
+    }
+    let qt_plugin_paths = qt_plugin_dirs.join(":");
+
+    // Trailing `-- <runtime_dir>` is how the QML side learns where to find
+    // its own port/token files — Qt.environmentVariable isn't reliably
+    // available to plain QML, but qml6 forwards anything after `--` into
+    // Qt.application.arguments, which is. Passing the already-resolved
+    // directory (rather than the bare UID and letting QML reconstruct
+    // "/run/user/<uid>" itself) is deliberate: reconstructing it in QML
+    // duplicates local_ctrl::runtime_dir's $XDG_RUNTIME_DIR-over-fallback
+    // logic in a second language, and a prior version that did exactly
+    // that silently broke on any system where $XDG_RUNTIME_DIR isn't
+    // literally "/run/user/<uid>" (containers, some display managers) —
+    // the whole wizard UI would hang on "Checking…" with no visible error.
+    // Must stay the last argument (QML reads it by position).
     let mut cmd = Command::new("qml6");
     cmd.arg(&qml_path)
         .arg("--")
-        .arg(uid.to_string())
+        .arg(runtime_dir.to_string_lossy().into_owned())
         .env("QML_IMPORT_PATH", &qml_import_paths)
         .env("QML2_IMPORT_PATH", &qml_import_paths)
         .env("QT_PLUGIN_PATH", &qt_plugin_paths)
@@ -86,8 +114,25 @@ fn main() {
     }
 
     let _ = std::fs::remove_file(&lock_path);
-    let _ = std::fs::remove_file(ctrl_port_path(uid));
-    let _ = std::fs::remove_file(ctrl_token_path(uid));
+    let _ = std::fs::remove_file(&ctrl_port_path);
+    let _ = std::fs::remove_file(&ctrl_token_path);
+}
+
+/// Asks Qt's own `qtpaths6 --query <var>` for a canonical install
+/// directory (e.g. `QT_INSTALL_QML`, `QT_INSTALL_PLUGINS`) — the same tool
+/// and query used to discover this manually while testing on this exact
+/// distro, so it's the authoritative source rather than a guessed path.
+fn qt_query(var: &str) -> Option<String> {
+    let output = Command::new("qtpaths6")
+        .args(["--query", var])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?;
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 /// Installed `.qml` first, `$CARGO_MANIFEST_DIR/qml/main.qml` fallback for
@@ -110,173 +155,8 @@ fn find_qml_path() -> String {
         .to_string()
 }
 
-fn get_current_uid() -> u32 {
-    Command::new("id")
-        .arg("-u")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(1000)
-}
-
-/// Base directory for the control server's port/token/lock files —
-/// `$XDG_RUNTIME_DIR` (falls back to `/run/user/<uid>`), never `/tmp`: a
-/// different-UID attacker could pre-plant a symlink at a predictable
-/// `/tmp/...` path pointing somewhere we can write, which the owner-only
-/// file writer below would then follow. `$XDG_RUNTIME_DIR` is per-user,
-/// mode 0700, owned solely by this UID.
-fn runtime_dir(uid: u32) -> String {
-    std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| format!("/run/user/{uid}"))
-}
-
-fn ctrl_port_path(uid: u32) -> String {
-    format!("{}/{APP_NAME}-ctrl.port", runtime_dir(uid))
-}
-
-fn ctrl_token_path(uid: u32) -> String {
-    format!("{}/{APP_NAME}-ctrl.token", runtime_dir(uid))
-}
-
-/// 64 lowercase hex chars from `/dev/urandom` — used to authenticate
-/// requests to the local control server (see `handle_ctrl_connection`).
-/// `read_exact`, not `fs::read`: the latter would block forever on a
-/// character device that never returns EOF.
-fn generate_ctrl_token() -> String {
-    use std::fs::File;
-    let mut buf = [0u8; 32];
-    File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut buf))
-        .expect("unable to read /dev/urandom for the control server token");
-    buf.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Writes `contents` to `path` readable/writable only by the current user
-/// (mode 0600). Removes any pre-existing file at `path` first (a stale
-/// leftover from a crashed prior run) and uses `create_new` so a
-/// same-UID TOCTOU race can't slip a different file in between the
-/// remove and the write.
-fn write_owner_only_file(path: &str, contents: &str) -> std::io::Result<()> {
-    use std::fs::OpenOptions;
-    use std::os::unix::fs::OpenOptionsExt;
-    let _ = std::fs::remove_file(path);
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)?;
-    f.write_all(contents.as_bytes())
-}
-
-/// Escapes a string for embedding in a JSON string literal.
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 16);
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// Decodes `%XX` percent-escapes and `+` (space) in a URL query value.
-/// Malformed escapes are passed through literally rather than erroring —
-/// this is a local, trusted, loopback-only control server, not a public
-/// HTTP endpoint that needs to defend against adversarial encoding.
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'+' => {
-                out.push(b' ');
-                i += 1;
-            }
-            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                Ok(byte) => {
-                    out.push(byte);
-                    i += 3;
-                }
-                Err(_) => {
-                    out.push(bytes[i]);
-                    i += 1;
-                }
-            },
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Extracts `name`'s value from the query string of an HTTP request's first
-/// line (e.g. `GET /route?path=%2Fhome HTTP/1.1`). Every route on this
-/// server takes its parameters this way (GET or POST alike) rather than a
-/// parsed body — there's no request here that needs more than a handful of
-/// short string values, so a body parser (and the Content-Length handling
-/// it'd need) isn't worth adding.
-fn extract_query_param(req: &str, name: &str) -> Option<String> {
-    let request_line = req.lines().next()?;
-    let path_and_query = request_line.split_whitespace().nth(1)?;
-    let query = path_and_query.split_once('?')?.1;
-    query.split('&').find_map(|pair| {
-        let (key, value) = pair.split_once('=')?;
-        (key == name).then(|| percent_decode(value))
-    })
-}
-
-fn extract_token_header(req: &str) -> Option<&str> {
-    req.lines().find_map(|line| {
-        line.to_ascii_lowercase()
-            .starts_with("x-kio-protondrive-wizard-token:")
-            .then(|| line["x-kio-protondrive-wizard-token:".len()..].trim())
-    })
-}
-
-fn request_method(req: &str) -> &str {
-    req.lines()
-        .next()
-        .and_then(|line| line.split_whitespace().next())
-        .unwrap_or("")
-}
-
-fn request_path(req: &str) -> &str {
-    req.lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .unwrap_or("")
-        .split('?')
-        .next()
-        .unwrap_or("")
-}
-
-/// Constant-time string comparison — used for the token check so a
-/// co-resident local process can't use response-timing differences to
-/// recover the token faster than brute force. The length check still
-/// returns early, but the token's length isn't secret (always exactly 64
-/// hex chars, see `generate_ctrl_token`).
-fn constant_time_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
-
 fn start_control_server(token: String) -> u16 {
+    use std::net::TcpListener;
     let listener = TcpListener::bind("127.0.0.1:0").expect("unable to start the control server");
     let port = listener.local_addr().unwrap().port();
 
@@ -290,13 +170,14 @@ fn start_control_server(token: String) -> u16 {
     port
 }
 
-fn handle_ctrl_connection(mut stream: TcpStream, expected_token: &str) {
+fn handle_ctrl_connection(mut stream: std::net::TcpStream, expected_token: &str) {
+    use std::io::{Read, Write};
     let mut buf = [0u8; 4096];
     let n = stream.read(&mut buf).unwrap_or(0);
     let req = String::from_utf8_lossy(&buf[..n]).into_owned();
 
     let is_options = request_method(&req) == "OPTIONS";
-    let token_ok = extract_token_header(&req)
+    let token_ok = extract_header(&req, TOKEN_HEADER)
         .map(|t| constant_time_eq(t, expected_token))
         .unwrap_or(false);
 
@@ -393,14 +274,6 @@ fn route_credentials_status() -> String {
     )
 }
 
-fn which(bin: &str) -> bool {
-    Command::new("which")
-        .arg(bin)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
 /// Generates a GPG key (batch mode, no inline passphrase — gpg-agent's
 /// pinentry prompts interactively for that, same as this project's own
 /// git-commit signing) and runs `pass init` with it. Only ever reached once
@@ -426,13 +299,11 @@ fn route_setup_pass(req: &str) -> String {
                     json_escape(&e.to_string())
                 );
             }
-            match existing_secret_key_id() {
-                Some(key_id) => key_id,
-                None => {
-                    return r#"{"ok":false,"error":"gpg key generation did not produce a usable key"}"#
-                        .to_string();
-                }
-            }
+            let Some(key_id) = existing_secret_key_id() else {
+                return r#"{"ok":false,"error":"gpg key generation did not produce a usable key"}"#
+                    .to_string();
+            };
+            key_id
         }
     };
 
@@ -563,75 +434,6 @@ fn route_restart_daemon() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn generate_ctrl_token_is_64_lowercase_hex_chars_and_varies() {
-        let a = generate_ctrl_token();
-        let b = generate_ctrl_token();
-        assert_eq!(a.len(), 64);
-        assert!(a
-            .chars()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn write_owner_only_file_sets_mode_0600() {
-        use std::os::unix::fs::PermissionsExt;
-        let path = std::env::temp_dir().join(format!(
-            "kio-protondrive-wizard-test-{}-{}.tmp",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let path_str = path.to_str().unwrap();
-        write_owner_only_file(path_str, "secret").unwrap();
-        let mode = std::fs::metadata(path_str).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600);
-        assert_eq!(std::fs::read_to_string(path_str).unwrap(), "secret");
-        let _ = std::fs::remove_file(path_str);
-    }
-
-    #[test]
-    fn json_escape_handles_quotes_backslashes_and_control_chars() {
-        assert_eq!(json_escape("a\"b\\c\nd"), "a\\\"b\\\\c\\nd");
-    }
-
-    #[test]
-    fn percent_decode_handles_escapes_and_plus() {
-        assert_eq!(percent_decode("a%2Fb+c"), "a/b c");
-        assert_eq!(percent_decode("no-escapes"), "no-escapes");
-    }
-
-    #[test]
-    fn extract_query_param_reads_a_value_from_the_request_line() {
-        let req = "GET /validate-local-folder?path=%2Fhome%2Fuser HTTP/1.1\r\nHost: x\r\n";
-        assert_eq!(
-            extract_query_param(req, "path"),
-            Some("/home/user".to_string())
-        );
-        assert_eq!(extract_query_param(req, "missing"), None);
-    }
-
-    #[test]
-    fn extract_token_header_is_case_insensitive() {
-        let req = "GET / HTTP/1.1\r\nX-Kio-Protondrive-Wizard-Token: abc123\r\n";
-        assert_eq!(extract_token_header(req), Some("abc123"));
-    }
-
-    #[test]
-    fn request_path_strips_the_query_string() {
-        assert_eq!(request_path("GET /route?a=1&b=2 HTTP/1.1\r\n"), "/route");
-    }
-
-    #[test]
-    fn constant_time_eq_matches_regular_equality() {
-        assert!(constant_time_eq("abc", "abc"));
-        assert!(!constant_time_eq("abc", "abd"));
-        assert!(!constant_time_eq("abc", "ab"));
-    }
 
     #[test]
     fn route_add_favorite_inserts_a_bookmark_before_the_closing_tag() {

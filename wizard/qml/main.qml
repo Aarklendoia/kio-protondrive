@@ -67,9 +67,15 @@ Kirigami.ApplicationWindow {
     pageStack.initialPage: Kirigami.Page {}
 
     Component.onCompleted: {
+        // Passed by main.rs as the trailing argument after "--" — the
+        // already-resolved $XDG_RUNTIME_DIR (or its /run/user/<uid>
+        // fallback), not a bare UID: reconstructing "/run/user/" + uid
+        // here would silently diverge from main.rs's own fallback logic on
+        // any system where $XDG_RUNTIME_DIR isn't exactly that (containers,
+        // some display managers), leaving this page stuck below with no
+        // visible error.
         var args = Qt.application.arguments;
-        var uid = args.length > 0 ? args[args.length - 1] : "0";
-        var runtimeDir = "/run/user/" + uid;
+        var runtimeDir = args.length > 0 ? args[args.length - 1] : "/run/user/0";
 
         var portXhr = new XMLHttpRequest();
         portXhr.open("GET", "file://" + runtimeDir + "/kio-protondrive-wizard-ctrl.port", false);

@@ -64,6 +64,7 @@ Depends:
   ${shlibs:Depends},
   ${misc:Depends},
   qml-qt6,
+  qt6-base-dev-tools,
   qml6-module-org-kde-kirigami,
   qml6-module-qtcore,
   qml6-module-qtquick,

@@ -222,10 +222,13 @@ fn ensure_no_failures(context: &str, summary: &TransferSummary) -> Result<(), Dr
 }
 
 /// Downloads `remote_path` into `local_folder` (which must already exist).
-/// Always forces the `replace` file-conflict strategy: the worker downloads
-/// into a fresh temporary directory it controls, so there is never a
-/// legitimate local file to preserve, and the CLI would otherwise block
-/// waiting for interactive input the worker process has no way to provide.
+/// Always forces the `remove` file-conflict strategy (`download`'s own
+/// equivalent of `upload`'s `replace` — confirmed via `filesystem download
+/// --help`, whose accepted `-f` values are `rename`/`remove`/`skip`, not
+/// `replace`): the worker downloads into a fresh temporary directory it
+/// controls, so there is never a legitimate local file to preserve, and the
+/// CLI would otherwise block waiting for interactive input the worker
+/// process has no way to provide.
 pub fn download(
     runner: &dyn CommandRunner,
     remote_path: &str,
@@ -238,7 +241,7 @@ pub fn download(
             "download",
             "-j",
             "-f",
-            "replace",
+            "remove",
             remote_path,
             &local,
         ],
@@ -566,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn download_forces_replace_conflict_strategy() {
+    fn download_forces_remove_conflict_strategy() {
         let runner = MockRunner::success(TRANSFER_SUMMARY_OK);
         let dest = Path::new("/tmp/kio-protondrive-test-dest");
         download(&runner, "/my-files/report.pdf", dest).unwrap();
@@ -577,7 +580,7 @@ mod tests {
                 "download",
                 "-j",
                 "-f",
-                "replace",
+                "remove",
                 "/my-files/report.pdf",
                 "/tmp/kio-protondrive-test-dest",
             ]

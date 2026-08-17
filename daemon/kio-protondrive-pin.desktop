@@ -7,9 +7,9 @@ Actions=pinLocal;unpinLocal;
 [Desktop Action pinLocal]
 Name=Garder en local
 Icon=folder-download
-Exec=kio-protondrive-daemon pin %U
+Exec=kio-protondrive-daemon pin %u
 
 [Desktop Action unpinLocal]
 Name=Supprimer la copie locale
 Icon=edit-delete
-Exec=kio-protondrive-daemon unpin %U
+Exec=kio-protondrive-daemon unpin %u

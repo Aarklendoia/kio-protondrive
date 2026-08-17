@@ -9,3 +9,4 @@ pub mod bridge;
 pub mod cache;
 pub mod cli;
 pub mod entry;
+pub mod local_ctrl;

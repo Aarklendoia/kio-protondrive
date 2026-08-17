@@ -5,6 +5,7 @@
 #include <KLocalizedString>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -196,6 +197,11 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
 
     // Same pinned-cache short-circuit as get() — a pinned file's size/mtime
     // come from its local copy instantly rather than a CLI round-trip.
+    // Only a genuine cache hit takes this path; any error opening/querying
+    // the pin cache (e.g. an unwritable $XDG_DATA_HOME, a corrupted index)
+    // falls through to the normal stat_path() below instead of failing the
+    // whole call — pinning is a best-effort accelerator on top of on-demand
+    // browsing, not something browsing protondrive:/ should depend on.
     try {
         const rust::String pinned = lookup_pin(path.toStdString());
         if (!pinned.empty()) {
@@ -212,7 +218,7 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
             return KIO::WorkerResult::pass();
         }
     } catch (const rust::Error &error) {
-        return resultFromRustError(error);
+        qWarning() << "pin cache lookup failed for" << path << "(falling back to a normal stat):" << error.what();
     }
 
     // KIO's convention for the entry describing the URL itself (as opposed
@@ -286,14 +292,16 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
     // Pinned files (kept local via the Dolphin "Garder en local" ServiceMenu
     // action — see issue #30) are served straight from their cached copy:
     // no CLI call at all, instant instead of a network round-trip every
-    // time this path is opened.
+    // time this path is opened. Same fall-through-on-error reasoning as
+    // stat()'s identical lookup_pin() try block: a broken pin cache
+    // shouldn't take down normal (unpinned) downloads with it.
     try {
         const rust::String pinned = lookup_pin(path.toStdString());
         if (!pinned.empty()) {
             return streamLocalFile(QString::fromUtf8(pinned.data(), static_cast<int>(pinned.size())), path);
         }
     } catch (const rust::Error &error) {
-        return resultFromRustError(error);
+        qWarning() << "pin cache lookup failed for" << path << "(falling back to a normal download):" << error.what();
     }
 
     const QString fileName = QFileInfo(path).fileName();
@@ -385,10 +393,23 @@ KIO::WorkerResult ProtonDriveWorker::del(const QUrl &url, bool /*isFile*/)
     const QString path = drivePath(url);
     try {
         trash(path.toStdString());
-        return KIO::WorkerResult::pass();
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
     }
+
+    // Best-effort: if this path was pinned, drop its now-stale local cache
+    // copy — without this, stat()/get() keep serving it from the pin cache
+    // indefinitely after the remote it came from is gone (Cache::lookup()
+    // only checks local file existence, never remote validity). Forced
+    // unconditionally: the remote is already trashed, so there's no longer
+    // an "upload local edits first" option to protect by refusing on dirty
+    // local content (see Cache::unpin's normal, non-forced guard).
+    try {
+        unpin_path(path.toStdString(), true);
+    } catch (const rust::Error &error) {
+        qWarning() << "could not unpin" << path << "after trashing it:" << error.what();
+    }
+    return KIO::WorkerResult::pass();
 }
 
 // The JSON below is embedded into the compiled plugin's Qt metadata by moc,

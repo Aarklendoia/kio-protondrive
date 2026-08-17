@@ -8,11 +8,20 @@
 //! unpinning.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::cli::{self, CommandRunner, DriveError};
+
+/// How long a writer waits for `SQLITE_BUSY` to clear before giving up.
+/// Matters here specifically because, unlike a single-connection design,
+/// `daemon/src/control.rs`'s pin/unpin HTTP routes open their own
+/// short-lived `Cache::open()` (a separate connection to the same file)
+/// per request, independent of the long-lived one `main.rs` holds for the
+/// sync loop — without this, either writer hitting the other mid-write
+/// gets an immediate error instead of a chance to wait its turn.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinRecord {
@@ -35,6 +44,8 @@ impl Cache {
         }
         std::fs::create_dir_all(root).map_err(|e| DriveError::Io(e.to_string()))?;
         let conn = Connection::open(db_path).map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        conn.busy_timeout(BUSY_TIMEOUT)
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS pins (
                 remote_path TEXT PRIMARY KEY,
@@ -43,6 +54,14 @@ impl Cache {
                 local_size INTEGER NOT NULL,
                 last_synced_at INTEGER NOT NULL
             )",
+            [],
+        )
+        .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        // lookup_by_local_path (every upload_if_needed/reconcile call) would
+        // otherwise full-scan this table — cheap now, but O(n) per call
+        // times O(n) pinned files at startup reconcile is O(n^2).
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS pins_local_path_idx ON pins(local_path)",
             [],
         )
         .map_err(|e| DriveError::Sqlite(e.to_string()))?;
@@ -120,12 +139,38 @@ impl Cache {
 
     /// Downloads `remote_path` into the cache root (mirroring its
     /// directory structure) and records it as pinned. Idempotent: pinning
-    /// an already-pinned path just re-downloads and updates the record.
+    /// an already-pinned path just re-downloads and updates the record —
+    /// unless the existing local copy has unsynced edits (`needs_upload`),
+    /// in which case this refuses rather than silently overwriting them
+    /// with the (older) remote content; pass `force` to discard them
+    /// anyway. Only single files can be pinned: recursively downloading and
+    /// tracking an entire folder as one row isn't supported (see
+    /// [`Self::lookup`]'s file-only filter), so a folder is rejected before
+    /// any download happens.
     pub fn pin(
         &self,
         runner: &dyn CommandRunner,
         remote_path: &str,
+        force: bool,
     ) -> Result<PathBuf, DriveError> {
+        let entry = cli::stat_path(runner, remote_path)?;
+        if entry.is_folder() {
+            return Err(DriveError::Cli(format!(
+                "{remote_path} is a folder — only individual files can be pinned"
+            )));
+        }
+
+        if !force {
+            if let Some(existing_local) = self.lookup(remote_path)? {
+                if self.is_dirty(&existing_local, remote_path)? {
+                    return Err(DriveError::Cli(format!(
+                        "{remote_path} has unsynced local changes — upload them first, or pin \
+                         again with force to discard them"
+                    )));
+                }
+            }
+        }
+
         let rel = remote_path.trim_start_matches('/');
         let target_dir = match Path::new(rel).parent() {
             Some(parent) if !parent.as_os_str().is_empty() => self.root.join(parent),
@@ -139,12 +184,7 @@ impl Cache {
         })?;
         let local_path = target_dir.join(file_name);
         let metadata = std::fs::metadata(&local_path).map_err(|e| DriveError::Io(e.to_string()))?;
-        let mtime = metadata
-            .modified()
-            .map_err(|e| DriveError::Io(e.to_string()))?
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        let (mtime, size) = metadata_mtime_size(&metadata)?;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -159,13 +199,7 @@ impl Cache {
                     local_mtime = excluded.local_mtime,
                     local_size = excluded.local_size,
                     last_synced_at = excluded.last_synced_at",
-                params![
-                    remote_path,
-                    local_path.to_string_lossy(),
-                    mtime,
-                    metadata.len() as i64,
-                    now
-                ],
+                params![remote_path, local_path.to_string_lossy(), mtime, size, now],
             )
             .map_err(|e| DriveError::Sqlite(e.to_string()))?;
 
@@ -174,10 +208,25 @@ impl Cache {
 
     /// Un-pins `remote_path`: deletes the local cached copy (the remote
     /// file on Drive is untouched) and removes the record. A no-op if it
-    /// wasn't pinned.
-    pub fn unpin(&self, remote_path: &str) -> Result<(), DriveError> {
+    /// wasn't pinned. Refuses (leaving both the file and the record intact)
+    /// if the local copy has unsynced edits, unless `force` is set — same
+    /// discard-guard as [`Self::pin`]. If the file itself can't actually be
+    /// removed (permissions, read-only mount — anything other than it
+    /// already being gone), the record is kept too rather than silently
+    /// losing track of an orphaned local file.
+    pub fn unpin(&self, remote_path: &str, force: bool) -> Result<(), DriveError> {
         if let Some(local_path) = self.lookup(remote_path)? {
-            let _ = std::fs::remove_file(&local_path);
+            if !force && self.is_dirty(&local_path, remote_path)? {
+                return Err(DriveError::Cli(format!(
+                    "{remote_path} has unsynced local changes — upload them first, or unpin \
+                     again with force to discard them"
+                )));
+            }
+            match std::fs::remove_file(&local_path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(DriveError::Io(err.to_string())),
+            }
         }
         self.conn
             .execute(
@@ -186,6 +235,22 @@ impl Cache {
             )
             .map_err(|e| DriveError::Sqlite(e.to_string()))?;
         Ok(())
+    }
+
+    /// Whether `local_path`'s current on-disk state differs from what was
+    /// last recorded as synced for `remote_path` — same check
+    /// [`Self::needs_upload`] does, but stats the file itself instead of
+    /// taking mtime/size from the caller (used by [`Self::pin`]/
+    /// [`Self::unpin`], which have no watcher event to read them from).
+    fn is_dirty(&self, local_path: &Path, remote_path: &str) -> Result<bool, DriveError> {
+        let metadata = match std::fs::metadata(local_path) {
+            Ok(metadata) => metadata,
+            // Already gone locally — nothing to lose, safe to proceed.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(err) => return Err(DriveError::Io(err.to_string())),
+        };
+        let (mtime, size) = metadata_mtime_size(&metadata)?;
+        self.needs_upload(remote_path, mtime, size)
     }
 
     /// Rekeys a pinned entry when its cache file is renamed/moved locally.
@@ -287,6 +352,18 @@ impl Cache {
     }
 }
 
+/// Extracts (mtime as unix seconds, size in bytes) — the pair every pin
+/// record tracks — from a file's metadata.
+fn metadata_mtime_size(metadata: &std::fs::Metadata) -> Result<(i64, i64), DriveError> {
+    let mtime = metadata
+        .modified()
+        .map_err(|e| DriveError::Io(e.to_string()))?
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    Ok((mtime, metadata.len() as i64))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -294,18 +371,47 @@ mod tests {
     use super::*;
     use crate::cli::CommandOutput;
 
-    /// Simulates `filesystem download`'s real side effect (a file actually
-    /// appearing under the target folder) — `Cache::pin` reads the
-    /// downloaded file's real metadata afterward, so a mock that only
-    /// returns canned JSON without touching the filesystem isn't enough
-    /// here, unlike the plainer mocks in `cli.rs`'s own tests.
+    /// Simulates both `filesystem info` (the folder-vs-file pre-check
+    /// `Cache::pin` now does before downloading) and `filesystem download`'s
+    /// real side effect (a file actually appearing under the target folder,
+    /// since `Cache::pin` reads the downloaded file's real metadata
+    /// afterward) — a mock that only returns canned JSON without touching
+    /// the filesystem isn't enough here, unlike the plainer mocks in
+    /// `cli.rs`'s own tests.
     struct DownloadingMockRunner {
         content: &'static [u8],
+        is_folder: bool,
+    }
+
+    impl DownloadingMockRunner {
+        fn file(content: &'static [u8]) -> Self {
+            Self {
+                content,
+                is_folder: false,
+            }
+        }
+
+        fn folder() -> Self {
+            Self {
+                content: b"",
+                is_folder: true,
+            }
+        }
     }
 
     impl CommandRunner for DownloadingMockRunner {
         fn run(&self, args: &[&str], _timeout: Duration) -> Result<CommandOutput, DriveError> {
-            if args.first() == Some(&"filesystem") && args.get(1) == Some(&"download") {
+            if args[0..2] == ["filesystem", "info"] {
+                let node_type = if self.is_folder { "folder" } else { "file" };
+                return Ok(CommandOutput {
+                    stdout: format!(
+                        r#"{{"uid":"uid-1","name":{{"ok":true,"value":"x"}},"type":"{node_type}","isShared":false,"creationTime":"2026-01-01T00:00:00.000Z","modificationTime":"2026-01-01T00:00:00.000Z"}}"#
+                    ),
+                    stderr: String::new(),
+                    success: true,
+                });
+            }
+            if args[0..2] == ["filesystem", "download"] {
                 let remote_path = args[args.len() - 2];
                 let local_folder = args[args.len() - 1];
                 let file_name = Path::new(remote_path).file_name().unwrap();
@@ -330,9 +436,11 @@ mod tests {
     #[test]
     fn pin_downloads_and_records_the_file() {
         let (_dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
+        let runner = DownloadingMockRunner::file(b"hello");
 
-        let local_path = cache.pin(&runner, "/my-files/Reports/q3.pdf").unwrap();
+        let local_path = cache
+            .pin(&runner, "/my-files/Reports/q3.pdf", false)
+            .unwrap();
 
         assert!(local_path.ends_with("Reports/q3.pdf"));
         assert_eq!(std::fs::read(&local_path).unwrap(), b"hello");
@@ -340,6 +448,49 @@ mod tests {
             cache.lookup("/my-files/Reports/q3.pdf").unwrap(),
             Some(local_path)
         );
+    }
+
+    #[test]
+    fn pin_rejects_a_folder_without_downloading_anything() {
+        let (dir, cache) = cache();
+        let runner = DownloadingMockRunner::folder();
+
+        let err = cache.pin(&runner, "/my-files/Reports", false).unwrap_err();
+
+        assert!(err.to_string().contains("folder"));
+        assert_eq!(cache.lookup("/my-files/Reports").unwrap(), None);
+        // Nothing was written under the cache root at all — the rejection
+        // happens before create_dir_all/download, not as cleanup after.
+        assert!(!dir.path().join("files/my-files/Reports").exists());
+    }
+
+    #[test]
+    fn pin_refuses_to_overwrite_unsynced_local_edits() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let local_path = cache.pin(&runner, "/my-files/a.txt", false).unwrap();
+        std::fs::write(&local_path, b"locally edited, not yet uploaded").unwrap();
+
+        let err = cache.pin(&runner, "/my-files/a.txt", false).unwrap_err();
+
+        assert!(err.to_string().contains("unsynced"));
+        // The local edit survived — pin() bailed before re-downloading.
+        assert_eq!(
+            std::fs::read(&local_path).unwrap(),
+            b"locally edited, not yet uploaded"
+        );
+    }
+
+    #[test]
+    fn pin_with_force_overwrites_unsynced_local_edits() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let local_path = cache.pin(&runner, "/my-files/a.txt", false).unwrap();
+        std::fs::write(&local_path, b"locally edited, not yet uploaded").unwrap();
+
+        cache.pin(&runner, "/my-files/a.txt", true).unwrap();
+
+        assert_eq!(std::fs::read(&local_path).unwrap(), b"hello");
     }
 
     #[test]
@@ -351,8 +502,8 @@ mod tests {
     #[test]
     fn lookup_returns_none_if_the_local_file_was_deleted_out_from_under_it() {
         let (_dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        let local_path = cache.pin(&runner, "/my-files/a.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let local_path = cache.pin(&runner, "/my-files/a.txt", false).unwrap();
 
         std::fs::remove_file(&local_path).unwrap();
 
@@ -362,8 +513,8 @@ mod tests {
     #[test]
     fn lookup_by_local_path_finds_the_remote_path() {
         let (_dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        let local_path = cache.pin(&runner, "/my-files/a.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let local_path = cache.pin(&runner, "/my-files/a.txt", false).unwrap();
 
         assert_eq!(
             cache.lookup_by_local_path(&local_path).unwrap(),
@@ -374,10 +525,10 @@ mod tests {
     #[test]
     fn unpin_deletes_the_local_file_and_the_record() {
         let (_dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        let local_path = cache.pin(&runner, "/my-files/a.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let local_path = cache.pin(&runner, "/my-files/a.txt", false).unwrap();
 
-        cache.unpin("/my-files/a.txt").unwrap();
+        cache.unpin("/my-files/a.txt", false).unwrap();
 
         assert!(!local_path.exists());
         assert_eq!(cache.lookup("/my-files/a.txt").unwrap(), None);
@@ -386,14 +537,42 @@ mod tests {
     #[test]
     fn unpin_is_a_noop_for_something_never_pinned() {
         let (_dir, cache) = cache();
-        cache.unpin("/my-files/never-pinned.txt").unwrap();
+        cache.unpin("/my-files/never-pinned.txt", false).unwrap();
+    }
+
+    #[test]
+    fn unpin_refuses_to_discard_unsynced_local_edits() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let local_path = cache.pin(&runner, "/my-files/a.txt", false).unwrap();
+        std::fs::write(&local_path, b"locally edited, not yet uploaded").unwrap();
+
+        let err = cache.unpin("/my-files/a.txt", false).unwrap_err();
+
+        assert!(err.to_string().contains("unsynced"));
+        // Neither the file nor the record was touched.
+        assert!(local_path.exists());
+        assert_eq!(cache.lookup("/my-files/a.txt").unwrap(), Some(local_path));
+    }
+
+    #[test]
+    fn unpin_with_force_discards_unsynced_local_edits() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let local_path = cache.pin(&runner, "/my-files/a.txt", false).unwrap();
+        std::fs::write(&local_path, b"locally edited, not yet uploaded").unwrap();
+
+        cache.unpin("/my-files/a.txt", true).unwrap();
+
+        assert!(!local_path.exists());
+        assert_eq!(cache.lookup("/my-files/a.txt").unwrap(), None);
     }
 
     #[test]
     fn rename_rekeys_both_remote_and_local_path() {
         let (dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        cache.pin(&runner, "/my-files/old.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        cache.pin(&runner, "/my-files/old.txt", false).unwrap();
         let new_local = dir.path().join("files/my-files/new.txt");
 
         cache
@@ -410,8 +589,8 @@ mod tests {
     #[test]
     fn rename_can_keep_the_same_remote_path_when_only_the_local_side_moved() {
         let (dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        cache.pin(&runner, "/my-files/a.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        cache.pin(&runner, "/my-files/a.txt", false).unwrap();
         let new_local = dir.path().join("files/my-files/a-moved.txt");
 
         cache
@@ -433,8 +612,8 @@ mod tests {
     #[test]
     fn needs_upload_reflects_mtime_size_changes_since_pin() {
         let (_dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        cache.pin(&runner, "/my-files/a.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        cache.pin(&runner, "/my-files/a.txt", false).unwrap();
         let record = cache.all_pinned().unwrap().into_iter().next().unwrap();
 
         assert!(!cache
@@ -448,8 +627,8 @@ mod tests {
     #[test]
     fn mark_synced_updates_the_record_needs_upload_checks_against() {
         let (_dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        cache.pin(&runner, "/my-files/a.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        cache.pin(&runner, "/my-files/a.txt", false).unwrap();
 
         cache.mark_synced("/my-files/a.txt", 555, 777).unwrap();
 
@@ -460,9 +639,9 @@ mod tests {
     #[test]
     fn all_pinned_lists_every_pin() {
         let (_dir, cache) = cache();
-        let runner = DownloadingMockRunner { content: b"hello" };
-        cache.pin(&runner, "/my-files/a.txt").unwrap();
-        cache.pin(&runner, "/my-files/sub/b.txt").unwrap();
+        let runner = DownloadingMockRunner::file(b"hello");
+        cache.pin(&runner, "/my-files/a.txt", false).unwrap();
+        cache.pin(&runner, "/my-files/sub/b.txt", false).unwrap();
 
         let mut paths: Vec<String> = cache
             .all_pinned()

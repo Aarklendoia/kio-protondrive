@@ -299,6 +299,16 @@ mod tests {
                 args: &[&str],
                 _timeout: Duration,
             ) -> Result<cli::CommandOutput, DriveError> {
+                // pin() stats the remote path first to reject folders
+                // before downloading anything — every seeded pin here is a
+                // plain file.
+                if args[0..2] == ["filesystem", "info"] {
+                    return Ok(cli::CommandOutput {
+                        stdout: r#"{"uid":"uid-1","name":{"ok":true,"value":"x"},"type":"file","isShared":false,"creationTime":"2026-01-01T00:00:00.000Z","modificationTime":"2026-01-01T00:00:00.000Z"}"#.to_string(),
+                        stderr: String::new(),
+                        success: true,
+                    });
+                }
                 assert_eq!(args[0..2], ["filesystem", "download"]);
                 let target_dir = args[args.len() - 1];
                 let file_name = self.local_path.file_name().unwrap();
@@ -310,7 +320,9 @@ mod tests {
                 })
             }
         }
-        cache.pin(&SeedRunner { local_path }, remote_path).unwrap();
+        cache
+            .pin(&SeedRunner { local_path }, remote_path, false)
+            .unwrap();
         let _ = mtime; // already reflected via the real file's metadata pin() reads
     }
 
