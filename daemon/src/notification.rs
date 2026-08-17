@@ -21,3 +21,20 @@ pub fn auth_required() {
         log::debug!("could not send a desktop notification (notify-send missing?): {err}");
     }
 }
+
+/// See [`auth_required`] for the notify-send caveat. `message` is the
+/// `proton-drive` CLI's own "A newer version is available: ..." sentence
+/// (see [`crate::version_check`]), relayed as-is.
+pub fn cli_update_available(message: &str) {
+    let result = Command::new("notify-send")
+        .args([
+            "--app-name=Proton Drive",
+            "--urgency=normal",
+            "Proton Drive: CLI update available",
+            message,
+        ])
+        .status();
+    if let Err(err) = result {
+        log::debug!("could not send a desktop notification (notify-send missing?): {err}");
+    }
+}
