@@ -49,6 +49,7 @@ fn report_authentication_failure(auth_notified: &mut bool) {
 
 fn main() {
     env_logger::init();
+    notification::init();
 
     let config_path = Config::default_path();
     let config = match Config::load(&config_path) {
