@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.4.1...v0.5.0) (2026-08-18)
+
+
+### Features
+
+* browse /photos read-only, fix the Places bookmark to the Drive root ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18)) ([#54](https://github.com/Aarklendoia/kio-protondrive/issues/54)) ([941238c](https://github.com/Aarklendoia/kio-protondrive/commit/941238ccda0ff9eed13979092b226564e67a6e31))
+
 ## [0.4.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.4.0...v0.4.1) (2026-08-18)
 
 
