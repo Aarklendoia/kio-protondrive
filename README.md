@@ -71,8 +71,8 @@ untouched.
 
 Dolphin marks each item with up to two small status badges, similar to
 OneDrive's cloud/checkmark/pin icons: a checkmark for "available locally"
-(whether cached or pinned) and a pin icon on top specifically for pinned
-files.
+(whether cached or pinned) and a star on top specifically for pinned files
+(Breeze has no dedicated pin emblem, so this stands in for one).
 
 A separate package, `kio-protondrive-sync-daemon`, provides the background
 piece both of these need — install `kio-protondrive-full` to get it along
@@ -182,8 +182,9 @@ environment already selects.
   of days since last use (30 by default, set during setup). Pinned files
   ("Garder en local") are never evicted this way. Dolphin shows up to two
   status badges per item — a checkmark for "available locally" (pinned or
-  cached) and a pin icon on top specifically for pinned files, OneDrive-
-  style. See `docs/DESIGN.md`'s "Opportunistic local file cache" section for
+  cached) and a star on top specifically for pinned files, OneDrive-style
+  (Breeze has no dedicated pin emblem, so a star stands in). See
+  `docs/DESIGN.md`'s "Opportunistic local file cache" section for
   how cache hits stay correct (unlike pinning, a hit here is re-verified
   against the remote before being trusted). See
   [#60](https://github.com/Aarklendoia/kio-protondrive/issues/60).

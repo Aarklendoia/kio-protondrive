@@ -76,3 +76,16 @@ msgstr "照片回收站"
 #: worker/protondriveworker.cpp:0
 msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
 msgstr "尚未登录 Proton Drive。请在终端中运行“proton-drive auth login”,然后重试。"
+
+#. Right-click menu action (KAbstractFileItemActionPlugin): downloads the
+#. selected item(s) and keeps them available locally indefinitely, shown
+#. when at least one selected item isn't pinned yet.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Keep Available Offline"
+msgstr "保持离线可用"
+
+#. Right-click menu action (KAbstractFileItemActionPlugin): un-pins the
+#. selected item(s), shown when at least one selected item is pinned.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Remove Local Copy"
+msgstr "移除本地副本"

@@ -76,3 +76,16 @@ msgstr "Corbeille photos"
 #: worker/protondriveworker.cpp:0
 msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
 msgstr "Non connecté à Proton Drive. Exécutez « proton-drive auth login » dans un terminal, puis réessayez."
+
+#. Right-click menu action (KAbstractFileItemActionPlugin): downloads the
+#. selected item(s) and keeps them available locally indefinitely, shown
+#. when at least one selected item isn't pinned yet.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Keep Available Offline"
+msgstr "Garder en local"
+
+#. Right-click menu action (KAbstractFileItemActionPlugin): un-pins the
+#. selected item(s), shown when at least one selected item is pinned.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Remove Local Copy"
+msgstr "Supprimer la copie locale"

@@ -45,14 +45,26 @@ second folder to keep mentally in sync with the first.
 - **Everything stays on-demand by default.** `protondrive:/` browsing is
   unchanged from the stateless model described above — nothing is cached
   opportunistically.
-- **Pinning is the only thing that persists a local copy.** A Dolphin
-  ServiceMenu (`daemon/kio-protondrive-pin.desktop`, filtered to
-  `protondrive://` via `X-KDE-Protocols`) adds "Garder en local" / "Supprimer
-  la copie locale" to the right-click menu, each shelling out to
+- **Pinning is the only thing that persists a local copy.** A right-click
+  menu entry, "Garder en local" / "Supprimer la copie locale", shells out to
   `kio-protondrive-daemon pin|unpin <url>`. That's a one-shot client for the
   already-running daemon's own local control server (`daemon/src/control.rs`,
   same hand-rolled local-HTTP pattern as the wizard's), keeping the pin index
   single-writer.
+  `worker/fileitemactionplugin.cpp` (`KAbstractFileItemActionPlugin`)
+  provides this, not a declarative `.desktop` ServiceMenu — an earlier
+  version used one (`daemon/kio-protondrive-pin.desktop`, filtered to
+  `protondrive://` via `X-KDE-Protocols`), but a static ServiceMenu has no
+  way to query state, so it listed both actions unconditionally regardless
+  of whether the selection was already pinned, confirmed live as a bug. The
+  compiled plugin's `actions()` gets the whole selection at once
+  (`KFileItemListProperties`) and checks each item's pin state via
+  `lookup_pin` (same cxx bridge call `overlayplugin.cpp` uses): "Keep
+  Available Offline" is offered when any selected item isn't pinned yet,
+  "Remove Local Copy" when any already is — both can appear together for a
+  mixed selection, and running either on an item already in the target state
+  is a harmless no-op (see `core/src/cache.rs`'s pin/unpin tests), so the
+  handlers don't need to filter the selection per-item.
 - **Pin index: `core/src/cache.rs`.** A SQLite table (`remote_path ->
   local_path, local_mtime, local_size, last_synced_at`) — persistent, at
   `$XDG_DATA_HOME/kio-protondrive/cache-index.sqlite3`, since pin *state* is
@@ -231,8 +243,11 @@ manual-only") but got descoped when #30 shipped as pin-only.
   "available locally" (pinned *or* opportunistically cached — checked via
   `is_available_locally`, a cheap existence check with no freshness
   verification, since a slightly-stale icon is an acceptable cost for not
-  shelling out on every repaint) and an additional `emblem-pinned` badge
-  stacked on top specifically for pinned files. `get()`/`put()` fire the
+  shelling out on every repaint) and an additional `emblem-favorite` badge
+  stacked on top specifically for pinned files — Breeze has no
+  `emblem-pinned` icon (confirmed live: the badge silently failed to render,
+  since a missing theme icon name is not an error), so the star emblem is
+  used instead as the closest existing one. `get()`/`put()` fire the
   existing `org.kde.protondrive.OverlayIcon.PinChanged` D-Bus signal after a
   successful cache write, same signal the daemon's pin/unpin routes already
   used — the name predates #60 but the plugin only ever treated it as "an

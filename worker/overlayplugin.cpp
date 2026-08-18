@@ -16,7 +16,12 @@ namespace
 // (emblem-checked) — and pinned specifically, an *additional* badge on top
 // of "available locally" rather than a replacement for it. getOverlays()
 // already supports returning several overlays at once, which is exactly
-// what stacking these two needs.
+// what stacking these two needs. Breeze has no "emblem-pinned" icon at all
+// (confirmed against the installed theme's file list) — QIcon::fromTheme
+// silently renders nothing for a missing name, no error, which is why the
+// pin badge was invisible in testing. emblem-favorite (a star) is the
+// closest existing Breeze emblem, and is already visually distinct from
+// emblem-checked.
 QStringList overlaysFor(const QString &remotePath)
 {
     QStringList overlays;
@@ -32,7 +37,7 @@ QStringList overlaysFor(const QString &remotePath)
     try {
         const rust::String pinned = lookup_pin(path);
         if (!pinned.empty()) {
-            overlays << QStringLiteral("emblem-pinned");
+            overlays << QStringLiteral("emblem-favorite");
         }
     } catch (const rust::Error &) {
     }
