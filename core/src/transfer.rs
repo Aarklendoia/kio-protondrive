@@ -267,12 +267,22 @@ impl TransferHandle {
     }
 }
 
-/// Negative pid: signals the whole process group spawned with
-/// `process_group(0)` above, not just its leader.
+/// Sends `SIGKILL` directly via the `libc` syscall rather than shelling out
+/// to an external `kill` binary — confirmed live in CI (this project's
+/// `test` job runs inside a bare `ubuntu:26.04` container, which doesn't
+/// ship `procps`) that `Command::new("kill")` can silently fail to even
+/// spawn, leaving the target process running untouched for the full
+/// duration of whatever it was doing. The negative pid signals the whole
+/// process group spawned with `process_group(0)` above, not just its
+/// leader.
 fn kill(pid: u32) {
-    let _ = Command::new("kill")
-        .args(["-9", &format!("-{pid}")])
-        .status();
+    // SAFETY: kill(2) with a process group id and SIGKILL has no memory
+    // safety preconditions — it's a plain signal send, and a spurious
+    // "no such process" (ESRCH, e.g. the group already exited) is a
+    // harmless, expected outcome we don't need to inspect.
+    unsafe {
+        libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+    }
 }
 
 impl Drop for TransferHandle {
