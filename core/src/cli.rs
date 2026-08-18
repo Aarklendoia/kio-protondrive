@@ -144,10 +144,25 @@ fn ensure_success(path: &str, out: &CommandOutput) -> Result<(), DriveError> {
         Err(DriveError::AlreadyExists(path.to_string()))
     } else if message.is_empty() {
         Err(DriveError::Cli(format!(
-            "proton-drive exited with an error for {path}"
+            "proton-drive exited with an error for {path}{}",
+            stdout_context(out)
         )))
     } else {
-        Err(DriveError::Cli(message.to_string()))
+        Err(DriveError::Cli(format!("{message}{}", stdout_context(out))))
+    }
+}
+
+/// Appends the CLI's stdout to an error message when it might hold extra
+/// diagnostic context stderr didn't (e.g. a stack trace, or the "===...==="
+/// banner seen in #38) — stderr alone is the CLI's *intended* error channel
+/// and is usually sufficient, but this is a cheap way to capture more detail
+/// if/when a case like #38 recurs, without having to reproduce it first.
+fn stdout_context(out: &CommandOutput) -> String {
+    let stdout = out.stdout.trim();
+    if stdout.is_empty() {
+        String::new()
+    } else {
+        format!(" (stdout: {stdout})")
     }
 }
 
@@ -531,6 +546,27 @@ mod tests {
         assert_eq!(
             *runner.last_args.borrow(),
             vec!["filesystem", "list", "-j", "/my-files"]
+        );
+    }
+
+    #[test]
+    fn list_dir_appends_stdout_to_an_unrecognized_cli_failure_for_diagnostics() {
+        let runner = MockRunner {
+            response: CommandOutput {
+                stdout: "===============================================".to_string(),
+                stderr: "internal server error, please retry".to_string(),
+                success: false,
+            },
+            last_args: RefCell::new(Vec::new()),
+        };
+        let err = list_dir(&runner, "/my-files").unwrap_err();
+        assert_eq!(
+            err,
+            DriveError::Cli(
+                "internal server error, please retry (stdout: \
+                 ===============================================)"
+                    .to_string()
+            )
         );
     }
 
