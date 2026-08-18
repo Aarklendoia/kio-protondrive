@@ -493,6 +493,46 @@ KIO::WorkerResult ProtonDriveWorker::mkdir(const QUrl &url, int /*permissions*/)
     }
 }
 
+KIO::WorkerResult ProtonDriveWorker::rename(const QUrl &src, const QUrl &dest, KIO::JobFlags flags)
+{
+    const QString oldPath = drivePath(src);
+    const QString newPath = drivePath(dest);
+
+    // /photos is addressed through a completely separate, read-only CLI
+    // command family (see core/src/photos.rs) — there's no rename/move
+    // support for it at all, and no combined path space with the rest of
+    // Proton Drive to move into or out of it.
+    if (oldPath.startsWith(photosPrefix) || newPath.startsWith(photosPrefix)) {
+        return KIO::WorkerResult::fail(KIO::ERR_CANNOT_RENAME, i18nd("kio_protondrive", "Photos can't be renamed or moved."));
+    }
+
+    // KIO's contract for rename(): "for performance reasons no stat is done
+    // in the destination beforehand, the worker must do it" — and only
+    // needs to when Overwrite wasn't requested, since that's the only case
+    // where an existing destination should block the rename.
+    if (!flags.testFlag(KIO::Overwrite)) {
+        try {
+            const FfiEntry existing = stat_path(newPath.toStdString());
+            return KIO::WorkerResult::fail(existing.is_folder ? KIO::ERR_DIR_ALREADY_EXIST : KIO::ERR_FILE_ALREADY_EXIST, newPath);
+        } catch (const rust::Error &error) {
+            const QString message = QString::fromUtf8(error.what());
+            if (!message.startsWith(QLatin1String("path not found:"))) {
+                // Some other failure (auth, timeout, ...) trying to check —
+                // don't silently proceed as if the destination were free.
+                return resultFromRustError(error);
+            }
+            // Destination doesn't exist — clear to proceed.
+        }
+    }
+
+    try {
+        rename_or_move(oldPath.toStdString(), newPath.toStdString());
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+    return KIO::WorkerResult::pass();
+}
+
 KIO::WorkerResult ProtonDriveWorker::del(const QUrl &url, bool /*isFile*/)
 {
     const QString path = drivePath(url);

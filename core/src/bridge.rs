@@ -36,6 +36,7 @@ mod ffi {
         fn download_to(remote_path: &str, local_folder: &str) -> Result<()>;
         fn upload_from(local_path: &str, parent_path: &str) -> Result<()>;
         fn trash(path: &str) -> Result<()>;
+        fn rename_or_move(old_path: &str, new_path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
         fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
         fn list_photos() -> Result<Vec<FfiEntry>>;
@@ -163,6 +164,22 @@ fn trash(path: &str) -> Result<(), String> {
         if let Some((parent, _)) = path.rsplit_once('/') {
             let parent = if parent.is_empty() { "/" } else { parent };
             let _ = cache.invalidate_listing(parent);
+        }
+    }
+    Ok(())
+}
+
+fn rename_or_move(old_path: &str, new_path: &str) -> Result<(), String> {
+    let runner = RealCommandRunner;
+    cli::rename_or_move(&runner, old_path, new_path).map_err(|e| e.to_string())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_stat(old_path);
+        let _ = cache.invalidate_stat(new_path);
+        for path in [old_path, new_path] {
+            if let Some((parent, _)) = path.rsplit_once('/') {
+                let parent = if parent.is_empty() { "/" } else { parent };
+                let _ = cache.invalidate_listing(parent);
+            }
         }
     }
     Ok(())
