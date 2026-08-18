@@ -1,16 +1,18 @@
 //! Daemon configuration, loaded from `~/.config/kio-protondrive/daemon.toml`.
 //!
-//! Since #30's pinned-cache design replaced the old configured-folder-pair
-//! sync (no more `local_path`/`remote_path` to pick), the only setting
-//! left is `credentials_store` — which already has a sane default. That
-//! makes `daemon.toml` optional in practice: [`Config::load_or_default`]
-//! is fine with it not existing at all.
+//! `daemon.toml` is optional in practice — every field defaults to
+//! something sane, so [`Config::load_or_default`] is fine with the file not
+//! existing at all.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::DaemonError;
+
+/// Used when `cache_retention_days` is unset — see [`Config::cache_retention`].
+pub const DEFAULT_CACHE_RETENTION_DAYS: u32 = 30;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
@@ -23,9 +25,28 @@ pub struct Config {
     /// effect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credentials_store: Option<String>,
+
+    /// How many days an opportunistically-cached file (see
+    /// `core::cache`'s `cached_files` table, issue #60) can go unaccessed
+    /// before `cache_eviction::evict_stale`'s periodic sweep reclaims it.
+    /// Never applies to explicitly *pinned* files, which this setting has
+    /// no effect on. `None` (same "field can be omitted" convention as
+    /// `credentials_store`) means [`DEFAULT_CACHE_RETENTION_DAYS`] — see
+    /// [`Self::cache_retention`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_retention_days: Option<u32>,
 }
 
 impl Config {
+    /// [`Self::cache_retention_days`] as a [`Duration`], falling back to
+    /// [`DEFAULT_CACHE_RETENTION_DAYS`] when unset.
+    pub fn cache_retention(&self) -> Duration {
+        let days = self
+            .cache_retention_days
+            .unwrap_or(DEFAULT_CACHE_RETENTION_DAYS);
+        Duration::from_secs(u64::from(days) * 24 * 60 * 60)
+    }
+
     /// Loads from `path`, or a default (empty) config if the file simply
     /// doesn't exist — `daemon.toml` is optional now (see the module doc).
     /// A malformed *existing* file still surfaces as a real error, though.
@@ -97,11 +118,34 @@ mod tests {
         let config_path = dir.path().join("nested").join("daemon.toml");
         let config = Config {
             credentials_store: Some("pass".to_string()),
+            cache_retention_days: Some(7),
         };
 
         config.save(&config_path).unwrap();
         let loaded = Config::load_or_default(&config_path).unwrap();
 
         assert_eq!(loaded.credentials_store, config.credentials_store);
+        assert_eq!(loaded.cache_retention_days, config.cache_retention_days);
+    }
+
+    #[test]
+    fn cache_retention_falls_back_to_the_default_when_unset() {
+        let config = Config::default();
+        assert_eq!(
+            config.cache_retention(),
+            Duration::from_secs(u64::from(DEFAULT_CACHE_RETENTION_DAYS) * 24 * 60 * 60)
+        );
+    }
+
+    #[test]
+    fn cache_retention_honors_an_explicit_value() {
+        let config = Config {
+            credentials_store: None,
+            cache_retention_days: Some(7),
+        };
+        assert_eq!(
+            config.cache_retention(),
+            Duration::from_secs(7 * 24 * 60 * 60)
+        );
     }
 }

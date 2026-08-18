@@ -44,9 +44,11 @@ Kirigami.Page {
         page.app.chosenCredentialsStore = page.useUnsafeFile ? "" : "pass";
         page.saving = true;
         page.errorText = "";
-        var params = "";
-        if (page.app.chosenCredentialsStore !== "")
-            params = "credentials_store=" + encodeURIComponent(page.app.chosenCredentialsStore);
+        // Sent explicitly even when empty (meaning "clear it" / unsafe_file)
+        // — route_save_config only overwrites a setting whose param is
+        // present at all, to avoid this call clobbering settings saved by
+        // other pages (e.g. CacheRetention.qml's cache_retention_days).
+        var params = "credentials_store=" + encodeURIComponent(page.app.chosenCredentialsStore);
         page.app.apiPost("/save-config?" + params, function (ok, data) {
             page.saving = false;
             if (!ok || !data.ok) {

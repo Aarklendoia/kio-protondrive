@@ -45,14 +45,26 @@ second folder to keep mentally in sync with the first.
 - **Everything stays on-demand by default.** `protondrive:/` browsing is
   unchanged from the stateless model described above — nothing is cached
   opportunistically.
-- **Pinning is the only thing that persists a local copy.** A Dolphin
-  ServiceMenu (`daemon/kio-protondrive-pin.desktop`, filtered to
-  `protondrive://` via `X-KDE-Protocols`) adds "Garder en local" / "Supprimer
-  la copie locale" to the right-click menu, each shelling out to
+- **Pinning is the only thing that persists a local copy.** A right-click
+  menu entry, "Garder en local" / "Supprimer la copie locale", shells out to
   `kio-protondrive-daemon pin|unpin <url>`. That's a one-shot client for the
   already-running daemon's own local control server (`daemon/src/control.rs`,
   same hand-rolled local-HTTP pattern as the wizard's), keeping the pin index
   single-writer.
+  `worker/fileitemactionplugin.cpp` (`KAbstractFileItemActionPlugin`)
+  provides this, not a declarative `.desktop` ServiceMenu — an earlier
+  version used one (`daemon/kio-protondrive-pin.desktop`, filtered to
+  `protondrive://` via `X-KDE-Protocols`), but a static ServiceMenu has no
+  way to query state, so it listed both actions unconditionally regardless
+  of whether the selection was already pinned, confirmed live as a bug. The
+  compiled plugin's `actions()` gets the whole selection at once
+  (`KFileItemListProperties`) and checks each item's pin state via
+  `lookup_pin` (same cxx bridge call `overlayplugin.cpp` uses): "Keep
+  Available Offline" is offered when any selected item isn't pinned yet,
+  "Remove Local Copy" when any already is — both can appear together for a
+  mixed selection, and running either on an item already in the target state
+  is a harmless no-op (see `core/src/cache.rs`'s pin/unpin tests), so the
+  handlers don't need to filter the selection per-item.
 - **Pin index: `core/src/cache.rs`.** A SQLite table (`remote_path ->
   local_path, local_mtime, local_size, last_synced_at`) — persistent, at
   `$XDG_DATA_HOME/kio-protondrive/cache-index.sqlite3`, since pin *state* is
@@ -184,6 +196,62 @@ called during the actual transfer, only for the local temp-file copy phase.
   unchanged** — still the old blocking call. Photo downloads are small and
   already bounded by `PreviewJob`'s 2s timeout (see the thumbnails known
   limitation), so cancellation matters far less there.
+
+## Opportunistic local file cache
+
+Tracked in [#60](https://github.com/Aarklendoia/kio-protondrive/issues/60).
+Confirmed live while testing #59: opening the same file twice re-downloaded
+it every time — `get()` used to download into a `QTemporaryDir`, destroyed
+the moment the call returned, so nothing survived between opens unless the
+file was explicitly **pinned** (#30/#50). This was actually part of #30's
+original scope ("scheduled automatic cleanup... a cache eviction policy, not
+manual-only") but got descoped when #30 shipped as pin-only.
+
+- **Every `get()`/`put()`, not just pinned paths, now leaves a local copy
+  behind.** `get()` downloads straight into the persistent, mirrored cache
+  directory (`core::cache::Cache::target_dir_for`, the same layout `pin()`
+  already used) instead of a temp dir; `put()` copies the just-uploaded
+  bytes there too, so "save, then immediately reopen" is instant as well.
+  Both record the file in a new `cached_files` SQLite table
+  (`core/src/cache.rs`) via `crate::bridge`'s `store_cached`.
+- **A separate table from `pins`, not a flag on it.** `pins`' existing
+  semantics — `unpin()` deletes immediately, `pin()` never expires on its
+  own — stay completely unchanged. A pinned path simply never gets a
+  `cached_files` row: `get()`/`put()` check the pin table first and only
+  fall through to the opportunistic cache when a path isn't pinned.
+- **Freshness is re-verified on every cache hit, unlike `pin()`.** `pin()`
+  trusts its local copy blindly — reasonable for an explicit, one-way
+  local→Drive user intent. The opportunistic cache can't make that
+  assumption: a file can change from another device or the web app without
+  the user pinning anything to be told about it, so silently serving a
+  stale copy would be a correctness bug, not just a staleness tradeoff.
+  `crate::bridge`'s `lookup_cached` compares the remote's current
+  `modification_time` (one `stat_path` call — already cheap thanks to the
+  fs cache, #8) against what was recorded when the file was cached, and
+  evicts+re-downloads on any mismatch.
+- **Eviction is age-based on last access, swept daily by the daemon.**
+  `daemon/src/cache_eviction.rs::evict_stale` (same periodic-sweep shape as
+  `fs_refresh.rs` for #8, but purely local — no CLI call, no network round
+  trip) deletes any `cached_files` entry whose `last_accessed_at` exceeds
+  the configured retention window (`daemon/src/config.rs`'s
+  `cache_retention_days`, wizard-configurable, 30 days by default). No
+  D-Bus notification afterward, unlike #8's sweep: a file going back to
+  "cloud-only" doesn't need an immediate icon repaint the way a stale
+  directory listing needs a re-render.
+- **Three overlay states, OneDrive-style.** `worker/overlayplugin.cpp`'s
+  `getOverlays()` now returns up to two badges: `emblem-checked` for
+  "available locally" (pinned *or* opportunistically cached — checked via
+  `is_available_locally`, a cheap existence check with no freshness
+  verification, since a slightly-stale icon is an acceptable cost for not
+  shelling out on every repaint) and an additional `emblem-favorite` badge
+  stacked on top specifically for pinned files — Breeze has no
+  `emblem-pinned` icon (confirmed live: the badge silently failed to render,
+  since a missing theme icon name is not an error), so the star emblem is
+  used instead as the closest existing one. `get()`/`put()` fire the
+  existing `org.kde.protondrive.OverlayIcon.PinChanged` D-Bus signal after a
+  successful cache write, same signal the daemon's pin/unpin routes already
+  used — the name predates #60 but the plugin only ever treated it as "an
+  overlay-relevant state changed for this path," not literally pin-specific.
 
 ### Superseded #12 design (not built)
 

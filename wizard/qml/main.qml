@@ -24,6 +24,7 @@ Kirigami.ApplicationWindow {
     // arguments, and there's only ever one of these wizards open at a time.
     property string chosenCredentialsStore: ""
     property bool chosenAddFavorite: true
+    property int chosenCacheRetentionDays: 30
 
     function apiUrl(path) {
         return "http://127.0.0.1:" + ctrlPort + path;

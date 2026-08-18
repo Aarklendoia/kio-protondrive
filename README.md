@@ -39,8 +39,8 @@ Dolphin  ──KIO protocol──▶  kio_protondrive (KF6::KIOCore plugin, C++)
   access or live Proton Drive session needed to run `cargo test`.
 - **`worker/`** — a thin C++ shim (there's no Rust binding for
   `KIO::WorkerBase`) implementing the KIO protocol methods
-  (`listDir`/`stat`/`get`/`put`/`mkdir`/`del`) and calling into `core/`
-  through a [`cxx`](https://cxx.rs) bridge.
+  (`listDir`/`stat`/`get`/`put`/`mkdir`/`del`/`rename`) and calling into
+  `core/` through a [`cxx`](https://cxx.rs) bridge.
 - Built with [Corrosion](https://github.com/corrosion-rs/corrosion), which
   drives the Rust build from CMake and links the resulting static library
   into the worker plugin.
@@ -50,28 +50,51 @@ synchronized to a local folder in the background — see
 [docs/DESIGN.md](docs/DESIGN.md) for why a sync daemon is a deliberately
 separate concern.
 
-## Pinning files for offline/instant access
+## Local caching and pinning
 
-Everything under `protondrive:/` is fetched on demand by default — nothing
-is kept locally. If you want a specific file or folder to always be
-available instantly (no download wait) and offline, right-click it in
-Dolphin and choose **Garder en local** ("Keep it local"). This downloads a
-local copy that the KIO worker then serves straight from disk for `get`/
-`stat`, no CLI round-trip. **Supprimer la copie locale** ("Remove the local
-copy") un-pins it again — the local copy is deleted, the file on Drive is
+Files are fetched **on demand** when opened, like `sftp://` — but a file
+stays available locally afterward too (see
+[#60](https://github.com/Aarklendoia/kio-protondrive/issues/60)), so
+reopening it is instant instead of re-downloading, until it's automatically
+evicted after a configurable number of days of not being reopened (30 by
+default — set it during first-run setup, or edit `daemon.toml` directly).
+Saving a file behaves the same way: it's uploaded immediately, and the
+just-uploaded copy also stays available locally.
+
+If you want a file or folder to stay available **indefinitely** instead —
+including offline, and never auto-evicted — right-click it in Dolphin and
+choose **Garder en local** ("Keep it local"). This downloads a local copy
+that the KIO worker then serves straight from disk for `get`/`stat`, no CLI
+round-trip. **Supprimer la copie locale** ("Remove the local copy") un-pins
+it again — the local copy is deleted immediately, the file on Drive is
 untouched.
 
-A separate package, `kio-protondrive-sync-daemon`, provides the background
-piece this needs — install `kio-protondrive-full` to get both it and the
-KIO worker. It's a `systemd --user` service that does two things: runs the
-`pin`/`unpin` action requested from Dolphin's context menu, and watches
-already-pinned files for local edits, uploading changed ones back to Drive
-automatically.
+Dolphin marks each item with up to two small status badges, similar to
+OneDrive's cloud/checkmark/pin icons: a checkmark for "available locally"
+(whether cached or pinned) and a star on top specifically for pinned files
+(Breeze has no dedicated pin emblem, so this stands in for one).
 
-**Scope**: one-way local → Drive upload for *pinned* files only. Picking up
-changes made to a pinned file from elsewhere (another device, the web app)
-happens on next access, not via continuous background polling — see
-[docs/DESIGN.md](docs/DESIGN.md) and
+A separate package, `kio-protondrive-sync-daemon`, provides the background
+piece both of these need — install `kio-protondrive-full` to get it along
+with the KIO worker and the [setup wizard](#setup-wizard). It's a
+`systemd --user` service that:
+
+- runs the `pin`/`unpin` action requested from Dolphin's context menu, and
+  watches already-pinned files for local edits, uploading changed ones back
+  to Drive automatically;
+- periodically sweeps the opportunistic local cache above, evicting
+  anything past its retention window (pinned files are never affected);
+- periodically refreshes the persistent directory listing/stat cache (see
+  [docs/DESIGN.md](docs/DESIGN.md)), so a rename/delete made elsewhere
+  doesn't go unnoticed in Dolphin for too long;
+- checks whether a newer `proton-drive` CLI release is available and
+  notifies you if so (see "Installing" below) —
+  [#26](https://github.com/Aarklendoia/kio-protondrive/issues/26).
+
+**Scope for pinning**: one-way local → Drive upload for *pinned* files only.
+Picking up changes made to a pinned file from elsewhere (another device, the
+web app) happens on next access, not via continuous background polling —
+see [docs/DESIGN.md](docs/DESIGN.md) and
 [#30](https://github.com/Aarklendoia/kio-protondrive/issues/30) for the
 full design.
 
@@ -81,6 +104,15 @@ No configuration file is required to get started. Enable and start it:
 $ systemctl --user enable --now kio-protondrive-sync-daemon.service
 $ journalctl --user -u kio-protondrive-sync-daemon -f
 ```
+
+### Setup wizard
+
+`kio-protondrive-wizard` is a small graphical wizard that the sync daemon
+launches automatically the first time it needs you to sign in — or run it
+yourself any time (`kio-protondrive-wizard`). It walks through signing in to
+Proton Drive, choosing how the daemon persists your session (see
+"Credential persistence" below), how many days to keep unused files cached
+locally, and optionally adding Proton Drive to Dolphin's Places panel.
 
 ### Credential persistence
 
@@ -144,6 +176,18 @@ environment already selects.
   progress API to report real numbers from. See `docs/DESIGN.md`'s
   "Cancellable transfers and approximate progress" section.
   See [#9](https://github.com/Aarklendoia/kio-protondrive/issues/9).
+- An opportunistic local file cache: any file you open (or save) stays
+  available locally afterward instead of being deleted immediately, so
+  reopening it is instant — until it's evicted after a configurable number
+  of days since last use (30 by default, set during setup). Pinned files
+  ("Garder en local") are never evicted this way. Dolphin shows up to two
+  status badges per item — a checkmark for "available locally" (pinned or
+  cached) and a star on top specifically for pinned files, OneDrive-style
+  (Breeze has no dedicated pin emblem, so a star stands in). See
+  `docs/DESIGN.md`'s "Opportunistic local file cache" section for
+  how cache hits stay correct (unlike pinning, a hit here is re-verified
+  against the remote before being trusted). See
+  [#60](https://github.com/Aarklendoia/kio-protondrive/issues/60).
 
 **Not yet implemented** (contributions welcome):
 
@@ -186,30 +230,37 @@ Proton Drive.
 ## Installing
 
 Requires the official [Proton Drive CLI](https://proton.me/drive/download)
-to already be installed and logged in (`proton-drive auth login`) — this
-package only adds the Dolphin/KIO integration on top of it.
+to already be installed — this package only adds the Dolphin/KIO
+integration on top of it. You still need to be logged in
+(`proton-drive auth login`) to browse `protondrive:/` directly in Dolphin;
+if you also install `kio-protondrive-full` (recommended — see "Local
+caching and pinning" above), its [setup wizard](#setup-wizard) can do that
+sign-in step for you instead.
 
 Proton doesn't provide an apt/deb repository or any auto-update mechanism
 for that CLI — it's a manually-downloaded binary, so `apt upgrade` won't
-update it. Periodically re-check the
-[download page](https://proton.me/drive/download) for new versions
-yourself; see [#26](https://github.com/Aarklendoia/kio-protondrive/issues/26)
-for the tracking issue on whether this project should do more here (e.g.
-version-checking) than just this note.
+update it, and the sync daemon (if installed) only *notifies* you a newer
+one exists rather than fetching it. Grab new versions yourself from the
+[download page](https://proton.me/drive/download).
 
 **Ubuntu 26.04 LTS (resolute)**, via the Launchpad PPA:
 
 ```bash
 sudo add-apt-repository ppa:aarklendoia-edtech/kio-protondrive
 sudo apt update
-sudo apt install kio-protondrive
+sudo apt install kio-protondrive-full
 ```
 
-**Other Debian/Ubuntu versions**: download the `.deb` from the
-[Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest):
+**Other Debian/Ubuntu versions**: download the `.deb` files from the
+[Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
+and install them together (not one at a time — `apt` resolves each
+package's dependency on the others from whatever repositories are
+configured, not from sibling files on disk, unless they're all given to it
+in the same command):
 
 ```bash
-sudo apt install ./kio-protondrive_*.deb
+sudo apt install ./kio-protondrive_*.deb ./kio-protondrive-sync-daemon_*.deb \
+  ./kio-protondrive-wizard_*.deb ./kio-protondrive-full_*.deb
 ```
 
 Then open `protondrive:/` in Dolphin's location bar (or
@@ -238,7 +289,8 @@ those same sections instead — the closest equivalent Dolphin supports.
 
 ```bash
 sudo apt-get install build-essential cmake extra-cmake-modules pkg-config \
-  qt6-base-dev libkf6kio-dev libkf6coreaddons-dev
+  cargo rustc qt6-base-dev qt6-base-dev-tools qt6-l10n-tools libkf6kio-dev \
+  libkf6coreaddons-dev
 cargo build --manifest-path core/Cargo.toml   # Rust core only, for quick iteration
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build

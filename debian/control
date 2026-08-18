@@ -29,7 +29,10 @@ Description: KIO worker for Proton Drive
  Browse, download, upload and manage files stored on Proton Drive directly
  from Dolphin (or any other KIO-aware application) via the protondrive://
  protocol. Files are fetched on demand, like sftp:// or Google Drive's
- kio-gdrive — there is no local sync/mirror.
+ kio-gdrive — there is no full local mirror, though an opened or saved
+ file does stay available locally afterward for instant reopening, until
+ the sync daemon evicts it (kio-protondrive-sync-daemon, not required just
+ to browse).
  .
  This package only provides the KDE/Dolphin integration. It requires the
  official Proton Drive CLI ("proton-drive", from
@@ -49,13 +52,15 @@ Recommends:
   kio-protondrive,
   kio-protondrive-wizard
 Description: Background upload sync daemon for Proton Drive
- A systemd --user service that keeps locally-pinned Proton Drive files up
- to date. Right-click any file or folder under protondrive:/ in Dolphin
- to pin it: this downloads a local copy that the protondrive:// KIO
- worker then serves instantly (no CLI round-trip), and this daemon
- uploads any local edit to that copy back to Drive automatically, via the
- same "proton-drive" CLI used by the KIO worker. Unpinned files stay
- on-demand, fetched only when accessed.
+ A systemd --user service with three jobs. First, it keeps locally-pinned
+ Proton Drive files up to date: right-click any file or folder under
+ protondrive:/ in Dolphin to pin it, and this daemon uploads any local
+ edit to that pinned copy back to Drive automatically. Second, it sweeps
+ the opportunistic local cache every opened/saved file gets (evicting
+ anything unused past a configurable retention window; pinned files are
+ never evicted). Third, it periodically refreshes the KIO worker's
+ directory listing/stat cache so external changes don't go unnoticed for
+ too long.
  .
  One-way local -> Drive upload for pinned files only. Drive -> local
  sync (picking up remote changes made elsewhere) happens on next access,

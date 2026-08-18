@@ -1,0 +1,12 @@
+{
+    "KPlugin": {
+        "Name": "Proton Drive",
+        "MimeTypes": [
+            "application/octet-stream",
+            "inode/directory"
+        ]
+    },
+    "X-KDE-Protocols": [
+        "protondrive"
+    ]
+}

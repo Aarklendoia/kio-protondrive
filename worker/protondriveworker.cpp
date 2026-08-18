@@ -4,6 +4,8 @@
 #include <KIO/WorkerFactory>
 #include <KLocalizedString>
 #include <QCoreApplication>
+#include <QDBusConnection>
+#include <QDBusMessage>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -70,6 +72,22 @@ KIO::WorkerResult resultFromRustError(const rust::Error &error)
 QString toQString(const rust::String &value)
 {
     return QString::fromUtf8(value.data(), static_cast<int>(value.size()));
+}
+
+// Tells protondrive_overlayicon.so (see overlayplugin.cpp) that
+// remotePath's locally-available/pinned status may have changed, so it
+// repaints just that item's badge instead of waiting for the view's next
+// unrelated refresh. Same signal daemon/src/control.rs's notify_pin_changed
+// already sends after a pin/unpin — reused here (issue #60) for "this path
+// just got opportunistically cached" too, since both are "an overlay-
+// relevant state changed" from the plugin's point of view. Best-effort:
+// no session bus (e.g. inside a container) just means the badge goes stale
+// until the next natural refresh, not a failure worth surfacing.
+void notifyOverlayChanged(const QString &remotePath)
+{
+    QDBusMessage message = QDBusMessage::createSignal(QStringLiteral("/"), QStringLiteral("org.kde.protondrive.OverlayIcon"), QStringLiteral("PinChanged"));
+    message << remotePath;
+    QDBusConnection::sessionBus().send(message);
 }
 
 KIO::UDSEntry entryFromFfi(const FfiEntry &entry, const QString &nameOverride = QString())
@@ -362,6 +380,21 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
         qWarning() << "pin cache lookup failed for" << path << "(falling back to a normal download):" << error.what();
     }
 
+    // Opportunistic cache (#60): a file downloaded once stays available
+    // locally afterward instead of being deleted the moment this call
+    // returns, until the daemon's retention sweep evicts it. lookup_cached()
+    // itself re-verifies against the remote's modification time before
+    // trusting the local copy — see core/src/bridge.rs's doc comment on why
+    // that check exists here but not for the pinned path above.
+    try {
+        const rust::String cached = lookup_cached(path.toStdString());
+        if (!cached.empty()) {
+            return streamLocalFile(QString::fromUtf8(cached.data(), static_cast<int>(cached.size())), path);
+        }
+    } catch (const rust::Error &error) {
+        qWarning() << "opportunistic cache lookup failed for" << path << "(falling back to a normal download):" << error.what();
+    }
+
     const QString fileName = QFileInfo(path).fileName();
 
     QTemporaryDir tmpDir;
@@ -369,28 +402,54 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
         return KIO::WorkerResult::fail(KIO::ERR_CANNOT_READ, QStringLiteral("could not create a temporary directory"));
     }
 
-    // Best-effort: only used to give totalSize()/the progress estimate a
-    // denominator (see FfiTransferPoll's doc comment) — a stat failure here
-    // doesn't need to abort the download itself, since a real problem (e.g.
-    // the path genuinely not existing) will surface from start_download()
-    // below anyway. Already cheap thanks to the fs cache (#8).
+    // Best-effort: gives totalSize()/the progress estimate a denominator and,
+    // on success, the modification_time recorded alongside the cached copy
+    // below — a failure here doesn't abort the download itself, since a real
+    // problem (e.g. the path genuinely not existing) will surface from
+    // start_download() below anyway. Already cheap thanks to the fs cache
+    // (#8).
     KIO::filesize_t totalBytes = 0;
+    QString modificationTime;
     try {
-        totalBytes = stat_path(path.toStdString()).size;
+        const FfiEntry entry = stat_path(path.toStdString());
+        totalBytes = entry.size;
+        modificationTime = toQString(entry.modification_time);
     } catch (const rust::Error &) {
     }
     totalSize(totalBytes);
 
+    // Downloads straight into the persistent, mirrored cache directory
+    // rather than the temporary one above, so the file survives past this
+    // call — falls back to the temporary directory only if the cache
+    // directory itself can't be determined/created (e.g. an unwritable
+    // XDG_CACHE_HOME), in which case this open just behaves like it always
+    // did before #60.
+    QString downloadDir = tmpDir.path();
+    bool cachingEnabled = false;
     try {
-        rust::Box<TransferHandle> handle = start_download(path.toStdString(), tmpDir.path().toStdString(), totalBytes);
+        const rust::String dir = cache_target_dir(path.toStdString());
+        downloadDir = QString::fromUtf8(dir.data(), static_cast<int>(dir.size()));
+        cachingEnabled = true;
+    } catch (const rust::Error &error) {
+        qWarning() << "cache directory lookup failed for" << path << "(falling back to a temporary download):" << error.what();
+    }
+
+    try {
+        rust::Box<TransferHandle> handle = start_download(path.toStdString(), downloadDir.toStdString(), totalBytes);
         while (true) {
             if (wasKilled()) {
                 cancel_transfer(*handle);
+                if (cachingEnabled) {
+                    QFile::remove(QDir(downloadDir).filePath(fileName));
+                }
                 return KIO::WorkerResult::fail(KIO::ERR_USER_CANCELED, path);
             }
             const FfiTransferPoll poll = poll_transfer(*handle);
             if (poll.done) {
                 if (!poll.ok) {
+                    if (cachingEnabled) {
+                        QFile::remove(QDir(downloadDir).filePath(fileName));
+                    }
                     return resultFromErrorMessage(toQString(poll.error));
                 }
                 break;
@@ -398,10 +457,24 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
             processedSize(poll.processed_bytes);
         }
     } catch (const rust::Error &error) {
+        if (cachingEnabled) {
+            QFile::remove(QDir(downloadDir).filePath(fileName));
+        }
         return resultFromRustError(error);
     }
 
-    return streamLocalFile(tmpDir.filePath(fileName), path);
+    const QString downloadedPath = QDir(downloadDir).filePath(fileName);
+
+    if (cachingEnabled && !modificationTime.isEmpty()) {
+        try {
+            store_cached(path.toStdString(), downloadedPath.toStdString(), modificationTime.toStdString());
+            notifyOverlayChanged(path);
+        } catch (const rust::Error &error) {
+            qWarning() << "failed to record" << path << "in the opportunistic cache:" << error.what();
+        }
+    }
+
+    return streamLocalFile(downloadedPath, path);
 }
 
 KIO::WorkerResult ProtonDriveWorker::listPhotos()
@@ -520,6 +593,31 @@ KIO::WorkerResult ProtonDriveWorker::put(const QUrl &url, int /*permissions*/, K
         }
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
+    }
+
+    // Opportunistic cache (#60): the bytes just uploaded are already sitting
+    // right here in `file` — copying them into the persistent cache
+    // directory means "save, then immediately reopen" is instant too,
+    // instead of `tmpDir` discarding them the moment this call returns.
+    // Best-effort throughout: a failure at any step here just means this
+    // particular save doesn't get cached, not a failed upload — the upload
+    // itself already succeeded above.
+    try {
+        const rust::String dir = cache_target_dir(path.toStdString());
+        const QString cacheDir = QString::fromUtf8(dir.data(), static_cast<int>(dir.size()));
+        const QString cachedPath = QDir(cacheDir).filePath(fileName);
+        QFile::remove(cachedPath); // QFile::copy refuses to overwrite an existing file.
+        if (QFile::copy(file.fileName(), cachedPath)) {
+            // TransferSummary (from finish_upload) doesn't carry per-file
+            // metadata, so the just-committed modification_time needs its
+            // own stat — cheap, and freshly invalidated by poll_transfer's
+            // own cache handling above.
+            const FfiEntry entry = stat_path(path.toStdString());
+            store_cached(path.toStdString(), cachedPath.toStdString(), entry.modification_time);
+            notifyOverlayChanged(path);
+        }
+    } catch (const rust::Error &error) {
+        qWarning() << "failed to record" << path << "in the opportunistic cache:" << error.what();
     }
 
     return KIO::WorkerResult::pass();
