@@ -32,9 +32,12 @@ namespace
 // Drive — ...", "proton-drive did not respond within ..." — the only cases
 // worth a specific KIO error code; everything else becomes a worker-defined
 // error carrying the raw message so the user still sees *why* it failed.
-KIO::WorkerResult resultFromRustError(const rust::Error &error)
+// Split out from resultFromRustError() below so the same message-prefix
+// mapping applies to errors surfaced through FfiTransferPoll::error (a plain
+// rust::String from a poll_transfer() call, not a thrown rust::Error) as to
+// every other Rust call site here.
+KIO::WorkerResult resultFromErrorMessage(const QString &message)
 {
-    const QString message = QString::fromUtf8(error.what());
     if (message.startsWith(QLatin1String("path not found:"))) {
         return KIO::WorkerResult::fail(KIO::ERR_DOES_NOT_EXIST, message);
     }
@@ -57,6 +60,11 @@ KIO::WorkerResult resultFromRustError(const rust::Error &error)
     // the only caller that can produce it is mkdir(), which treats it as
     // success rather than an error at all — see its own comment for why.
     return KIO::WorkerResult::fail(KIO::ERR_WORKER_DEFINED, message);
+}
+
+KIO::WorkerResult resultFromRustError(const rust::Error &error)
+{
+    return resultFromErrorMessage(QString::fromUtf8(error.what()));
 }
 
 QString toQString(const rust::String &value)
@@ -289,6 +297,9 @@ KIO::WorkerResult ProtonDriveWorker::streamLocalFile(const QString &localPath, c
 
     constexpr qint64 chunkSize = 256 * 1024;
     while (!file.atEnd()) {
+        if (wasKilled()) {
+            return KIO::WorkerResult::fail(KIO::ERR_USER_CANCELED, originalPath);
+        }
         data(file.read(chunkSize));
     }
     data(QByteArray());
@@ -358,8 +369,34 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
         return KIO::WorkerResult::fail(KIO::ERR_CANNOT_READ, QStringLiteral("could not create a temporary directory"));
     }
 
+    // Best-effort: only used to give totalSize()/the progress estimate a
+    // denominator (see FfiTransferPoll's doc comment) — a stat failure here
+    // doesn't need to abort the download itself, since a real problem (e.g.
+    // the path genuinely not existing) will surface from start_download()
+    // below anyway. Already cheap thanks to the fs cache (#8).
+    KIO::filesize_t totalBytes = 0;
     try {
-        download_to(path.toStdString(), tmpDir.path().toStdString());
+        totalBytes = stat_path(path.toStdString()).size;
+    } catch (const rust::Error &) {
+    }
+    totalSize(totalBytes);
+
+    try {
+        rust::Box<TransferHandle> handle = start_download(path.toStdString(), tmpDir.path().toStdString(), totalBytes);
+        while (true) {
+            if (wasKilled()) {
+                cancel_transfer(*handle);
+                return KIO::WorkerResult::fail(KIO::ERR_USER_CANCELED, path);
+            }
+            const FfiTransferPoll poll = poll_transfer(*handle);
+            if (poll.done) {
+                if (!poll.ok) {
+                    return resultFromErrorMessage(toQString(poll.error));
+                }
+                break;
+            }
+            processedSize(poll.processed_bytes);
+        }
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
     }
@@ -449,6 +486,10 @@ KIO::WorkerResult ProtonDriveWorker::put(const QUrl &url, int /*permissions*/, K
         // cover an entire tiny file but leaves both sides blocked forever on
         // anything bigger (confirmed live: uploads under ~1 MB completed,
         // larger ones hung indefinitely with zero bytes ever written).
+        if (wasKilled()) {
+            file.close();
+            return KIO::WorkerResult::fail(KIO::ERR_USER_CANCELED, path);
+        }
         dataReq();
         QByteArray chunk;
         result = readData(chunk);
@@ -459,8 +500,24 @@ KIO::WorkerResult ProtonDriveWorker::put(const QUrl &url, int /*permissions*/, K
     } while (result > 0);
     file.close();
 
+    const KIO::filesize_t totalBytes = static_cast<KIO::filesize_t>(QFileInfo(file).size());
+
     try {
-        upload_from(file.fileName().toStdString(), parentPath.toStdString());
+        rust::Box<TransferHandle> handle = start_upload(file.fileName().toStdString(), parentPath.toStdString(), totalBytes);
+        while (true) {
+            if (wasKilled()) {
+                cancel_transfer(*handle);
+                return KIO::WorkerResult::fail(KIO::ERR_USER_CANCELED, path);
+            }
+            const FfiTransferPoll poll = poll_transfer(*handle);
+            if (poll.done) {
+                if (!poll.ok) {
+                    return resultFromErrorMessage(toQString(poll.error));
+                }
+                break;
+            }
+            processedSize(poll.processed_bytes);
+        }
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
     }

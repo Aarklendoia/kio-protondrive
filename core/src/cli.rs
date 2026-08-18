@@ -83,10 +83,10 @@ pub struct RealCommandRunner;
 /// can fire many concurrent `photo download` calls in a burst (one per
 /// visible thumbnail, see `crate::photos`). #38 already observed live that
 /// retrying the exact same command shortly after succeeds.
-const LOCK_CONTENTION_RETRIES: u32 = 3;
-const LOCK_CONTENTION_RETRY_DELAY: Duration = Duration::from_millis(300);
+pub(crate) const LOCK_CONTENTION_RETRIES: u32 = 3;
+pub(crate) const LOCK_CONTENTION_RETRY_DELAY: Duration = Duration::from_millis(300);
 
-fn is_transient_lock_contention(out: &CommandOutput) -> bool {
+pub(crate) fn is_transient_lock_contention(out: &CommandOutput) -> bool {
     !out.success
         && (out.stdout.contains("database is locked")
             || out.stdout.contains("SQLITE_BUSY")
@@ -271,6 +271,38 @@ fn ensure_no_failures(context: &str, summary: &TransferSummary) -> Result<(), Dr
     Ok(())
 }
 
+/// Argument-building half of [`download`] — split out so
+/// `crate::transfer::TransferHandle` can rebuild the exact same argument
+/// list for a lock-contention retry re-spawn (see #38) without going through
+/// [`CommandRunner`], which the cancellable worker path doesn't use.
+pub(crate) fn download_args(remote_path: &str, local_folder: &Path) -> Vec<String> {
+    vec![
+        "filesystem".to_string(),
+        "download".to_string(),
+        "-j".to_string(),
+        "-f".to_string(),
+        "remove".to_string(),
+        remote_path.to_string(),
+        local_folder.to_string_lossy().into_owned(),
+    ]
+}
+
+/// Result-checking half of [`download`] — split out so the cancellable
+/// worker path (`crate::transfer`) can apply the exact same success/failure
+/// handling to a [`CommandOutput`] obtained by polling a [`TransferHandle`]
+/// instead of a single blocking [`CommandRunner::run`] call.
+///
+/// [`TransferHandle`]: crate::transfer::TransferHandle
+pub(crate) fn finish_download(
+    remote_path: &str,
+    out: CommandOutput,
+) -> Result<TransferSummary, DriveError> {
+    ensure_success(remote_path, &out)?;
+    let summary: TransferSummary = serde_json::from_str(&out.stdout)?;
+    ensure_no_failures(&format!("download of {remote_path}"), &summary)?;
+    Ok(summary)
+}
+
 /// Downloads `remote_path` into `local_folder` (which must already exist).
 /// Always forces the `remove` file-conflict strategy (`download`'s own
 /// equivalent of `upload`'s `replace` — confirmed via `filesystem download
@@ -284,23 +316,10 @@ pub fn download(
     remote_path: &str,
     local_folder: &Path,
 ) -> Result<TransferSummary, DriveError> {
-    let local = local_folder.to_string_lossy();
-    let out = runner.run(
-        &[
-            "filesystem",
-            "download",
-            "-j",
-            "-f",
-            "remove",
-            remote_path,
-            &local,
-        ],
-        TRANSFER_TIMEOUT,
-    )?;
-    ensure_success(remote_path, &out)?;
-    let summary: TransferSummary = serde_json::from_str(&out.stdout)?;
-    ensure_no_failures(&format!("download of {remote_path}"), &summary)?;
-    Ok(summary)
+    let args = download_args(remote_path, local_folder);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = runner.run(&arg_refs, TRANSFER_TIMEOUT)?;
+    finish_download(remote_path, out)
 }
 
 /// Lists every photo in the account (`photo timeline`), newest first — a
@@ -375,6 +394,32 @@ fn escape_glob_metacharacters(path: &str) -> String {
         .replace('}', "\\}")
 }
 
+/// Argument-building half of [`upload`] — see [`download_args`]'s doc
+/// comment for why this is split out.
+pub(crate) fn upload_args(local_path: &Path, parent_path: &str) -> Vec<String> {
+    vec![
+        "filesystem".to_string(),
+        "upload".to_string(),
+        "-j".to_string(),
+        "-f".to_string(),
+        "replace".to_string(),
+        escape_glob_metacharacters(&local_path.to_string_lossy()),
+        parent_path.to_string(),
+    ]
+}
+
+/// Result-checking half of [`upload`] — see [`finish_download`]'s doc
+/// comment for why this is split out.
+pub(crate) fn finish_upload(
+    parent_path: &str,
+    out: CommandOutput,
+) -> Result<TransferSummary, DriveError> {
+    ensure_success(parent_path, &out)?;
+    let summary: TransferSummary = serde_json::from_str(&out.stdout)?;
+    ensure_no_failures(&format!("upload to {parent_path}"), &summary)?;
+    Ok(summary)
+}
+
 /// Uploads `local_path` into `parent_path`. Forces `replace` for the same
 /// reason as [`download`] — an interactive prompt would hang the worker.
 pub fn upload(
@@ -382,23 +427,10 @@ pub fn upload(
     local_path: &Path,
     parent_path: &str,
 ) -> Result<TransferSummary, DriveError> {
-    let local = escape_glob_metacharacters(&local_path.to_string_lossy());
-    let out = runner.run(
-        &[
-            "filesystem",
-            "upload",
-            "-j",
-            "-f",
-            "replace",
-            &local,
-            parent_path,
-        ],
-        TRANSFER_TIMEOUT,
-    )?;
-    ensure_success(parent_path, &out)?;
-    let summary: TransferSummary = serde_json::from_str(&out.stdout)?;
-    ensure_no_failures(&format!("upload to {parent_path}"), &summary)?;
-    Ok(summary)
+    let args = upload_args(local_path, parent_path);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = runner.run(&arg_refs, TRANSFER_TIMEOUT)?;
+    finish_upload(parent_path, out)
 }
 
 /// Moves `path` to Proton Drive's trash (soft delete — matches KIO `del`,

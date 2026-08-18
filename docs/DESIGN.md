@@ -133,6 +133,58 @@ worth spelling out explicitly, same as those two were.
   worker" is a best-effort measure that can silently vanish. All "keep this
   fresh" work belongs to the daemon instead, which is already long-running.
 
+## Cancellable transfers and approximate progress
+
+Tracked in [#9](https://github.com/Aarklendoia/kio-protondrive/issues/9).
+`get()`/`put()` used to shell out to the `proton-drive` CLI via a single
+blocking call, only returning once the whole transfer finished — no way to
+cancel, and `KIO::WorkerBase::totalSize()`/`processedSize()` were never
+called during the actual transfer, only for the local temp-file copy phase.
+
+- **Cancellable, via `crate::transfer::TransferHandle`.** `get()`/`put()` now
+  start the CLI subprocess through `core/src/transfer.rs` (not
+  `CommandRunner` — that trait is still used unchanged by every other call,
+  including the daemon's own fire-and-forget pinned-file sync, which has no
+  interactive cancel button) and poll it in a loop, checking
+  `wasKilled()` every ~200ms and killing the subprocess (its whole process
+  group — see below) if the user cancels. `put()`'s local-write phase and
+  `get()`'s final local-copy phase (`streamLocalFile()`) check `wasKilled()`
+  too, so cancelling is responsive at every stage, not just during the
+  network transfer.
+- **Whole process group, not just the direct pid.** Confirmed live that
+  `sh -c "sleep 30"` (used in `transfer.rs`'s own tests) forks a real child
+  rather than exec-replacing itself — killing only the parent's pid leaves
+  that child running as an orphan. Every spawned process gets its own
+  process group (`process_group(0)`), and cancellation/timeout/drop all
+  signal the negative pid (the whole group).
+- **No real byte-accurate progress — deliberately.** The `proton-drive` CLI
+  has no stable progress API: no `--progress` flag, no incremental JSON. Its
+  `-v`/`--verbose` flag does print live debug lines with progress-shaped
+  content (`block N: Uploaded`, JSON `bytesProcessed` metrics) — but
+  confirmed live, on an error case, that verbose mode also moves the actual
+  error detail onto stdout and reduces stderr to an unhelpful separator line
+  (the exact symptom tracked in [#38](https://github.com/Aarklendoia/kio-protondrive/issues/38)).
+  Parsing that undocumented output would mean also reverse-engineering error
+  classification from stdout instead of the current stderr-based
+  `ensure_success()`, for a progress bar with zero stability guarantee across
+  CLI versions. Rejected as not worth it.
+- **Progress is instead a rough, time-based estimate.** `transfer.rs` keeps a
+  process-lifetime running average (bytes/sec) per direction (upload,
+  download), seeded with a conservative default until this worker process
+  completes its first real transfer. `processedSize()` is fed
+  `elapsed × average_speed`, capped at 95% of the known total until the
+  transfer is genuinely done (then snapped to the real total) — a
+  believable-looking bar, not a real measurement. Resets every time a new
+  worker process is spawned (`maxInstances` pooling); no attempt to persist
+  it, since it was never meant to be precise.
+- **`stdout`/`stderr` capture is unchanged.** Still buffered via
+  `wait_with_output()` (never read line-by-line), so `-v` is never passed and
+  `cli::ensure_success()`'s error classification is completely unaffected.
+- **`getPhoto()`/`download_photo()` (the `/photos` preview path) is
+  unchanged** — still the old blocking call. Photo downloads are small and
+  already bounded by `PreviewJob`'s 2s timeout (see the thumbnails known
+  limitation), so cancellation matters far less there.
+
 ### Superseded #12 design (not built)
 
 The original plan for #12 was a single configured local folder mapped to a
