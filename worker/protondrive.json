@@ -16,7 +16,7 @@
             ],
             "makedir": true,
             "maxInstances": 4,
-            "moving": false,
+            "moving": true,
             "opening": false,
             "output": "filesystem",
             "protocol": "protondrive",

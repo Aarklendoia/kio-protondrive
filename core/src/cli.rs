@@ -450,6 +450,49 @@ pub fn move_path(
     Ok(())
 }
 
+/// Splits a Drive path into (parent, name), e.g. "/my-files/sub/a.txt" ->
+/// ("/my-files/sub", "a.txt"), and "/my-files" -> ("/", "my-files").
+fn split_parent_and_name(path: &str) -> (String, String) {
+    match path.rsplit_once('/') {
+        Some(("", name)) => ("/".to_string(), name.to_string()),
+        Some((parent, name)) => (parent.to_string(), name.to_string()),
+        None => (String::new(), path.to_string()),
+    }
+}
+
+/// Handles KIO's `rename(src, dest)`, called for both an in-place rename
+/// (Dolphin's F2) and a same-protocol move (drag-and-drop between two
+/// `protondrive:/` folders) — KIO doesn't distinguish the two, both arrive
+/// here as a single (src, dest) pair. The `proton-drive` CLI, unlike KIO,
+/// treats them as genuinely separate operations with no combined "move and
+/// rename" call (`filesystem rename` changes the name in place;
+/// `filesystem move` changes the parent, keeping the name) — so when both
+/// the parent and the name change, this makes two sequential CLI calls:
+/// move first (to the destination parent, still under the old name), then
+/// rename at the new location.
+pub fn rename_or_move(
+    runner: &dyn CommandRunner,
+    old_path: &str,
+    new_path: &str,
+) -> Result<(), DriveError> {
+    let (old_parent, old_name) = split_parent_and_name(old_path);
+    let (new_parent, new_name) = split_parent_and_name(new_path);
+
+    if old_parent == new_parent {
+        rename_path(runner, old_path, &new_name)?;
+        return Ok(());
+    }
+
+    move_path(runner, old_path, &new_parent)?;
+    if old_name == new_name {
+        return Ok(());
+    }
+
+    let moved_path = format!("{}/{}", new_parent.trim_end_matches('/'), old_name);
+    rename_path(runner, &moved_path, &new_name)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -854,6 +897,90 @@ mod tests {
         let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
         let err = move_path(&runner, "/my-files/a.txt", "/my-files/Sub").unwrap_err();
         assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn rename_or_move_renames_in_place_when_only_the_name_changes() {
+        const RENAMED: &str = r#"{
+            "uid":"uid-file",
+            "name":{"ok":true,"value":"new-name.txt"},
+            "type":"file",
+            "isShared":false,
+            "creationTime":"2026-01-01T00:00:00.000Z",
+            "modificationTime":"2026-01-01T00:00:00.000Z"
+        }"#;
+        let runner = MockRunner::success(RENAMED);
+        rename_or_move(&runner, "/my-files/old-name.txt", "/my-files/new-name.txt").unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "filesystem",
+                "rename",
+                "-j",
+                "/my-files/old-name.txt",
+                "new-name.txt",
+            ]
+        );
+    }
+
+    #[test]
+    fn rename_or_move_moves_when_only_the_parent_changes() {
+        let runner = MockRunner::success(TRASH_OK);
+        rename_or_move(&runner, "/my-files/a.txt", "/my-files/Sub/a.txt").unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "filesystem",
+                "move",
+                "-j",
+                "/my-files/a.txt",
+                "/my-files/Sub",
+            ]
+        );
+    }
+
+    #[test]
+    fn rename_or_move_moves_then_renames_when_both_change() {
+        const RENAMED: &str = r#"{
+            "uid":"uid-file",
+            "name":{"ok":true,"value":"b.txt"},
+            "type":"file",
+            "isShared":false,
+            "creationTime":"2026-01-01T00:00:00.000Z",
+            "modificationTime":"2026-01-01T00:00:00.000Z"
+        }"#;
+        let runner = ScriptedRunner::new(vec![success(TRASH_OK), success(RENAMED)]);
+        rename_or_move(&runner, "/my-files/a.txt", "/my-files/Sub/b.txt").unwrap();
+        assert_eq!(
+            *runner.calls.borrow(),
+            vec![
+                vec![
+                    "filesystem",
+                    "move",
+                    "-j",
+                    "/my-files/a.txt",
+                    "/my-files/Sub"
+                ],
+                vec!["filesystem", "rename", "-j", "/my-files/Sub/a.txt", "b.txt"],
+            ]
+        );
+    }
+
+    #[test]
+    fn rename_or_move_does_not_rename_when_the_move_fails() {
+        let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
+        let err = rename_or_move(&runner, "/my-files/a.txt", "/my-files/Sub/b.txt").unwrap_err();
+        assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn rename_or_move_treats_a_root_level_destination_parent_as_slash() {
+        let runner = MockRunner::success(TRASH_OK);
+        rename_or_move(&runner, "/my-files/Sub/a.txt", "/a.txt").unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec!["filesystem", "move", "-j", "/my-files/Sub/a.txt", "/",]
+        );
     }
 
     #[test]
