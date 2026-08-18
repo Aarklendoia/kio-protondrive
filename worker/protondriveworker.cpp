@@ -94,11 +94,13 @@ KIO::UDSEntry entryFromFfi(const FfiEntry &entry, const QString &nameOverride = 
 
 // Proton Drive's virtual root sections (`filesystem list -j /`) have fixed,
 // English, machine-oriented path segments — translated here to match the
-// labels Proton Drive's own web UI uses. The last four (albums and the
-// photos-* variants) aren't shown as top-level sidebar entries there —
-// they're nested under a "Photos" view the underlying CLI doesn't support
-// browsing yet (see the README's Scope section) — so their translations are
-// this project's best guess, not confirmed against Proton's own wording.
+// labels Proton Drive's own web UI uses. "photos" is browsable (see
+// listPhotos(), routed through a separate nodeUid-based CLI command family —
+// see core/src/photos.rs and issue #18); the last four (albums and the
+// photos-* variants) aren't shown as top-level sidebar entries in the web UI
+// either — they're nested under its "Photos" view and still have no CLI
+// support at all (see the README's Scope section) — so their translations
+// are this project's best guess, not confirmed against Proton's own wording.
 QString translatedSectionName(const QString &rawName)
 {
     static const QHash<QString, QString> labels = {
@@ -127,6 +129,8 @@ QString stripTrailingSlash(QString path)
     return path;
 }
 
+const QString photosPrefix = QStringLiteral("/photos/");
+
 }
 
 ProtonDriveWorker::ProtonDriveWorker(const QByteArray &protocol, const QByteArray &poolSocket, const QByteArray &appSocket)
@@ -145,6 +149,10 @@ QString ProtonDriveWorker::drivePath(const QUrl &url)
 KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
 {
     const QString path = drivePath(url);
+
+    if (path == QLatin1String("/photos")) {
+        return listPhotos();
+    }
 
     rust::Vec<FfiEntry> entries;
     try {
@@ -194,6 +202,23 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
 KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
 {
     const QString path = drivePath(url);
+
+    if (path.startsWith(photosPrefix)) {
+        return statPhoto(path.mid(photosPrefix.length()));
+    }
+    if (path == QLatin1String("/photos")) {
+        // No CLI-backed info call exists for the section itself (see
+        // listPhotos()'s "." entry) — synthesized directly, same as the
+        // pinned-cache fast path below does for a pinned file.
+        KIO::UDSEntry uds;
+        uds.reserve(4);
+        uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+        uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
+        uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
+        uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, translatedSectionName(QStringLiteral("photos")));
+        statEntry(uds);
+        return KIO::WorkerResult::pass();
+    }
 
     // Same pinned-cache short-circuit as get() — a pinned file's size/mtime
     // come from its local copy instantly rather than a CLI round-trip.
@@ -273,6 +298,18 @@ KIO::WorkerResult ProtonDriveWorker::streamLocalFile(const QString &localPath, c
 KIO::WorkerResult ProtonDriveWorker::mimetype(const QUrl &url)
 {
     const QString path = drivePath(url);
+
+    if (path.startsWith(photosPrefix)) {
+        try {
+            const FfiEntry entry = stat_photo(path.mid(photosPrefix.length()).toStdString());
+            const QString mediaType = toQString(entry.media_type);
+            mimeType(mediaType.isEmpty() ? QMimeDatabase().mimeTypeForFile(path, QMimeDatabase::MatchExtension).name() : mediaType);
+            return KIO::WorkerResult::pass();
+        } catch (const rust::Error &error) {
+            return resultFromRustError(error);
+        }
+    }
+
     try {
         const FfiEntry entry = stat_path(path.toStdString());
         if (entry.is_folder) {
@@ -294,6 +331,10 @@ KIO::WorkerResult ProtonDriveWorker::mimetype(const QUrl &url)
 KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
 {
     const QString path = drivePath(url);
+
+    if (path.startsWith(photosPrefix)) {
+        return getPhoto(path.mid(photosPrefix.length()), path);
+    }
 
     // Pinned files (kept local via the Dolphin "Garder en local" ServiceMenu
     // action — see issue #30) are served straight from their cached copy:
@@ -324,6 +365,64 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
     }
 
     return streamLocalFile(tmpDir.filePath(fileName), path);
+}
+
+KIO::WorkerResult ProtonDriveWorker::listPhotos()
+{
+    rust::Vec<FfiEntry> entries;
+    try {
+        entries = list_photos();
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+
+    // No CLI-backed "." info call exists for this synthetic section (see
+    // stat()'s equivalent special case for /photos itself) — synthesized
+    // directly rather than skipped, since unlike listDir()'s generic path
+    // there's no real stat_path() fallback to attempt first.
+    KIO::UDSEntry self;
+    self.reserve(3);
+    self.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+    self.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
+    self.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
+    listEntry(self);
+
+    for (const FfiEntry &entry : entries) {
+        listEntry(entryFromFfi(entry));
+    }
+    return KIO::WorkerResult::pass();
+}
+
+KIO::WorkerResult ProtonDriveWorker::statPhoto(const QString &name)
+{
+    try {
+        const FfiEntry entry = stat_photo(name.toStdString());
+        statEntry(entryFromFfi(entry, QStringLiteral(".")));
+        return KIO::WorkerResult::pass();
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+}
+
+KIO::WorkerResult ProtonDriveWorker::getPhoto(const QString &name, const QString &originalPath)
+{
+    QTemporaryDir tmpDir;
+    if (!tmpDir.isValid()) {
+        return KIO::WorkerResult::fail(KIO::ERR_CANNOT_READ, QStringLiteral("could not create a temporary directory"));
+    }
+
+    // The CLI names the downloaded file by its own decrypted name, which
+    // isn't guaranteed to equal `name` (see core/src/photos.rs's " (2)"
+    // suffix for same-named photos) — download_photo() reads back whatever
+    // actually landed in tmpDir rather than assuming it matches.
+    rust::String downloadedName;
+    try {
+        downloadedName = download_photo(name.toStdString(), tmpDir.path().toStdString());
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+
+    return streamLocalFile(tmpDir.filePath(toQString(downloadedName)), originalPath);
 }
 
 KIO::WorkerResult ProtonDriveWorker::put(const QUrl &url, int /*permissions*/, KIO::JobFlags /*flags*/)

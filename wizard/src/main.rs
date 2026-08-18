@@ -440,12 +440,16 @@ fn generate_gpg_key(name: &str, email: &str) -> std::io::Result<()> {
     }
 }
 
-/// Best-effort append of a `protondrive:/my-files` bookmark into Dolphin's
-/// Places panel (`~/.local/share/user-places.xbel`). Plain text insertion
-/// before `</xbel>` rather than pulling in an XML crate: this step is
-/// optional and best-effort (same tolerance as `daemon/src/notification.rs`
-/// for a missing `notify-send`), so a malformed/unexpected file is just
-/// skipped rather than risked being corrupted by a naive parser.
+/// Best-effort append of a `protondrive:/` bookmark into Dolphin's Places
+/// panel (`~/.local/share/user-places.xbel`). Points at the root rather than
+/// `protondrive:/my-files` so every virtual section (My files, Photos,
+/// Shared, ...) is one click away, matching Proton Drive's own web UI
+/// sidebar instead of hiding everything but My files behind a single
+/// shortcut. Plain text insertion before `</xbel>` rather than pulling in an
+/// XML crate: this step is optional and best-effort (same tolerance as
+/// `daemon/src/notification.rs` for a missing `notify-send`), so a
+/// malformed/unexpected file is just skipped rather than risked being
+/// corrupted by a naive parser.
 fn route_add_favorite() -> String {
     let Some(home) = std::env::var_os("HOME") else {
         return r#"{"ok":false,"error":"HOME not set"}"#.to_string();
@@ -453,7 +457,7 @@ fn route_add_favorite() -> String {
     let xbel_path = PathBuf::from(home).join(".local/share/user-places.xbel");
     let existing = std::fs::read_to_string(&xbel_path).unwrap_or_default();
 
-    if existing.contains("protondrive:/my-files") {
+    if existing.contains("protondrive:/") {
         return r#"{"ok":true}"#.to_string();
     }
     let Some(insert_at) = existing.rfind("</xbel>") else {
@@ -467,7 +471,7 @@ fn route_add_favorite() -> String {
     // Dolphin itself writes its own built-in places (Home, Documents, ...).
     // A plain `<icon>` under the KDE metadata block is silently ignored by
     // KFilePlacesModel's parser, leaving the entry with a "?" icon.
-    let bookmark = "  <bookmark href=\"protondrive:/my-files\">\n    \
+    let bookmark = "  <bookmark href=\"protondrive:/\">\n    \
                      <title>Proton Drive</title>\n    \
                      <info>\n      <metadata owner=\"http://freedesktop.org\">\n        \
                      <bookmark:icon name=\"folder-cloud\"/>\n      </metadata>\n    </info>\n  \
@@ -525,14 +529,14 @@ mod tests {
         let result = route_add_favorite();
         assert!(result.contains("\"ok\":true"));
         let updated = std::fs::read_to_string(dir.join(".local/share/user-places.xbel")).unwrap();
-        assert!(updated.contains("protondrive:/my-files"));
+        assert!(updated.contains("href=\"protondrive:/\""));
 
         // Calling it again should be a no-op, not a duplicate entry.
         let result2 = route_add_favorite();
         assert!(result2.contains("\"ok\":true"));
         let updated2 = std::fs::read_to_string(dir.join(".local/share/user-places.xbel")).unwrap();
         assert_eq!(
-            updated2.matches("protondrive:/my-files").count(),
+            updated2.matches("href=\"protondrive:/\"").count(),
             1,
             "the bookmark should only be inserted once"
         );
