@@ -12,6 +12,7 @@ use crate::cache::Cache;
 use crate::cli::{self, RealCommandRunner};
 use crate::entry::{ListItem, NodeEntry};
 use crate::photos;
+use crate::transfer::{Direction, TransferPoll};
 
 #[cxx::bridge(namespace = "protondrive")]
 mod ffi {
@@ -29,12 +30,38 @@ mod ffi {
         modification_time: String,
     }
 
+    /// Result of one poll of an in-flight [`TransferHandle`]. `ok`/`error`
+    /// are only meaningful when `done` is true — cxx has no `Option<T>` for
+    /// arbitrary shared-struct fields, so `done` itself is the discriminant.
+    /// `processed_bytes` is always meaningful: an elapsed-time-based
+    /// estimate while running (see `crate::transfer`'s doc comment for why
+    /// it's an estimate, not a real byte count), and the real total once
+    /// `done && ok`.
+    struct FfiTransferPoll {
+        done: bool,
+        ok: bool,
+        error: String,
+        processed_bytes: u64,
+    }
+
     extern "Rust" {
+        type TransferHandle;
+
         fn list_dir(path: &str) -> Result<Vec<FfiEntry>>;
         fn stat_path(path: &str) -> Result<FfiEntry>;
         fn make_dir(parent_path: &str, name: &str) -> Result<FfiEntry>;
-        fn download_to(remote_path: &str, local_folder: &str) -> Result<()>;
-        fn upload_from(local_path: &str, parent_path: &str) -> Result<()>;
+        fn start_download(
+            remote_path: &str,
+            local_folder: &str,
+            total_bytes: u64,
+        ) -> Result<Box<TransferHandle>>;
+        fn start_upload(
+            local_path: &str,
+            parent_path: &str,
+            total_bytes: u64,
+        ) -> Result<Box<TransferHandle>>;
+        fn poll_transfer(handle: &mut TransferHandle) -> FfiTransferPoll;
+        fn cancel_transfer(handle: &mut TransferHandle);
         fn trash(path: &str) -> Result<()>;
         fn rename_or_move(old_path: &str, new_path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
@@ -45,7 +72,18 @@ mod ffi {
     }
 }
 
-use ffi::FfiEntry;
+use ffi::{FfiEntry, FfiTransferPoll};
+
+/// cxx-exposed wrapper around `crate::transfer::TransferHandle` — adds just
+/// enough context (the path, kept only for `finish_download`/
+/// `finish_upload`'s error messages) that `poll_transfer` below can validate
+/// a finished transfer's `CommandOutput` the same way the old blocking
+/// `download()`/`upload()` did, without `crate::transfer` itself needing to
+/// know anything about downloads/uploads/paths.
+pub struct TransferHandle {
+    inner: crate::transfer::TransferHandle,
+    path: String,
+}
 
 fn node_to_ffi(node: &NodeEntry) -> FfiEntry {
     FfiEntry {
@@ -138,22 +176,93 @@ fn make_dir(parent_path: &str, name: &str) -> Result<FfiEntry, String> {
     Ok(node_to_ffi(&node))
 }
 
-fn download_to(remote_path: &str, local_folder: &str) -> Result<(), String> {
-    let runner = RealCommandRunner;
-    cli::download(&runner, remote_path, Path::new(local_folder))
-        .map_err(|e| e.to_string())
-        .map(|_| ())
+/// Starts a cancellable, progress-estimating download — see
+/// `crate::transfer`'s module doc comment for why this can't offer real
+/// byte-accurate progress. The parent path's listing isn't invalidated here
+/// (unlike `start_upload`): a download never changes anything remote.
+fn start_download(
+    remote_path: &str,
+    local_folder: &str,
+    total_bytes: u64,
+) -> Result<Box<TransferHandle>, String> {
+    let args = cli::download_args(remote_path, Path::new(local_folder));
+    let inner = crate::transfer::TransferHandle::start(Direction::Download, args, total_bytes)
+        .map_err(|e| e.to_string())?;
+    Ok(Box::new(TransferHandle {
+        inner,
+        path: remote_path.to_string(),
+    }))
 }
 
-fn upload_from(local_path: &str, parent_path: &str) -> Result<(), String> {
-    let runner = RealCommandRunner;
-    cli::upload(&runner, Path::new(local_path), parent_path)
-        .map_err(|e| e.to_string())
-        .map(|_| ())?;
-    if let Ok(cache) = open_cache() {
-        let _ = cache.invalidate_listing(parent_path);
+/// Starts a cancellable, progress-estimating upload. Cache invalidation
+/// happens once `poll_transfer` reports success (mirroring `upload_from`'s
+/// old placement right after the CLI call succeeded), not here at start —
+/// nothing has actually changed remotely yet.
+fn start_upload(
+    local_path: &str,
+    parent_path: &str,
+    total_bytes: u64,
+) -> Result<Box<TransferHandle>, String> {
+    let args = cli::upload_args(Path::new(local_path), parent_path);
+    let inner = crate::transfer::TransferHandle::start(Direction::Upload, args, total_bytes)
+        .map_err(|e| e.to_string())?;
+    Ok(Box::new(TransferHandle {
+        inner,
+        path: parent_path.to_string(),
+    }))
+}
+
+/// Validates a just-finished `CommandOutput` the same way the old blocking
+/// `download()`/`upload()` did (`ensure_success` + JSON parse +
+/// `ensure_no_failures`) — which of the two to apply is read back off the
+/// handle's own `direction()` rather than passed in again, so this one
+/// function serves both `poll_transfer` call sites.
+fn poll_transfer(handle: &mut TransferHandle) -> FfiTransferPoll {
+    match handle.inner.poll() {
+        TransferPoll::Pending { estimated_bytes } => FfiTransferPoll {
+            done: false,
+            ok: false,
+            error: String::new(),
+            processed_bytes: estimated_bytes,
+        },
+        TransferPoll::Done(Ok(out)) => {
+            let result = match handle.inner.direction() {
+                Direction::Download => cli::finish_download(&handle.path, out),
+                Direction::Upload => cli::finish_upload(&handle.path, out),
+            };
+            match result {
+                Ok(summary) => {
+                    if handle.inner.direction() == Direction::Upload {
+                        if let Ok(cache) = open_cache() {
+                            let _ = cache.invalidate_listing(&handle.path);
+                        }
+                    }
+                    FfiTransferPoll {
+                        done: true,
+                        ok: true,
+                        error: String::new(),
+                        processed_bytes: summary.transferred_bytes,
+                    }
+                }
+                Err(err) => FfiTransferPoll {
+                    done: true,
+                    ok: false,
+                    error: err.to_string(),
+                    processed_bytes: 0,
+                },
+            }
+        }
+        TransferPoll::Done(Err(err)) => FfiTransferPoll {
+            done: true,
+            ok: false,
+            error: err.to_string(),
+            processed_bytes: 0,
+        },
     }
-    Ok(())
+}
+
+fn cancel_transfer(handle: &mut TransferHandle) {
+    handle.inner.cancel();
 }
 
 fn trash(path: &str) -> Result<(), String> {

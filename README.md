@@ -138,6 +138,12 @@ environment already selects.
   periodic sweep and by this app's own writes, not by a fixed expiry. See
   `docs/DESIGN.md`'s "Filesystem listing/stat cache" section for the
   consistency tradeoff this accepts. See [#8](https://github.com/Aarklendoia/kio-protondrive/issues/8).
+- Cancellable uploads/downloads (Dolphin's Cancel button actually stops the
+  transfer), with an approximate, time-based progress bar rather than
+  real byte-accurate progress — the `proton-drive` CLI has no stable
+  progress API to report real numbers from. See `docs/DESIGN.md`'s
+  "Cancellable transfers and approximate progress" section.
+  See [#9](https://github.com/Aarklendoia/kio-protondrive/issues/9).
 
 **Not yet implemented** (contributions welcome):
 
