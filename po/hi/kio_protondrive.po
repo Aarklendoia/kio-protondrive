@@ -89,3 +89,24 @@ msgstr "ऑफ़लाइन उपलब्ध रखें"
 #: worker/fileitemactionplugin.cpp:0
 msgid "Remove Local Copy"
 msgstr "स्थानीय प्रति निकालें"
+
+#. Right-click menu action (KAbstractFileItemActionPlugin): moves a trashed
+#. item back to its original location, shown when every selected item is
+#. under /trash.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Restore"
+msgstr "पुनर्स्थापित करें"
+
+#. Right-click menu action shown on the /trash virtual section itself, and
+#. also the confirmation dialog's title and primary button — permanently
+#. deletes everything currently in the trash.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Empty Trash"
+msgstr "रद्दी खाली करें"
+
+#. Confirmation dialog text shown before actually emptying the trash
+#. (irreversible, not routed through a KIO job Dolphin would confirm on its
+#. own).
+#: worker/fileitemactionplugin.cpp:0
+msgid "Permanently delete everything in the trash? This cannot be undone."
+msgstr "रद्दी में मौजूद सभी चीज़ें स्थायी रूप से हटाएँ? इसे पूर्ववत नहीं किया जा सकता।"

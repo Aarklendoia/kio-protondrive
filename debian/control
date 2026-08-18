@@ -13,7 +13,8 @@ Build-Depends:
   qt6-base-dev-tools,
   qt6-l10n-tools,
   libkf6kio-dev,
-  libkf6coreaddons-dev
+  libkf6coreaddons-dev,
+  libkf6widgetsaddons-dev
 Standards-Version: 4.6.1
 Homepage: https://github.com/Aarklendoia/kio-protondrive
 Vcs-Git: https://github.com/Aarklendoia/kio-protondrive.git

@@ -253,6 +253,62 @@ manual-only") but got descoped when #30 shipped as pin-only.
   used — the name predates #60 but the plugin only ever treated it as "an
   overlay-relevant state changed for this path," not literally pin-specific.
 
+## Restorable trash via context menu
+
+Tracked in [#7](https://github.com/Aarklendoia/kio-protondrive/issues/7),
+**implemented**. `/trash` was already browsable read-only, and `del()`
+already soft-deleted via `filesystem trash`, but nothing let you restore an
+item, permanently delete one, or empty the trash.
+
+- **Why not native `trash:/`-style UI.** Considered and rejected: inspected
+  the real `kio_trash.so` on a dev system with `strings` — it implements
+  restore via `KIO::WorkerBase::special()`, a numeric-opcode command
+  channel ("Unknown command in special(): " is the only string that
+  survives), which is a private, undocumented protocol specific to
+  `kio_trash`. Dolphin's restore toolbar button/action almost certainly
+  only appears for the `trash:` scheme specifically, not for any worker
+  that happens to implement a matching `special()` — there'd be no way to
+  make Dolphin even offer that UI for `protondrive://`. Went with
+  right-click context-menu actions instead
+  (`KAbstractFileItemActionPlugin`, same mechanism and file as pin/unpin,
+  `worker/fileitemactionplugin.cpp`), which deliver the actual
+  functionality without depending on that private protocol.
+- **Three new CLI-backed primitives, `core/src/cli.rs`.**
+  `restore_path`/`permanently_delete_path` mirror `trash_path`'s shape
+  exactly (`filesystem restore|delete -j path`, same `[{uid, ok}]`
+  response). `restore_path` needs no destination argument — the CLI
+  remembers the original location itself. `empty_trash` (`filesystem
+  empty-trash -j`) is asynchronous per the CLI's own `--help`: a
+  successful call doesn't mean `/trash` is already empty, just that the
+  request was accepted.
+- **`del()` fix.** `worker/protondriveworker.cpp`'s `del()` used to always
+  call `trash()`, even for a path already under `/trash` — the CLI's
+  `delete` command refuses anything not already trashed, so deleting an
+  already-trashed item previously failed/no-opped instead of actually
+  removing it. Now branches on `path.startsWith("/trash/")` to call
+  `permanently_delete_path` instead, which is also all that's needed for
+  "permanently delete" — no separate context-menu action for it, since
+  Dolphin's standard Delete already reaches `del()`.
+- **Context-menu actions, `worker/fileitemactionplugin.cpp`.** "Restore"
+  appears when every selected item's path is under `/trash/`, applying to
+  the whole selection at once (same multi-selection pattern as pin/unpin).
+  "Empty Trash" appears only when the single selected item is `/trash`
+  itself (the virtual section entry, right-clickable from `/`'s listing) —
+  and unlike every other action here, it isn't a `KIO::DeleteJob` Dolphin
+  would confirm on its own, so it shows its own `KMessageBox::
+  warningTwoActions` confirmation first (new dependency:
+  `KF6::WidgetsAddons`, not previously linked). Both call the cxx bridge
+  directly, in-process, rather than shelling out to
+  `kio-protondrive-daemon` the way pin/unpin do — there's no local SQLite
+  index these need a single-writer daemon for, just a remote API call and
+  the same best-effort cache invalidation `trash()`/`rename_or_move()`
+  already do inline in `core/src/bridge.rs`.
+- **Cache invalidation tradeoff.** `restore_path` doesn't know the item's
+  actual destination (the CLI doesn't report it), so only `/trash`'s own
+  listing is invalidated on restore — the destination folder's listing
+  stays stale until #8's periodic sweep or a direct access, same tradeoff
+  already accepted elsewhere in this cache.
+
 ### Superseded #12 design (not built)
 
 The original plan for #12 was a single configured local folder mapped to a
