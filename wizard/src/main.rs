@@ -461,10 +461,16 @@ fn route_add_favorite() -> String {
             .to_string();
     };
 
+    // The icon must be a `bookmark:icon` element (freedesktop desktop-bookmark
+    // namespace, as declared on the root `<xbel>` element) under an
+    // `owner="http://freedesktop.org"` metadata block, matching exactly how
+    // Dolphin itself writes its own built-in places (Home, Documents, ...).
+    // A plain `<icon>` under the KDE metadata block is silently ignored by
+    // KFilePlacesModel's parser, leaving the entry with a "?" icon.
     let bookmark = "  <bookmark href=\"protondrive:/my-files\">\n    \
                      <title>Proton Drive</title>\n    \
-                     <info>\n      <metadata owner=\"http://www.kde.org\">\n        \
-                     <icon name=\"folder-cloud\"/>\n      </metadata>\n    </info>\n  \
+                     <info>\n      <metadata owner=\"http://freedesktop.org\">\n        \
+                     <bookmark:icon name=\"folder-cloud\"/>\n      </metadata>\n    </info>\n  \
                      </bookmark>\n";
     let mut updated = existing.clone();
     updated.insert_str(insert_at, bookmark);
