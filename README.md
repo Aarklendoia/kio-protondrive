@@ -132,14 +132,19 @@ environment already selects.
   this worker wraps into a flat, real-filename listing. No upload (the CLI's
   own `photo upload` always lands in "My Photos", flat, regardless of
   destination) and no albums. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
+- A persistent listing/stat cache, so repeat browsing (and Dolphin's
+  breadcrumb, which stats every path segment on its own) is instant instead
+  of re-hitting the CLI every time — kept fresh by the sync daemon's
+  periodic sweep and by this app's own writes, not by a fixed expiry. See
+  `docs/DESIGN.md`'s "Filesystem listing/stat cache" section for the
+  consistency tradeoff this accepts. See [#8](https://github.com/Aarklendoia/kio-protondrive/issues/8).
 
 **Not yet implemented** (contributions welcome):
 
-- Server-side rename/copy/move (KIO falls back to download+upload, which
-  works but is slower)
+- Server-side copy (KIO falls back to download+upload, which works but is
+  slower) — rename/move are implemented ([#5](https://github.com/Aarklendoia/kio-protondrive/issues/5))
 - Sharing/invitations
 - Browsing Proton Drive's trash as a restorable Dolphin trash view
-- Directory listing cache
 - Albums, uploading to Photos ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18))
 
 **Blocked upstream:** `/albums` and the `photos-shared-by-me`/

@@ -90,6 +90,49 @@ second folder to keep mentally in sync with the first.
   automatically on the next `inotify` event or the startup reconciliation
   pass — no separate backoff/retry-queue mechanism.
 
+## Filesystem listing/stat cache
+
+Tracked in [#8](https://github.com/Aarklendoia/kio-protondrive/issues/8),
+**implemented** (the listing-cache half of it — the thumbnails half of #8 is
+separately documented as blocked, see the README's Scope section). A
+deliberate, larger deviation from this doc's opening "on-demand, stateless"
+philosophy than either the pin cache or the `/photos` timeline cache above —
+worth spelling out explicitly, same as those two were.
+
+- **What's cached.** Every `stat()`/`list_dir()` result for a real Drive
+  path (not the virtual root `/`, whose fixed sections are cheap and
+  low-value to cache) — `core/src/cache.rs`'s `fs_stat_cache` (`path ->
+  NodeEntry`) and `fs_listing_cache` (`parent_path -> [NodeEntry]`) tables,
+  same on-disk SQLite file as the pin index and `/photos` cache.
+- **No TTL — permanent until invalidated or swept.** Unlike the `/photos`
+  cache's 5-minute freshness cutoff, a hit here is served however old it is.
+  Two things keep it from going stale forever:
+  - This app's own writes invalidate exactly what they touch
+    (`core/src/bridge.rs`'s `make_dir`/`upload_from`/`trash`/`rename_or_move`
+    call `Cache::invalidate_stat`/`invalidate_listing` after a successful
+    CLI call) — a self-caused change is reflected on the very next visit.
+  - The sync daemon sweeps the whole cache periodically
+    (`daemon/src/fs_refresh.rs`, `FS_CACHE_REFRESH_INTERVAL` = 15 minutes in
+    `daemon/src/main.rs`), re-fetching every cached path sequentially (each
+    CLI call already costs ~1-4s — see the README's thumbnail-limitation
+    paragraph — so this is deliberately not parallelized) and firing
+    `org.kde.KDirNotify.FilesChanged` for whatever it refreshed, so an open
+    Dolphin window re-renders instead of silently drifting from what's
+    actually on Drive.
+- **The accepted tradeoff.** A change made to a cached path from *outside*
+  this app (the web UI, another device) can lag behind by up to the sweep
+  interval — this is the real cost being traded for instant repeat browsing
+  and an instantly-labeled breadcrumb, and the reason this needed its own
+  writeup rather than just reusing the `/photos` cache's TTL pattern.
+- **Why no background thread from the worker itself.** A more "reactive"
+  design would re-verify a cache hit in the background the moment it's
+  served, so a folder actively being browsed stays maximally fresh. Rejected
+  deliberately: a `protondrive://` KIO worker process is short-lived and
+  poolable (`maxInstances` in `worker/protondrive.json`) — nothing guarantees
+  it outlives a thread it spawned, so "fire a background refresh from the
+  worker" is a best-effort measure that can silently vanish. All "keep this
+  fresh" work belongs to the daemon instead, which is already long-running.
+
 ### Superseded #12 design (not built)
 
 The original plan for #12 was a single configured local folder mapped to a

@@ -9,6 +9,7 @@
 pub mod config;
 pub mod control;
 pub mod error;
+pub mod fs_refresh;
 pub mod notification;
 pub mod sync;
 pub mod version_check;

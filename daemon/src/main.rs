@@ -19,12 +19,18 @@ use protondrive_core::cli::RealCommandRunner;
 
 use kio_protondrive_daemon::config::Config;
 use kio_protondrive_daemon::watcher::{self, WatchEvent};
-use kio_protondrive_daemon::{control, notification, sync, version_check};
+use kio_protondrive_daemon::{control, fs_refresh, notification, sync, version_check};
 
 /// How often to ask the installed `proton-drive` CLI whether a newer
 /// release exists (see [`version_check`]) — infrequent by design, this is a
 /// convenience nudge, not something latency-sensitive.
 const VERSION_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// How often to refresh `core::cache`'s permanent filesystem stat/listing
+/// cache (see [`fs_refresh`]) — a tradeoff between staying reasonably fresh
+/// and not hammering the CLI: each cached path costs its own ~1-4s CLI call,
+/// sequential, so a large cache does take a while to fully sweep.
+const FS_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 /// Logs one clear, actionable line and fires a desktop notification — but
 /// only on the falling edge (the first failure after things were working),
@@ -124,8 +130,18 @@ fn main() {
     let mut cli_update_notified: Option<String> = None;
     version_check::check(&runner, &notifier, &mut cli_update_notified);
     let mut last_version_check = Instant::now();
+    // Same "must not be Instant::now() relied on for an immediate first
+    // run" reasoning as `last_version_check` above — but the fs cache sweep
+    // doesn't need one right at startup the way the version check does (a
+    // freshly-started daemon's cache is whatever `bridge.rs` already wrote
+    // on-demand, not urgently stale), so this one *does* start as
+    // `Instant::now()`, deferring the first sweep by a full
+    // `FS_CACHE_REFRESH_INTERVAL` instead.
+    let mut last_fs_refresh = Instant::now();
     loop {
-        let wait = VERSION_CHECK_INTERVAL.saturating_sub(last_version_check.elapsed());
+        let wait = VERSION_CHECK_INTERVAL
+            .saturating_sub(last_version_check.elapsed())
+            .min(FS_CACHE_REFRESH_INTERVAL.saturating_sub(last_fs_refresh.elapsed()));
         match events.recv_timeout(wait) {
             Ok(batch) => {
                 for event in batch {
@@ -166,6 +182,11 @@ fn main() {
         if last_version_check.elapsed() >= VERSION_CHECK_INTERVAL {
             version_check::check(&runner, &notifier, &mut cli_update_notified);
             last_version_check = Instant::now();
+        }
+
+        if last_fs_refresh.elapsed() >= FS_CACHE_REFRESH_INTERVAL {
+            fs_refresh::refresh_all(&runner, &cache);
+            last_fs_refresh = Instant::now();
         }
     }
 }

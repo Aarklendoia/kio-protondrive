@@ -71,14 +71,57 @@ fn item_to_ffi(item: &ListItem) -> FfiEntry {
     }
 }
 
+fn open_cache() -> Result<Cache, String> {
+    Cache::open(&Cache::default_db_path(), &Cache::default_root()).map_err(|e| e.to_string())
+}
+
+/// The virtual root (`/`) is never cached (see `crate::cache`'s module doc
+/// comment): its entries are Proton Drive's fixed sections, not real nodes
+/// (`ListItem::Section`, which doesn't even round-trip through JSON the way
+/// [`NodeEntry`] does), and it's already small/fast — caching it would add
+/// real-path-cache complexity for close to no benefit.
 fn list_dir(path: &str) -> Result<Vec<FfiEntry>, String> {
     let runner = RealCommandRunner;
+    if path == "/" {
+        let items = cli::list_dir(&runner, path).map_err(|e| e.to_string())?;
+        return Ok(items.iter().map(item_to_ffi).collect());
+    }
+
+    // Best-effort accelerator, same stance as lookup_pin: any cache-open
+    // failure just means always-live browsing, never a hard failure.
+    if let Ok(cache) = open_cache() {
+        if let Ok(Some(nodes)) = cache.cached_listing(path) {
+            return Ok(nodes.iter().map(node_to_ffi).collect());
+        }
+        let items = cli::list_dir(&runner, path).map_err(|e| e.to_string())?;
+        let nodes: Vec<NodeEntry> = items
+            .into_iter()
+            .filter_map(|item| match item {
+                ListItem::Node(node) => Some(node),
+                // A non-root path only ever returns real nodes (see
+                // entry.rs's ListItem doc comment) — a Section here would be
+                // unexpected, not worth failing the whole listing over.
+                ListItem::Section(_) => None,
+            })
+            .collect();
+        let _ = cache.store_listing(path, &nodes);
+        return Ok(nodes.iter().map(node_to_ffi).collect());
+    }
+
     let items = cli::list_dir(&runner, path).map_err(|e| e.to_string())?;
     Ok(items.iter().map(item_to_ffi).collect())
 }
 
 fn stat_path(path: &str) -> Result<FfiEntry, String> {
     let runner = RealCommandRunner;
+    if let Ok(cache) = open_cache() {
+        if let Ok(Some(node)) = cache.cached_stat(path) {
+            return Ok(node_to_ffi(&node));
+        }
+        let node = cli::stat_path(&runner, path).map_err(|e| e.to_string())?;
+        let _ = cache.store_stat(path, &node);
+        return Ok(node_to_ffi(&node));
+    }
     let node = cli::stat_path(&runner, path).map_err(|e| e.to_string())?;
     Ok(node_to_ffi(&node))
 }
@@ -86,6 +129,11 @@ fn stat_path(path: &str) -> Result<FfiEntry, String> {
 fn make_dir(parent_path: &str, name: &str) -> Result<FfiEntry, String> {
     let runner = RealCommandRunner;
     let node = cli::create_folder(&runner, parent_path, name).map_err(|e| e.to_string())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_listing(parent_path);
+        let child_path = format!("{}/{name}", parent_path.trim_end_matches('/'));
+        let _ = cache.store_stat(&child_path, &node);
+    }
     Ok(node_to_ffi(&node))
 }
 
@@ -100,16 +148,24 @@ fn upload_from(local_path: &str, parent_path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     cli::upload(&runner, Path::new(local_path), parent_path)
         .map_err(|e| e.to_string())
-        .map(|_| ())
+        .map(|_| ())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_listing(parent_path);
+    }
+    Ok(())
 }
 
 fn trash(path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
-    cli::trash_path(&runner, path).map_err(|e| e.to_string())
-}
-
-fn open_cache() -> Result<Cache, String> {
-    Cache::open(&Cache::default_db_path(), &Cache::default_root()).map_err(|e| e.to_string())
+    cli::trash_path(&runner, path).map_err(|e| e.to_string())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_stat(path);
+        if let Some((parent, _)) = path.rsplit_once('/') {
+            let parent = if parent.is_empty() { "/" } else { parent };
+            let _ = cache.invalidate_listing(parent);
+        }
+    }
+    Ok(())
 }
 
 /// Empty string means "not pinned" — same "no `Option<String>` across cxx"
