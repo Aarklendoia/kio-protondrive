@@ -126,6 +126,12 @@ environment already selects.
 - Opening/downloading files, uploading/overwriting files, creating folders
 - Deleting a file or folder (moves it to Proton Drive's own trash — there is
   no permanent delete exposed through Dolphin in v1)
+- Browsing `/photos`, read-only: `filesystem list`/`info` genuinely don't
+  support Photos (see "Blocked upstream" below), but CLI 0.7.0+ exposes it
+  through a separate, non-path-based `photo` command family instead, which
+  this worker wraps into a flat, real-filename listing. No upload (the CLI's
+  own `photo upload` always lands in "My Photos", flat, regardless of
+  destination) and no albums. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
 
 **Not yet implemented** (contributions welcome):
 
@@ -133,13 +139,38 @@ environment already selects.
   works but is slower)
 - Sharing/invitations
 - Browsing Proton Drive's trash as a restorable Dolphin trash view
-- Directory listing cache, thumbnails
+- Directory listing cache
+- Albums, uploading to Photos ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18))
 
-**Blocked upstream:** the Photos section (`/photos`, `/albums` and their
-`-shared-by-me`/`-shared-with-me`/`-trash` variants) shows up when listing
-`/`, but every operation against it fails with "Path type photos is not
-supported" from the `proton-drive` CLI itself — this isn't something a KIO
-worker can work around. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
+**Blocked upstream:** `/albums` and the `photos-shared-by-me`/
+`photos-shared-with-me`/`photos-trash` sections shown when listing `/` fail
+every operation with "Path type ... is not supported" from the
+`proton-drive` CLI itself — this isn't something a KIO worker can work
+around. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
+
+**Known limitation: no thumbnails.** Dolphin/KIO's `PreviewJob` enforces a
+hard, non-configurable 2-second timeout per file (`startTimer(2s)` in KDE
+Frameworks' `filepreviewjob.cpp`, confirmed against the installed KF6 6.24.0
+sources). Every `proton-drive` CLI invocation carries 1.2-4.3s of its own
+fixed overhead regardless of file size — confirmed live with `time
+proton-drive filesystem info` (1.2s) and `time proton-drive photo download`
+(1.8-4.3s for files under 2.5 MB); `user`+`sys` account for well under a
+second of that, so the rest is the CLI's own Node.js/SDK session startup on
+every call, not network transfer. No caching or worker-side optimization can
+close a gap this structural: the CLI alone routinely takes longer than
+Dolphin allows for the entire preview attempt, so every thumbnail request
+times out before the download can even finish. Fixing this for real would
+mean keeping a long-lived, already-authenticated `proton-drive` session warm
+across calls (a background daemon brokering CLI access instead of spawning
+it fresh per operation) — a much larger architecture change than this
+project's current on-demand, stateless design (see `docs/DESIGN.md`).
+Separately, and independently of the timeout, HEIC photos (most iPhone
+photos) have no working thumbnailer on Kubuntu 26.04 at all regardless of
+protocol: the system's only HEIF/AVIF thumbnailer (`glycin-heif`) ships as an
+external freedesktop.org `.thumbnailer` rather than a native KDE
+`ThumbCreator` plugin, and isn't picked up by KIO's plugin loader in this
+Frameworks version — a distro packaging gap, not something specific to
+Proton Drive.
 
 ## Installing
 

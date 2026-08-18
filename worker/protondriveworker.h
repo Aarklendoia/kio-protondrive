@@ -37,4 +37,12 @@ private:
     // or a freshly downloaded temp file) — both stream identically once the
     // bytes are sitting at some local path.
     KIO::WorkerResult streamLocalFile(const QString &localPath, const QString &originalPath);
+
+    // /photos is addressed through a completely separate CLI command family
+    // (nodeUid-based, not a real Drive path — see core/src/photos.rs and
+    // issue #18), so it needs its own listDir/stat/get paths rather than
+    // going through the generic ones above.
+    KIO::WorkerResult listPhotos();
+    KIO::WorkerResult statPhoto(const QString &name);
+    KIO::WorkerResult getPhoto(const QString &name, const QString &originalPath);
 };

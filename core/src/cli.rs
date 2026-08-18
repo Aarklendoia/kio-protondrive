@@ -73,8 +73,29 @@ pub trait CommandRunner {
 #[derive(Debug, Default, Clone)]
 pub struct RealCommandRunner;
 
-impl CommandRunner for RealCommandRunner {
-    fn run(&self, args: &[&str], timeout: Duration) -> Result<CommandOutput, DriveError> {
+/// Up to 4 protondrive:// KIO worker instances (`maxInstances` in
+/// worker/protondrive.json) plus the sync daemon can each independently
+/// shell out to `proton-drive` at once — confirmed live (#38) that this
+/// occasionally collides on the CLI's *own* local SQLite cache database
+/// ("database is locked" / `SQLITE_BUSY_RECOVERY` while it opens that file,
+/// before attempting the actual Drive operation — so nothing has happened
+/// yet on our side, safe to retry), especially now that browsing `/photos`
+/// can fire many concurrent `photo download` calls in a burst (one per
+/// visible thumbnail, see `crate::photos`). #38 already observed live that
+/// retrying the exact same command shortly after succeeds.
+const LOCK_CONTENTION_RETRIES: u32 = 3;
+const LOCK_CONTENTION_RETRY_DELAY: Duration = Duration::from_millis(300);
+
+fn is_transient_lock_contention(out: &CommandOutput) -> bool {
+    !out.success
+        && (out.stdout.contains("database is locked")
+            || out.stdout.contains("SQLITE_BUSY")
+            || out.stderr.contains("database is locked")
+            || out.stderr.contains("SQLITE_BUSY"))
+}
+
+impl RealCommandRunner {
+    fn run_once(&self, args: &[&str], timeout: Duration) -> Result<CommandOutput, DriveError> {
         let child = std::process::Command::new("proton-drive")
             .args(args)
             .stdout(std::process::Stdio::piped())
@@ -112,6 +133,20 @@ impl CommandRunner for RealCommandRunner {
                 "proton-drive's output thread vanished without a result".to_string(),
             )),
         }
+    }
+}
+
+impl CommandRunner for RealCommandRunner {
+    fn run(&self, args: &[&str], timeout: Duration) -> Result<CommandOutput, DriveError> {
+        let mut out = self.run_once(args, timeout)?;
+        for attempt in 1..LOCK_CONTENTION_RETRIES {
+            if !is_transient_lock_contention(&out) {
+                break;
+            }
+            thread::sleep(LOCK_CONTENTION_RETRY_DELAY * attempt);
+            out = self.run_once(args, timeout)?;
+        }
+        Ok(out)
     }
 }
 
@@ -268,6 +303,61 @@ pub fn download(
     Ok(summary)
 }
 
+/// Lists every photo in the account (`photo timeline`), newest first — a
+/// completely separate command family from `filesystem`, addressing photos
+/// by `nodeUid` rather than by Drive path (see #18: `/photos` genuinely
+/// isn't supported through `filesystem list`/`info`, but CLI 0.7.0+ added
+/// this dedicated family instead). `-d`/`--load-details` is required to get
+/// full node metadata (name, size, media type, ...) — without it, each
+/// entry is just `{nodeUid, captureTime, tags}`, useless for a file listing.
+///
+/// There's no pagination or per-item detail fetch (checked `--help`: `-d`
+/// is the only flag `photo timeline` takes), so this is a single call for
+/// the *entire* library — confirmed live at ~80s for a ~12k-photo account.
+/// TRANSFER_TIMEOUT rather than METADATA_TIMEOUT for that reason: this is a
+/// bulk operation, not the quick per-path metadata call every other use of
+/// METADATA_TIMEOUT is. `crate::bridge`'s process-lifetime cache is what
+/// keeps this from being called on every `stat`/`get` (i.e. every
+/// thumbnail).
+pub fn photo_timeline(runner: &dyn CommandRunner) -> Result<Vec<NodeEntry>, DriveError> {
+    let out = runner.run(&["photo", "timeline", "-j", "-d"], TRANSFER_TIMEOUT)?;
+    ensure_success("/photos", &out)?;
+    Ok(serde_json::from_str(&out.stdout)?)
+}
+
+/// Downloads one photo, addressed by `node_uid` (see [`photo_timeline`]) via
+/// the synthetic `/photos/<uid>` path `photo download` accepts — confirmed
+/// live that a bare uid or a `filesystem`-family call with the same uid are
+/// both rejected ("not supported"), only this exact prefixed form works.
+/// Forces `remove` for the same "fresh temp dir, no interactive prompts"
+/// reasoning as [`download`]. The CLI names the downloaded file by its own
+/// decrypted name, which the caller must read back rather than assume —
+/// see `crate::photos`'s disambiguation of same-named photos.
+pub fn photo_download(
+    runner: &dyn CommandRunner,
+    node_uid: &str,
+    local_folder: &Path,
+) -> Result<TransferSummary, DriveError> {
+    let remote_path = format!("/photos/{node_uid}");
+    let local = local_folder.to_string_lossy();
+    let out = runner.run(
+        &[
+            "photo",
+            "download",
+            "-j",
+            "-c",
+            "remove",
+            &remote_path,
+            &local,
+        ],
+        TRANSFER_TIMEOUT,
+    )?;
+    ensure_success(&remote_path, &out)?;
+    let summary: TransferSummary = serde_json::from_str(&out.stdout)?;
+    ensure_no_failures(&format!("download of {remote_path}"), &summary)?;
+    Ok(summary)
+}
+
 /// `filesystem upload`'s `localPath...` argument is glob-matched by the CLI
 /// (it's how it supports uploading several files at once, e.g. `*.pdf`) —
 /// but every call site here always means one literal, already-resolved
@@ -365,6 +455,40 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
+
+    #[test]
+    fn is_transient_lock_contention_matches_the_cli_own_sqlite_cache_lock_error() {
+        let locked = CommandOutput {
+            stdout: "SQLiteError: database is locked".to_string(),
+            stderr: String::new(),
+            success: false,
+        };
+        assert!(is_transient_lock_contention(&locked));
+
+        let busy = CommandOutput {
+            stdout: String::new(),
+            stderr: "code: 'SQLITE_BUSY_RECOVERY'".to_string(),
+            success: false,
+        };
+        assert!(is_transient_lock_contention(&busy));
+    }
+
+    #[test]
+    fn is_transient_lock_contention_ignores_unrelated_failures_and_successes() {
+        let unrelated = CommandOutput {
+            stdout: String::new(),
+            stderr: "internal server error, please retry".to_string(),
+            success: false,
+        };
+        assert!(!is_transient_lock_contention(&unrelated));
+
+        let succeeded_but_mentions_it = CommandOutput {
+            stdout: "no database is locked here".to_string(),
+            stderr: String::new(),
+            success: true,
+        };
+        assert!(!is_transient_lock_contention(&succeeded_but_mentions_it));
+    }
 
     /// Records the args it was called with and returns a pre-set response —
     /// sanitized fixture data below, not real Proton Drive output.

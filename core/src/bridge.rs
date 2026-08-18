@@ -11,6 +11,7 @@ use std::path::Path;
 use crate::cache::Cache;
 use crate::cli::{self, RealCommandRunner};
 use crate::entry::{ListItem, NodeEntry};
+use crate::photos;
 
 #[cxx::bridge(namespace = "protondrive")]
 mod ffi {
@@ -37,6 +38,9 @@ mod ffi {
         fn trash(path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
         fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
+        fn list_photos() -> Result<Vec<FfiEntry>>;
+        fn stat_photo(name: &str) -> Result<FfiEntry>;
+        fn download_photo(name: &str, local_folder: &str) -> Result<String>;
     }
 }
 
@@ -125,4 +129,71 @@ fn lookup_pin(remote_path: &str) -> Result<String, String> {
 fn unpin_path(remote_path: &str, force: bool) -> Result<(), String> {
     let cache = open_cache()?;
     cache.unpin(remote_path, force).map_err(|e| e.to_string())
+}
+
+fn photo_to_ffi(photo: &photos::Photo) -> FfiEntry {
+    let mut entry = node_to_ffi(&photo.node);
+    entry.name = photo.display_name.clone();
+    entry
+}
+
+/// `photo timeline -d` (see `photos::list_photos`) has no way to fetch
+/// details for a single photo, and can take well over a minute for a large
+/// library (confirmed live: ~80s for ~12k photos) — without memoizing it,
+/// every `stat_photo`/`download_photo` call (i.e. every thumbnail Dolphin
+/// generates while browsing `/photos`) would independently re-pay that
+/// cost. Uses `crate::cache::Cache`'s on-disk `photo_timeline_cache` table
+/// (shared/lock-safe across processes) rather than an in-process cache —
+/// confirmed live that Dolphin's `kio-fuse` mount spawns short-lived,
+/// disposable worker processes to serve `/photos` thumbnail requests, each
+/// of which would otherwise start with a cold, empty cache of its own and
+/// get killed by an impatient caller before finishing, in a loop. Kept out
+/// of `photos::list_photos`/`photos::disambiguate` themselves so that
+/// module's logic stays unit-testable without any I/O of its own.
+fn cached_photos() -> Result<Vec<photos::Photo>, String> {
+    let cache = open_cache()?;
+    if let Some(nodes) = cache.fresh_photo_timeline().map_err(|e| e.to_string())? {
+        return Ok(photos::disambiguate(nodes));
+    }
+    let runner = RealCommandRunner;
+    let nodes = cli::photo_timeline(&runner).map_err(|e| e.to_string())?;
+    cache
+        .store_photo_timeline(&nodes)
+        .map_err(|e| e.to_string())?;
+    Ok(photos::disambiguate(nodes))
+}
+
+fn cached_find_photo(name: &str) -> Result<photos::Photo, String> {
+    cached_photos()?
+        .into_iter()
+        .find(|photo| photo.display_name == name)
+        // Same message shape as photos::find_photo's own DriveError::NotFound,
+        // so resultFromRustError on the C++ side still maps it the same way.
+        .ok_or_else(|| cli::DriveError::NotFound(format!("/photos/{name}")).to_string())
+}
+
+fn list_photos() -> Result<Vec<FfiEntry>, String> {
+    Ok(cached_photos()?.iter().map(photo_to_ffi).collect())
+}
+
+fn stat_photo(name: &str) -> Result<FfiEntry, String> {
+    let photo = cached_find_photo(name)?;
+    Ok(photo_to_ffi(&photo))
+}
+
+/// Returns the filename the CLI actually wrote under `local_folder` — not
+/// guaranteed to equal `name` (see `photos::list_photos`'s disambiguation
+/// suffix for same-named photos), so the caller must read it back rather
+/// than assume the two agree.
+fn download_photo(name: &str, local_folder: &str) -> Result<String, String> {
+    let photo = cached_find_photo(name)?;
+    let runner = RealCommandRunner;
+    cli::photo_download(&runner, &photo.node.uid, Path::new(local_folder))
+        .map_err(|e| e.to_string())?;
+    let mut entries = std::fs::read_dir(local_folder).map_err(|e| e.to_string())?;
+    let downloaded = entries
+        .next()
+        .ok_or_else(|| "photo download produced no local file".to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(downloaded.file_name().to_string_lossy().into_owned())
 }

@@ -5,12 +5,17 @@
 //! against a live Proton Drive account. Fields not needed by the worker are
 //! intentionally omitted rather than mapped.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Proton Drive encrypts node names; `ok` is false when the name could not be
 /// decrypted (e.g. a key/permission issue), in which case `value` is absent
 /// and the caller falls back to displaying the node's `uid`.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// `Serialize` (unusual for this module — everything else here only ever
+/// flows one way, parsed from the CLI's JSON) is needed so `crate::cache`
+/// can round-trip a `Vec<NodeEntry>` through its on-disk `/photos` timeline
+/// cache (see `crate::photos`'s doc comment for why that cache exists).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecryptedField {
     pub ok: bool,
     #[serde(default)]
@@ -19,7 +24,7 @@ pub struct DecryptedField {
 
 /// A file or folder node, as returned by `filesystem list`, `filesystem info`
 /// and `filesystem create-folder`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeEntry {
     pub uid: String,

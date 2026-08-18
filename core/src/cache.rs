@@ -6,6 +6,17 @@
 //! is cached opportunistically, only what's explicitly pinned, which is
 //! also why there's no auto-eviction policy here: "cleanup" is just
 //! unpinning.
+//!
+//! Also holds a second, unrelated cache: [`Self::fresh_photo_timeline`] /
+//! [`Self::store_photo_timeline`] memoize `/photos`'s full node listing (see
+//! `crate::photos`'s doc comment for why that's expensive) in the same
+//! on-disk SQLite file rather than an in-process cache — this file is
+//! already shared/lock-safe across every process that opens it (multiple
+//! KIO worker instances, the daemon), which per-process memory isn't:
+//! confirmed live that Dolphin's `kio-fuse` mount spawns short-lived,
+//! disposable worker processes for `/photos` thumbnailing, each of which
+//! would otherwise pay the ~80s cold-start cost independently and get
+//! killed by an impatient caller before finishing, in a loop.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,6 +24,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::cli::{self, CommandRunner, DriveError};
+use crate::entry::NodeEntry;
+
+/// How stale a cached `/photos` timeline can be before a fresh
+/// `photo timeline -d` CLI call replaces it.
+const PHOTO_TIMELINE_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
 /// How long a writer waits for `SQLITE_BUSY` to clear before giving up.
 /// Matters here specifically because, unlike a single-connection design,
@@ -62,6 +78,18 @@ impl Cache {
         // times O(n) pinned files at startup reconcile is O(n^2).
         conn.execute(
             "CREATE INDEX IF NOT EXISTS pins_local_path_idx ON pins(local_path)",
+            [],
+        )
+        .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        // Single-row table (`id = 1` always): there's only ever one
+        // account's worth of /photos to cache per install, so a full
+        // remote_path-keyed table like `pins` would be needless.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS photo_timeline_cache (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                fetched_at INTEGER NOT NULL,
+                payload TEXT NOT NULL
+            )",
             [],
         )
         .map_err(|e| DriveError::Sqlite(e.to_string()))?;
@@ -350,6 +378,48 @@ impl Cache {
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| DriveError::Sqlite(e.to_string()))
     }
+
+    /// The cached `/photos` node list, if it was fetched within the last
+    /// [`PHOTO_TIMELINE_CACHE_TTL`] — `None` on a cold cache or an expired
+    /// one, either way meaning the caller should fetch fresh and call
+    /// [`Self::store_photo_timeline`].
+    pub fn fresh_photo_timeline(&self) -> Result<Option<Vec<NodeEntry>>, DriveError> {
+        let cutoff = now_unix_secs() - PHOTO_TIMELINE_CACHE_TTL.as_secs() as i64;
+        let payload: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT payload FROM photo_timeline_cache WHERE id = 1 AND fetched_at >= ?1",
+                params![cutoff],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        payload
+            .map(|json| serde_json::from_str(&json).map_err(|e| DriveError::Parse(e.to_string())))
+            .transpose()
+    }
+
+    /// Replaces the cached `/photos` node list with `nodes`, timestamped now.
+    pub fn store_photo_timeline(&self, nodes: &[NodeEntry]) -> Result<(), DriveError> {
+        let payload = serde_json::to_string(nodes).map_err(|e| DriveError::Parse(e.to_string()))?;
+        self.conn
+            .execute(
+                "INSERT INTO photo_timeline_cache (id, fetched_at, payload) VALUES (1, ?1, ?2)
+                 ON CONFLICT(id) DO UPDATE SET
+                    fetched_at = excluded.fetched_at,
+                    payload = excluded.payload",
+                params![now_unix_secs(), payload],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+}
+
+fn now_unix_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 /// Extracts (mtime as unix seconds, size in bytes) — the pair every pin
