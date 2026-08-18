@@ -454,7 +454,7 @@ pub fn move_path(
 /// ("/my-files/sub", "a.txt"), and "/my-files" -> ("/", "my-files").
 fn split_parent_and_name(path: &str) -> (String, String) {
     match path.rsplit_once('/') {
-        Some((parent, name)) if parent.is_empty() => ("/".to_string(), name.to_string()),
+        Some(("", name)) => ("/".to_string(), name.to_string()),
         Some((parent, name)) => (parent.to_string(), name.to_string()),
         None => (String::new(), path.to_string()),
     }
@@ -954,7 +954,13 @@ mod tests {
         assert_eq!(
             *runner.calls.borrow(),
             vec![
-                vec!["filesystem", "move", "-j", "/my-files/a.txt", "/my-files/Sub"],
+                vec![
+                    "filesystem",
+                    "move",
+                    "-j",
+                    "/my-files/a.txt",
+                    "/my-files/Sub"
+                ],
                 vec!["filesystem", "rename", "-j", "/my-files/Sub/a.txt", "b.txt"],
             ]
         );
