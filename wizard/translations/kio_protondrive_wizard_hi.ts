@@ -141,6 +141,39 @@
     </message>
 </context>
 <context>
+    <name>CacheRetention</name>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="8"/>
+        <source>Local cache</source>
+        <translation>स्थानीय कैश</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="23"/>
+        <source>Files you open through Dolphin stay available locally afterward, so reopening them is instant. A file not opened again within this many days is automatically removed from the local cache — pinned files are never removed this way.</source>
+        <translation>Dolphin के माध्यम से आप जो फ़ाइलें खोलते हैं, वे बाद में स्थानीय रूप से उपलब्ध रहती हैं, ताकि उन्हें फिर से खोलना तुरंत हो। इतने दिनों तक दोबारा न खोली गई फ़ाइल स्वचालित रूप से स्थानीय कैश से हटा दी जाती है — पिन की गई फ़ाइलें इस तरह कभी नहीं हटाई जातीं।</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="32"/>
+        <source>Keep unused files locally for:</source>
+        <translation>बिना उपयोग की फ़ाइलों को इतने समय तक स्थानीय रूप से रखें:</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="44"/>
+        <source>days</source>
+        <translation>दिन</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="61"/>
+        <source>Next</source>
+        <translation>अगला</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="71"/>
+        <source>Could not save the configuration.</source>
+        <translation>कॉन्फ़िगरेशन सहेजा नहीं जा सका।</translation>
+    </message>
+</context>
+<context>
     <name>Finish</name>
     <message>
         <location filename="../qml/Finish.qml" line="8"/>

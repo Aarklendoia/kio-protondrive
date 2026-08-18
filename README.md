@@ -144,6 +144,17 @@ environment already selects.
   progress API to report real numbers from. See `docs/DESIGN.md`'s
   "Cancellable transfers and approximate progress" section.
   See [#9](https://github.com/Aarklendoia/kio-protondrive/issues/9).
+- An opportunistic local file cache: any file you open (or save) stays
+  available locally afterward instead of being deleted immediately, so
+  reopening it is instant — until it's evicted after a configurable number
+  of days since last use (30 by default, set during setup). Pinned files
+  ("Garder en local") are never evicted this way. Dolphin shows up to two
+  status badges per item — a checkmark for "available locally" (pinned or
+  cached) and a pin icon on top specifically for pinned files, OneDrive-
+  style. See `docs/DESIGN.md`'s "Opportunistic local file cache" section for
+  how cache hits stay correct (unlike pinning, a hit here is re-verified
+  against the remote before being trusted). See
+  [#60](https://github.com/Aarklendoia/kio-protondrive/issues/60).
 
 **Not yet implemented** (contributions welcome):
 

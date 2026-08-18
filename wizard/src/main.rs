@@ -291,25 +291,51 @@ fn route_auth_login() -> String {
     }
 }
 
-/// Persists the chosen credentials store to `daemon.toml` *and* applies it
-/// to this wizard process's own environment — called right after
-/// Credentials.qml, before Auth.qml runs `proton-drive auth login`, so that
+/// Persists whichever settings this call's query string actually carries,
+/// leaving every other already-saved setting untouched — called at more
+/// than one point in the wizard flow now (Credentials.qml for
+/// `credentials_store`, CacheRetention.qml for `cache_retention_days`), so
+/// it can no longer just build a brand new [`Config`] from scratch each
+/// time the way it used to when there was only one caller: that would
+/// silently wipe out whatever the *other* call had already saved. A field
+/// is only overwritten when its query param is present at all (even as an
+/// empty string, meaning "clear it") — QML call sites must send the param
+/// explicitly rather than omitting it, exactly to make "leave alone" vs
+/// "clear" unambiguous here.
+///
+/// `credentials_store` is additionally applied to this wizard process's own
+/// environment on every call (not just when this call changes it) — it has
+/// to be in place before Auth.qml runs `proton-drive auth login`, so that
 /// login lands in the same store the daemon will actually read from
-/// afterward. Without this, login would go to the CLI's own default
-/// (the desktop keyring) regardless of what gets saved to daemon.toml,
-/// leaving the daemon's chosen store empty — exactly the
-/// "Dolphin works, the daemon says not logged in" bug this wizard exists to
-/// prevent. `None`/empty means "unsafe_file" here even though that's saved
-/// to disk as an absent key (see `Config::credentials_store`'s doc comment)
-/// — the systemd unit's own `Environment=` only takes effect on the
-/// *daemon's* next start, not in this already-running wizard process.
+/// afterward. Without this, login would go to the CLI's own default (the
+/// desktop keyring) regardless of what's saved to daemon.toml, leaving the
+/// daemon's chosen store empty — exactly the "Dolphin works, the daemon
+/// says not logged in" bug this wizard exists to prevent. `None`/empty
+/// means "unsafe_file" here even though that's saved to disk as an absent
+/// key (see [`Config::credentials_store`]'s doc comment) — the systemd
+/// unit's own `Environment=` only takes effect on the *daemon's* next
+/// start, not in this already-running wizard process.
 fn route_save_config(req: &str) -> String {
-    let credentials_store = extract_query_param(req, "credentials_store").filter(|s| !s.is_empty());
+    let mut config = Config::load_or_default(&Config::default_path()).unwrap_or_default();
+
+    if let Some(store) = extract_query_param(req, "credentials_store") {
+        config.credentials_store = if store.is_empty() { None } else { Some(store) };
+    }
     std::env::set_var(
         "PROTON_DRIVE_CREDENTIALS_STORE",
-        credentials_store.as_deref().unwrap_or("unsafe_file"),
+        config.credentials_store.as_deref().unwrap_or("unsafe_file"),
     );
-    let config = Config { credentials_store };
+
+    if let Some(days) = extract_query_param(req, "cache_retention_days") {
+        // A garbled value (shouldn't happen from the SpinBox this comes
+        // from, but this endpoint is reachable by anything on the loopback
+        // control server) just leaves the setting at its previous value
+        // rather than failing the whole save.
+        if let Ok(days) = days.parse() {
+            config.cache_retention_days = Some(days);
+        }
+    }
+
     match config.save(&Config::default_path()) {
         Ok(()) => r#"{"ok":true}"#.to_string(),
         Err(e) => format!(
@@ -581,6 +607,27 @@ mod tests {
         );
         let saved = std::fs::read_to_string(dir.join("kio-protondrive/daemon.toml")).unwrap();
         assert!(saved.contains("credentials_store = \"pass\""));
+
+        // CacheRetention.qml's call, later in the flow — must not silently
+        // reset credentials_store back to unsafe_file just because this
+        // particular call's query string doesn't mention it (the #60
+        // regression that motivated switching route_save_config from
+        // "always rebuild Config from scratch" to "load, then only
+        // override what this call's query actually carries").
+        let result = route_save_config("GET /save-config?cache_retention_days=7 HTTP/1.1");
+        assert!(result.contains("\"ok\":true"));
+        let saved = std::fs::read_to_string(dir.join("kio-protondrive/daemon.toml")).unwrap();
+        assert!(saved.contains("credentials_store = \"pass\""));
+        assert!(saved.contains("cache_retention_days = 7"));
+
+        // Garbage input must not crash the route or get persisted as-is —
+        // and, per the same merge rule, leaves the previous value in place.
+        let result =
+            route_save_config("GET /save-config?cache_retention_days=not-a-number HTTP/1.1");
+        assert!(result.contains("\"ok\":true"));
+        let saved = std::fs::read_to_string(dir.join("kio-protondrive/daemon.toml")).unwrap();
+        assert!(!saved.contains("not-a-number"));
+        assert!(saved.contains("cache_retention_days = 7"));
 
         std::fs::remove_dir_all(&dir).ok();
     }

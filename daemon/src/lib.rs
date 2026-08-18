@@ -6,6 +6,7 @@
 //! (to write `daemon.toml` in the exact shape the daemon reads) and
 //! [`error::DaemonError`], instead of duplicating either.
 
+pub mod cache_eviction;
 pub mod config;
 pub mod control;
 pub mod error;

@@ -35,7 +35,7 @@ Kirigami.Page {
         Button {
             text: qsTr("Next")
             Layout.alignment: Qt.AlignHCenter
-            onClicked: page.app.pageStack.push(Qt.resolvedUrl("Finish.qml"), {app: page.app})
+            onClicked: page.app.pageStack.push(Qt.resolvedUrl("CacheRetention.qml"), {app: page.app})
         }
     }
 }

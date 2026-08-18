@@ -141,6 +141,39 @@
     </message>
 </context>
 <context>
+    <name>CacheRetention</name>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="8"/>
+        <source>Local cache</source>
+        <translation>Caché local</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="23"/>
+        <source>Files you open through Dolphin stay available locally afterward, so reopening them is instant. A file not opened again within this many days is automatically removed from the local cache — pinned files are never removed this way.</source>
+        <translation>Los archivos que abre a través de Dolphin permanecen disponibles localmente después, para que volver a abrirlos sea instantáneo. Un archivo que no se vuelva a abrir dentro de este número de días se elimina automáticamente de la caché local — los archivos anclados nunca se eliminan de esta manera.</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="32"/>
+        <source>Keep unused files locally for:</source>
+        <translation>Mantener los archivos no utilizados localmente durante:</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="44"/>
+        <source>days</source>
+        <translation>días</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="61"/>
+        <source>Next</source>
+        <translation>Siguiente</translation>
+    </message>
+    <message>
+        <location filename="../qml/CacheRetention.qml" line="71"/>
+        <source>Could not save the configuration.</source>
+        <translation>No se pudo guardar la configuración.</translation>
+    </message>
+</context>
+<context>
     <name>Finish</name>
     <message>
         <location filename="../qml/Finish.qml" line="8"/>

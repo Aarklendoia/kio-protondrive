@@ -185,6 +185,59 @@ called during the actual transfer, only for the local temp-file copy phase.
   already bounded by `PreviewJob`'s 2s timeout (see the thumbnails known
   limitation), so cancellation matters far less there.
 
+## Opportunistic local file cache
+
+Tracked in [#60](https://github.com/Aarklendoia/kio-protondrive/issues/60).
+Confirmed live while testing #59: opening the same file twice re-downloaded
+it every time — `get()` used to download into a `QTemporaryDir`, destroyed
+the moment the call returned, so nothing survived between opens unless the
+file was explicitly **pinned** (#30/#50). This was actually part of #30's
+original scope ("scheduled automatic cleanup... a cache eviction policy, not
+manual-only") but got descoped when #30 shipped as pin-only.
+
+- **Every `get()`/`put()`, not just pinned paths, now leaves a local copy
+  behind.** `get()` downloads straight into the persistent, mirrored cache
+  directory (`core::cache::Cache::target_dir_for`, the same layout `pin()`
+  already used) instead of a temp dir; `put()` copies the just-uploaded
+  bytes there too, so "save, then immediately reopen" is instant as well.
+  Both record the file in a new `cached_files` SQLite table
+  (`core/src/cache.rs`) via `crate::bridge`'s `store_cached`.
+- **A separate table from `pins`, not a flag on it.** `pins`' existing
+  semantics — `unpin()` deletes immediately, `pin()` never expires on its
+  own — stay completely unchanged. A pinned path simply never gets a
+  `cached_files` row: `get()`/`put()` check the pin table first and only
+  fall through to the opportunistic cache when a path isn't pinned.
+- **Freshness is re-verified on every cache hit, unlike `pin()`.** `pin()`
+  trusts its local copy blindly — reasonable for an explicit, one-way
+  local→Drive user intent. The opportunistic cache can't make that
+  assumption: a file can change from another device or the web app without
+  the user pinning anything to be told about it, so silently serving a
+  stale copy would be a correctness bug, not just a staleness tradeoff.
+  `crate::bridge`'s `lookup_cached` compares the remote's current
+  `modification_time` (one `stat_path` call — already cheap thanks to the
+  fs cache, #8) against what was recorded when the file was cached, and
+  evicts+re-downloads on any mismatch.
+- **Eviction is age-based on last access, swept daily by the daemon.**
+  `daemon/src/cache_eviction.rs::evict_stale` (same periodic-sweep shape as
+  `fs_refresh.rs` for #8, but purely local — no CLI call, no network round
+  trip) deletes any `cached_files` entry whose `last_accessed_at` exceeds
+  the configured retention window (`daemon/src/config.rs`'s
+  `cache_retention_days`, wizard-configurable, 30 days by default). No
+  D-Bus notification afterward, unlike #8's sweep: a file going back to
+  "cloud-only" doesn't need an immediate icon repaint the way a stale
+  directory listing needs a re-render.
+- **Three overlay states, OneDrive-style.** `worker/overlayplugin.cpp`'s
+  `getOverlays()` now returns up to two badges: `emblem-checked` for
+  "available locally" (pinned *or* opportunistically cached — checked via
+  `is_available_locally`, a cheap existence check with no freshness
+  verification, since a slightly-stale icon is an acceptable cost for not
+  shelling out on every repaint) and an additional `emblem-pinned` badge
+  stacked on top specifically for pinned files. `get()`/`put()` fire the
+  existing `org.kde.protondrive.OverlayIcon.PinChanged` D-Bus signal after a
+  successful cache write, same signal the daemon's pin/unpin routes already
+  used — the name predates #60 but the plugin only ever treated it as "an
+  overlay-relevant state changed for this path," not literally pin-specific.
+
 ### Superseded #12 design (not built)
 
 The original plan for #12 was a single configured local folder mapped to a

@@ -1,11 +1,8 @@
 //! Persistent index of explicitly **pinned** files — a pinned remote path
 //! always has a fresh-ish local copy under [`Cache::default_root`], so the
 //! KIO worker can serve `get`/`stat` for it instantly instead of shelling
-//! out to the CLI every time (see issue #30). Everything else under
-//! `protondrive:/` stays exactly as on-demand/ephemeral as before — nothing
-//! is cached opportunistically, only what's explicitly pinned, which is
-//! also why there's no auto-eviction policy here: "cleanup" is just
-//! unpinning.
+//! out to the CLI every time (see issue #30). Pinned files are never
+//! auto-evicted: "cleanup" there is just unpinning.
 //!
 //! Also holds a second, unrelated cache: [`Self::fresh_photo_timeline`] /
 //! [`Self::store_photo_timeline`] memoize `/photos`'s full node listing (see
@@ -32,6 +29,25 @@
 //! `docs/DESIGN.md`'s on-demand/stateless philosophy — see that doc's cache
 //! section for the consistency tradeoff this accepts (an external rename or
 //! delete can lag behind by up to the daemon's sweep interval).
+//!
+//! And a fourth: [`Self::cached_file`]/[`Self::store_cached_file`]/
+//! [`Self::touch_cached_file`]/[`Self::evict_cached_file`] are an
+//! **opportunistic** cache of downloaded/uploaded file bytes (see issue
+//! #60) — every `get()`/`put()`, not just explicitly pinned paths, get a
+//! row here. Deliberately a separate table from `pins` rather than a
+//! `pinned` flag on the same one: `pins`' existing semantics (`unpin()`
+//! deletes immediately, `pin()` never expires on its own) stay completely
+//! unchanged, and a pinned path simply never gets a `cached_files` row in
+//! the first place (`crate::bridge`'s `get()`/`put()` check the pin table
+//! first). Unlike `pins`, a hit here is re-verified against the remote's
+//! `modification_time` before being trusted (`crate::bridge`'s
+//! `lookup_cached`) — a file can change from another device/the web app
+//! without the user pinning anything to be told about it, so blindly
+//! trusting a stale local copy here would be a correctness bug, not just a
+//! staleness tradeoff. Eviction is age-based on `last_accessed_at` (not
+//! when it was first cached), swept periodically by the daemon
+//! (`daemon/src/cache_eviction.rs`) against a user-configurable retention
+//! window (`daemon/src/config.rs`'s `cache_retention_days`).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -126,6 +142,21 @@ impl Cache {
             [],
         )
         .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        // Opportunistic cache of downloaded/uploaded file *bytes* (#60) —
+        // separate from `pins` (explicit, permanent, never auto-evicted):
+        // a row here is created on any get()/put() and swept away by the
+        // daemon once its last_accessed_at ages past the configured
+        // retention window. See crate::bridge's lookup_cached/store_cached.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS cached_files (
+                remote_path TEXT PRIMARY KEY,
+                local_path TEXT NOT NULL,
+                remote_modification_time TEXT NOT NULL,
+                last_accessed_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| DriveError::Sqlite(e.to_string()))?;
         Ok(Self {
             conn,
             root: root.to_path_buf(),
@@ -198,6 +229,22 @@ impl Cache {
             .map_err(|e| DriveError::Sqlite(e.to_string()))
     }
 
+    /// The directory `remote_path`'s cached copy belongs in — `root`
+    /// itself, mirroring `remote_path`'s parent directory structure.
+    /// Creates it if missing. Shared by [`Self::pin`] and the opportunistic
+    /// cache (see `crate::bridge`'s `cache_target_dir`/`store_cached_file`)
+    /// so a pinned and an opportunistically-cached file live under the same
+    /// on-disk layout.
+    pub fn target_dir_for(&self, remote_path: &str) -> Result<PathBuf, DriveError> {
+        let rel = remote_path.trim_start_matches('/');
+        let target_dir = match Path::new(rel).parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => self.root.join(parent),
+            _ => self.root.clone(),
+        };
+        std::fs::create_dir_all(&target_dir).map_err(|e| DriveError::Io(e.to_string()))?;
+        Ok(target_dir)
+    }
+
     /// Downloads `remote_path` into the cache root (mirroring its
     /// directory structure) and records it as pinned. Idempotent: pinning
     /// an already-pinned path just re-downloads and updates the record —
@@ -232,14 +279,10 @@ impl Cache {
             }
         }
 
-        let rel = remote_path.trim_start_matches('/');
-        let target_dir = match Path::new(rel).parent() {
-            Some(parent) if !parent.as_os_str().is_empty() => self.root.join(parent),
-            _ => self.root.clone(),
-        };
-        std::fs::create_dir_all(&target_dir).map_err(|e| DriveError::Io(e.to_string()))?;
+        let target_dir = self.target_dir_for(remote_path)?;
         cli::download(runner, remote_path, &target_dir)?;
 
+        let rel = remote_path.trim_start_matches('/');
         let file_name = Path::new(rel).file_name().ok_or_else(|| {
             DriveError::Cli(format!("cannot pin a bare root path: {remote_path}"))
         })?;
@@ -410,6 +453,132 @@ impl Cache {
             .map_err(|e| DriveError::Sqlite(e.to_string()))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| DriveError::Sqlite(e.to_string()))
+    }
+
+    /// Looks up `remote_path` in the opportunistic cache (see issue #60) —
+    /// distinct from [`Self::lookup`]'s pin table. Returns the local path
+    /// and the remote `modification_time` recorded when it was cached, so
+    /// the caller (`crate::bridge`'s `lookup_cached`) can decide whether
+    /// it's still fresh — this method itself doesn't re-verify against the
+    /// remote, only reads what's on record, same as `cached_stat`/
+    /// `cached_listing` (#8) do for metadata. `None` if there's no record,
+    /// or the local file is gone (a wiped cache root shouldn't report stale
+    /// hits, same guard as [`Self::lookup`]).
+    pub fn cached_file(&self, remote_path: &str) -> Result<Option<(PathBuf, String)>, DriveError> {
+        let row: Option<(String, String)> = self
+            .conn
+            .query_row(
+                "SELECT local_path, remote_modification_time FROM cached_files WHERE remote_path = ?1",
+                params![remote_path],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(row
+            .map(|(local, mtime)| (PathBuf::from(local), mtime))
+            .filter(|(local, _)| local.is_file()))
+    }
+
+    /// Records `remote_path` as opportunistically cached at `local_path`
+    /// (upsert) — called after a fresh download/upload, never for a pinned
+    /// path (pinning uses the separate `pins` table, see [`Self::pin`]).
+    /// `remote_modification_time` is [`NodeEntry::modification_time`] as
+    /// known at download/upload time — the caller (`crate::bridge`) already
+    /// has it from the `stat`/`finish_download`/`finish_upload` call that
+    /// happened right before, so this takes the bare string rather than a
+    /// whole `NodeEntry` to construct.
+    pub fn store_cached_file(
+        &self,
+        remote_path: &str,
+        local_path: &Path,
+        remote_modification_time: &str,
+    ) -> Result<(), DriveError> {
+        let now = now_unix_secs();
+        self.conn
+            .execute(
+                "INSERT INTO cached_files (remote_path, local_path, remote_modification_time, last_accessed_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(remote_path) DO UPDATE SET
+                    local_path = excluded.local_path,
+                    remote_modification_time = excluded.remote_modification_time,
+                    last_accessed_at = excluded.last_accessed_at",
+                params![
+                    remote_path,
+                    local_path.to_string_lossy(),
+                    remote_modification_time,
+                    now
+                ],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Bumps `remote_path`'s `last_accessed_at` to now — called on a cache
+    /// hit that serves the existing local copy without re-downloading, so
+    /// the eviction sweep (`daemon/src/cache_eviction.rs`) measures time
+    /// since last *use*, not time since it was first cached.
+    pub fn touch_cached_file(&self, remote_path: &str) -> Result<(), DriveError> {
+        self.conn
+            .execute(
+                "UPDATE cached_files SET last_accessed_at = ?2 WHERE remote_path = ?1",
+                params![remote_path, now_unix_secs()],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Removes `remote_path` from the opportunistic cache: the local file
+    /// (best-effort — already gone is not an error) and its record. Used
+    /// both by the eviction sweep and by a freshness-check miss (the remote
+    /// file changed since it was cached).
+    pub fn evict_cached_file(&self, remote_path: &str) -> Result<(), DriveError> {
+        if let Some((local_path, _)) = self.cached_file(remote_path)? {
+            match std::fs::remove_file(&local_path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(DriveError::Io(err.to_string())),
+            }
+        }
+        self.conn
+            .execute(
+                "DELETE FROM cached_files WHERE remote_path = ?1",
+                params![remote_path],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Every opportunistically-cached path whose `last_accessed_at` is at
+    /// least `older_than` old — read by the daemon's periodic eviction
+    /// sweep. Pinned files never appear here (they live only in `pins`).
+    /// `<=`, not `<`: an `older_than` of zero should mean "evict anything
+    /// not accessed within this exact instant," i.e. everything — with a
+    /// strict `<` a same-second entry could otherwise survive a zero
+    /// retention window purely by timing luck.
+    pub fn stale_cached_files(&self, older_than: Duration) -> Result<Vec<String>, DriveError> {
+        let cutoff = now_unix_secs() - older_than.as_secs() as i64;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT remote_path FROM cached_files WHERE last_accessed_at <= ?1")
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![cutoff], |row| row.get(0))
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))
+    }
+
+    /// Whether `remote_path` has *any* locally-available copy — pinned or
+    /// opportunistically cached — without checking freshness (used only by
+    /// the overlay icon plugin, where a slightly-stale "available locally"
+    /// badge is an acceptable cost for not shelling out to `stat` on every
+    /// icon repaint; `crate::bridge`'s `lookup_cached` does the real
+    /// freshness check for actual `get()` calls).
+    pub fn is_available_locally(&self, remote_path: &str) -> Result<bool, DriveError> {
+        if self.lookup(remote_path)?.is_some() {
+            return Ok(true);
+        }
+        Ok(self.cached_file(remote_path)?.is_some())
     }
 
     /// The cached `/photos` node list, if it was fetched within the last
@@ -1003,5 +1172,156 @@ mod tests {
         let mut parents = cache.all_cached_listing_parents().unwrap();
         parents.sort();
         assert_eq!(parents, vec!["/my-files", "/my-files/sub"]);
+    }
+
+    #[test]
+    fn cached_file_is_none_before_anything_is_stored() {
+        let (_dir, cache) = cache();
+        assert!(cache.cached_file("/my-files/a.txt").unwrap().is_none());
+    }
+
+    #[test]
+    fn store_cached_file_round_trips_through_cached_file() {
+        let (_dir, cache) = cache();
+        let target_dir = cache.target_dir_for("/my-files/a.txt").unwrap();
+        let local_path = target_dir.join("a.txt");
+        std::fs::write(&local_path, b"hello").unwrap();
+
+        cache
+            .store_cached_file("/my-files/a.txt", &local_path, "2026-01-01T00:00:00.000Z")
+            .unwrap();
+
+        let (cached_path, mtime) = cache.cached_file("/my-files/a.txt").unwrap().unwrap();
+        assert_eq!(cached_path, local_path);
+        assert_eq!(mtime, "2026-01-01T00:00:00.000Z");
+    }
+
+    #[test]
+    fn cached_file_is_none_when_the_local_copy_is_gone() {
+        let (_dir, cache) = cache();
+        let target_dir = cache.target_dir_for("/my-files/a.txt").unwrap();
+        let local_path = target_dir.join("a.txt");
+        std::fs::write(&local_path, b"hello").unwrap();
+        cache
+            .store_cached_file("/my-files/a.txt", &local_path, "2026-01-01T00:00:00.000Z")
+            .unwrap();
+
+        std::fs::remove_file(&local_path).unwrap();
+
+        assert!(cache.cached_file("/my-files/a.txt").unwrap().is_none());
+    }
+
+    #[test]
+    fn evict_cached_file_removes_the_local_file_and_the_record() {
+        let (_dir, cache) = cache();
+        let target_dir = cache.target_dir_for("/my-files/a.txt").unwrap();
+        let local_path = target_dir.join("a.txt");
+        std::fs::write(&local_path, b"hello").unwrap();
+        cache
+            .store_cached_file("/my-files/a.txt", &local_path, "2026-01-01T00:00:00.000Z")
+            .unwrap();
+
+        cache.evict_cached_file("/my-files/a.txt").unwrap();
+
+        assert!(cache.cached_file("/my-files/a.txt").unwrap().is_none());
+        assert!(!local_path.exists());
+    }
+
+    #[test]
+    fn evict_cached_file_is_a_noop_for_something_never_cached() {
+        let (_dir, cache) = cache();
+        cache.evict_cached_file("/my-files/never.txt").unwrap();
+    }
+
+    #[test]
+    fn stale_cached_files_finds_entries_older_than_the_cutoff() {
+        let (_dir, cache) = cache();
+        let target_dir = cache.target_dir_for("/my-files/old.txt").unwrap();
+        let local_path = target_dir.join("old.txt");
+        std::fs::write(&local_path, b"hello").unwrap();
+        cache
+            .store_cached_file("/my-files/old.txt", &local_path, "2026-01-01T00:00:00.000Z")
+            .unwrap();
+        // Backdate it directly — touch_cached_file/store_cached_file always
+        // stamp "now", so an actually-old entry has to be simulated.
+        cache
+            .conn
+            .execute(
+                "UPDATE cached_files SET last_accessed_at = ?1 WHERE remote_path = ?2",
+                params![now_unix_secs() - 3600, "/my-files/old.txt"],
+            )
+            .unwrap();
+
+        let stale = cache.stale_cached_files(Duration::from_secs(60)).unwrap();
+        assert_eq!(stale, vec!["/my-files/old.txt"]);
+    }
+
+    #[test]
+    fn stale_cached_files_excludes_recently_accessed_entries() {
+        let (_dir, cache) = cache();
+        let target_dir = cache.target_dir_for("/my-files/fresh.txt").unwrap();
+        let local_path = target_dir.join("fresh.txt");
+        std::fs::write(&local_path, b"hello").unwrap();
+        cache
+            .store_cached_file(
+                "/my-files/fresh.txt",
+                &local_path,
+                "2026-01-01T00:00:00.000Z",
+            )
+            .unwrap();
+
+        let stale = cache.stale_cached_files(Duration::from_secs(3600)).unwrap();
+        assert!(stale.is_empty());
+    }
+
+    #[test]
+    fn touch_cached_file_bumps_last_accessed_at() {
+        let (_dir, cache) = cache();
+        let target_dir = cache.target_dir_for("/my-files/a.txt").unwrap();
+        let local_path = target_dir.join("a.txt");
+        std::fs::write(&local_path, b"hello").unwrap();
+        cache
+            .store_cached_file("/my-files/a.txt", &local_path, "2026-01-01T00:00:00.000Z")
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE cached_files SET last_accessed_at = ?1 WHERE remote_path = ?2",
+                params![now_unix_secs() - 3600, "/my-files/a.txt"],
+            )
+            .unwrap();
+
+        cache.touch_cached_file("/my-files/a.txt").unwrap();
+
+        let stale = cache.stale_cached_files(Duration::from_secs(60)).unwrap();
+        assert!(stale.is_empty());
+    }
+
+    #[test]
+    fn is_available_locally_is_false_for_something_never_pinned_or_cached() {
+        let (_dir, cache) = cache();
+        assert!(!cache.is_available_locally("/my-files/a.txt").unwrap());
+    }
+
+    #[test]
+    fn is_available_locally_is_true_for_a_cached_file() {
+        let (_dir, cache) = cache();
+        let target_dir = cache.target_dir_for("/my-files/a.txt").unwrap();
+        let local_path = target_dir.join("a.txt");
+        std::fs::write(&local_path, b"hello").unwrap();
+        cache
+            .store_cached_file("/my-files/a.txt", &local_path, "2026-01-01T00:00:00.000Z")
+            .unwrap();
+
+        assert!(cache.is_available_locally("/my-files/a.txt").unwrap());
+    }
+
+    #[test]
+    fn is_available_locally_is_true_for_a_pinned_file() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        cache.pin(&runner, "/my-files/a.txt", false).unwrap();
+
+        assert!(cache.is_available_locally("/my-files/a.txt").unwrap());
     }
 }

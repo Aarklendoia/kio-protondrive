@@ -19,7 +19,9 @@ use protondrive_core::cli::RealCommandRunner;
 
 use kio_protondrive_daemon::config::Config;
 use kio_protondrive_daemon::watcher::{self, WatchEvent};
-use kio_protondrive_daemon::{control, fs_refresh, notification, sync, version_check};
+use kio_protondrive_daemon::{
+    cache_eviction, control, fs_refresh, notification, sync, version_check,
+};
 
 /// How often to ask the installed `proton-drive` CLI whether a newer
 /// release exists (see [`version_check`]) — infrequent by design, this is a
@@ -31,6 +33,13 @@ const VERSION_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 /// and not hammering the CLI: each cached path costs its own ~1-4s CLI call,
 /// sequential, so a large cache does take a while to fully sweep.
 const FS_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// How often to sweep `core::cache`'s opportunistic file cache for entries
+/// past the configured retention window (see [`cache_eviction`], issue
+/// #60) — daily is plenty since the retention window itself is measured in
+/// days, unlike the much shorter-lived data the other two intervals above
+/// guard.
+const CACHE_EVICTION_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Logs one clear, actionable line and fires a desktop notification — but
 /// only on the falling edge (the first failure after things were working),
@@ -138,10 +147,14 @@ fn main() {
     // `Instant::now()`, deferring the first sweep by a full
     // `FS_CACHE_REFRESH_INTERVAL` instead.
     let mut last_fs_refresh = Instant::now();
+    // Same reasoning as `last_fs_refresh` — no urgency for an immediate
+    // first sweep at startup, so this also starts as `Instant::now()`.
+    let mut last_cache_eviction = Instant::now();
     loop {
         let wait = VERSION_CHECK_INTERVAL
             .saturating_sub(last_version_check.elapsed())
-            .min(FS_CACHE_REFRESH_INTERVAL.saturating_sub(last_fs_refresh.elapsed()));
+            .min(FS_CACHE_REFRESH_INTERVAL.saturating_sub(last_fs_refresh.elapsed()))
+            .min(CACHE_EVICTION_INTERVAL.saturating_sub(last_cache_eviction.elapsed()));
         match events.recv_timeout(wait) {
             Ok(batch) => {
                 for event in batch {
@@ -187,6 +200,11 @@ fn main() {
         if last_fs_refresh.elapsed() >= FS_CACHE_REFRESH_INTERVAL {
             fs_refresh::refresh_all(&runner, &cache);
             last_fs_refresh = Instant::now();
+        }
+
+        if last_cache_eviction.elapsed() >= CACHE_EVICTION_INTERVAL {
+            cache_eviction::evict_stale(&cache, config.cache_retention());
+            last_cache_eviction = Instant::now();
         }
     }
 }

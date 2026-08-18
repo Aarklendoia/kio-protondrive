@@ -66,6 +66,11 @@ mod ffi {
         fn rename_or_move(old_path: &str, new_path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
         fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
+        fn lookup_cached(remote_path: &str) -> Result<String>;
+        fn cache_target_dir(remote_path: &str) -> Result<String>;
+        fn store_cached(remote_path: &str, local_path: &str, modification_time: &str)
+            -> Result<()>;
+        fn is_available_locally(remote_path: &str) -> bool;
         fn list_photos() -> Result<Vec<FfiEntry>>;
         fn stat_photo(name: &str) -> Result<FfiEntry>;
         fn download_photo(name: &str, local_folder: &str) -> Result<String>;
@@ -311,6 +316,78 @@ fn lookup_pin(remote_path: &str) -> Result<String, String> {
 fn unpin_path(remote_path: &str, force: bool) -> Result<(), String> {
     let cache = open_cache()?;
     cache.unpin(remote_path, force).map_err(|e| e.to_string())
+}
+
+/// Opportunistic-cache read (issue #60) — empty string means "miss", same
+/// convention as [`lookup_pin`]. Unlike `lookup_pin`, a hit here is
+/// re-verified against the remote's current `modification_time` before
+/// being trusted (see `crate::cache`'s module doc comment for why: unlike
+/// an explicit pin, a file can change elsewhere without the user pinning
+/// anything to be told about it). A stale hit is evicted here rather than
+/// left for the daemon's sweep to eventually catch, so the very next
+/// download replaces it immediately instead of orphaning the old copy.
+fn lookup_cached(remote_path: &str) -> Result<String, String> {
+    let cache = open_cache()?;
+    let Some((local_path, cached_mtime)) =
+        cache.cached_file(remote_path).map_err(|e| e.to_string())?
+    else {
+        return Ok(String::new());
+    };
+    let current = stat_path(remote_path)?;
+    if current.modification_time == cached_mtime {
+        let _ = cache.touch_cached_file(remote_path);
+        Ok(local_path.to_string_lossy().into_owned())
+    } else {
+        let _ = cache.evict_cached_file(remote_path);
+        Ok(String::new())
+    }
+}
+
+/// Where a fresh download/upload of `remote_path` should land on disk, so
+/// it survives past the KIO call that created it — the opportunistic-cache
+/// counterpart to [`crate::cache::Cache::pin`]'s own target directory,
+/// reusing the exact same mirrored layout via
+/// [`crate::cache::Cache::target_dir_for`] so a pinned and an
+/// opportunistically-cached copy of related files share one on-disk tree.
+fn cache_target_dir(remote_path: &str) -> Result<String, String> {
+    let cache = open_cache()?;
+    let dir = cache
+        .target_dir_for(remote_path)
+        .map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Records a just-finished download/upload in the opportunistic cache.
+/// `modification_time` is whatever the worker already had on hand from a
+/// `stat`/transfer-completion call — see `worker/protondriveworker.cpp`'s
+/// `get()`/`put()` for exactly which call each reuses instead of paying for
+/// an extra one just for this.
+fn store_cached(
+    remote_path: &str,
+    local_path: &str,
+    modification_time: &str,
+) -> Result<(), String> {
+    let cache = open_cache()?;
+    cache
+        .store_cached_file(remote_path, Path::new(local_path), modification_time)
+        .map_err(|e| e.to_string())
+}
+
+/// Whether `remote_path` has *any* locally-available copy — pinned or
+/// opportunistically cached — for `worker/overlayplugin.cpp`'s "available
+/// locally" badge (shared by both states; pin gets its own additional
+/// badge on top, checked separately via [`lookup_pin`]). Best-effort, same
+/// stance as every other lookup this plugin does: a cache-open failure just
+/// means no badge, not an error worth surfacing from an icon-decoration
+/// hook.
+fn is_available_locally(remote_path: &str) -> bool {
+    open_cache()
+        .and_then(|cache| {
+            cache
+                .is_available_locally(remote_path)
+                .map_err(|e| e.to_string())
+        })
+        .unwrap_or(false)
 }
 
 fn photo_to_ffi(photo: &photos::Photo) -> FfiEntry {

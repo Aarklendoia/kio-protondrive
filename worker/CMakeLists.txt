@@ -13,6 +13,7 @@ target_link_libraries(protondrive
         KF6::KIOCore
     PRIVATE
         KF6::I18n
+        Qt6::DBus
         protondrive-core-cxxbridge
 )
 

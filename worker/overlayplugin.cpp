@@ -11,20 +11,33 @@ using namespace protondrive;
 
 namespace
 {
+// Three states (#60), OneDrive-style: cloud-only (no overlay), available
+// locally — pinned *or* opportunistically cached, same badge either way
+// (emblem-checked) — and pinned specifically, an *additional* badge on top
+// of "available locally" rather than a replacement for it. getOverlays()
+// already supports returning several overlays at once, which is exactly
+// what stacking these two needs.
 QStringList overlaysFor(const QString &remotePath)
 {
-    // Best-effort, same stance as every lookup_pin() call in
-    // protondriveworker.cpp — a cache read failure (e.g. an unwritable
-    // $XDG_DATA_HOME) just means "no overlay shown", not an error worth
-    // surfacing from an icon-decoration hook.
+    QStringList overlays;
+    const std::string path = remotePath.toStdString();
+
+    // Bare bool, not Result — a lookup failure (e.g. an unwritable
+    // $XDG_DATA_HOME) is already folded into "false" on the Rust side, same
+    // "no overlay shown, not an error" stance as the try/catch below.
+    if (is_available_locally(path)) {
+        overlays << QStringLiteral("emblem-checked");
+    }
+
     try {
-        const rust::String pinned = lookup_pin(remotePath.toStdString());
+        const rust::String pinned = lookup_pin(path);
         if (!pinned.empty()) {
-            return {QStringLiteral("emblem-checked")};
+            overlays << QStringLiteral("emblem-pinned");
         }
     } catch (const rust::Error &) {
     }
-    return {};
+
+    return overlays;
 }
 }
 
@@ -39,12 +52,16 @@ QStringList overlaysFor(const QString &remotePath)
 //
 // Pin/unpin happens through the daemon's own control server (see
 // daemon/src/control.rs's route_pin/route_unpin), entirely outside any KIO
-// job Dolphin initiated, so nothing tells *this* plugin instance anything
-// changed either, without the D-Bus listener below: the daemon broadcasts
-// org.kde.protondrive.OverlayIcon.PinChanged after a successful pin/unpin
-// (a small, purpose-built signal — not KDirNotify::FilesChanged, which also
-// makes Dolphin re-stat/re-list the whole item, visibly slower and no more
-// effective at actually updating the overlay).
+// job Dolphin initiated; a fresh opportunistic-cache entry (#60) happens
+// *inside* a KIO job (protondriveworker.cpp's get()/put()) but in a
+// different process instance than whichever one is running this plugin.
+// Either way nothing tells *this* plugin instance anything changed without
+// the D-Bus listener below: both the daemon and the worker broadcast
+// org.kde.protondrive.OverlayIcon.PinChanged after a relevant change (a
+// small, purpose-built signal, despite the pin-specific name — not
+// KDirNotify::FilesChanged, which also makes Dolphin re-stat/re-list the
+// whole item, visibly slower and no more effective at actually updating the
+// overlay).
 class ProtonDriveOverlayPlugin : public KOverlayIconPlugin
 {
     Q_PLUGIN_METADATA(IID "org.kde.overlayicon.protondrive" FILE "protondrive-overlay.json")
