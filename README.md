@@ -156,8 +156,17 @@ environment already selects.
 - Browsing folders, including Proton Drive's virtual top-level sections
   (`/my-files`, `/devices`, `/shared-with-me`, `/trash`, ...)
 - Opening/downloading files, uploading/overwriting files, creating folders
-- Deleting a file or folder (moves it to Proton Drive's own trash — there is
-  no permanent delete exposed through Dolphin in v1)
+- Deleting a file or folder moves it to Proton Drive's own trash (browsable
+  as `/trash`). A right-click on a trashed item offers "Restore" (back to
+  its original location); a right-click on the Trash entry itself offers
+  "Empty Trash" (permanent, with a confirmation dialog — irreversible).
+  Deleting an item already in `/trash` permanently deletes it instead of
+  re-trashing it. There's no native Dolphin trash toolbar/chrome the way
+  `trash:/` has — Dolphin's restore mechanism there is a private,
+  undocumented protocol between it and `kio_trash` specifically, not
+  something any KIO worker can opt into. See `docs/DESIGN.md`'s "Restorable
+  trash via context menu" section. See
+  [#7](https://github.com/Aarklendoia/kio-protondrive/issues/7).
 - Browsing `/photos`, read-only: `filesystem list`/`info` genuinely don't
   support Photos (see "Blocked upstream" below), but CLI 0.7.0+ exposes it
   through a separate, non-path-based `photo` command family instead, which
@@ -194,7 +203,6 @@ environment already selects.
 - Server-side copy (KIO falls back to download+upload, which works but is
   slower) — rename/move are implemented ([#5](https://github.com/Aarklendoia/kio-protondrive/issues/5))
 - Sharing/invitations
-- Browsing Proton Drive's trash as a restorable Dolphin trash view
 - Albums, uploading to Photos ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18))
 
 **Blocked upstream:** `/albums` and the `photos-shared-by-me`/
@@ -290,7 +298,7 @@ those same sections instead — the closest equivalent Dolphin supports.
 ```bash
 sudo apt-get install build-essential cmake extra-cmake-modules pkg-config \
   cargo rustc qt6-base-dev qt6-base-dev-tools qt6-l10n-tools libkf6kio-dev \
-  libkf6coreaddons-dev
+  libkf6coreaddons-dev libkf6widgetsaddons-dev
 cargo build --manifest-path core/Cargo.toml   # Rust core only, for quick iteration
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build

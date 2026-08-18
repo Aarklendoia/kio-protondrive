@@ -89,3 +89,24 @@ msgstr "Manter disponível offline"
 #: worker/fileitemactionplugin.cpp:0
 msgid "Remove Local Copy"
 msgstr "Remover cópia local"
+
+#. Right-click menu action (KAbstractFileItemActionPlugin): moves a trashed
+#. item back to its original location, shown when every selected item is
+#. under /trash.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Restore"
+msgstr "Restaurar"
+
+#. Right-click menu action shown on the /trash virtual section itself, and
+#. also the confirmation dialog's title and primary button — permanently
+#. deletes everything currently in the trash.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Empty Trash"
+msgstr "Esvaziar lixeira"
+
+#. Confirmation dialog text shown before actually emptying the trash
+#. (irreversible, not routed through a KIO job Dolphin would confirm on its
+#. own).
+#: worker/fileitemactionplugin.cpp:0
+msgid "Permanently delete everything in the trash? This cannot be undone."
+msgstr "Excluir permanentemente todo o conteúdo da lixeira? Esta ação não pode ser desfeita."

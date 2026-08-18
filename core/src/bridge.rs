@@ -63,6 +63,9 @@ mod ffi {
         fn poll_transfer(handle: &mut TransferHandle) -> FfiTransferPoll;
         fn cancel_transfer(handle: &mut TransferHandle);
         fn trash(path: &str) -> Result<()>;
+        fn restore_path(remote_path: &str) -> Result<()>;
+        fn permanently_delete_path(remote_path: &str) -> Result<()>;
+        fn empty_trash() -> Result<()>;
         fn rename_or_move(old_path: &str, new_path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
         fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
@@ -279,6 +282,40 @@ fn trash(path: &str) -> Result<(), String> {
             let parent = if parent.is_empty() { "/" } else { parent };
             let _ = cache.invalidate_listing(parent);
         }
+    }
+    Ok(())
+}
+
+/// The item's actual destination (wherever it lived before being trashed)
+/// isn't known here — the CLI doesn't report it — so only `/trash`'s own
+/// listing is invalidated; the destination folder's listing stays stale
+/// until #8's periodic sweep or a direct access, same tradeoff already
+/// accepted everywhere else in this cache.
+fn restore_path(remote_path: &str) -> Result<(), String> {
+    let runner = RealCommandRunner;
+    cli::restore_path(&runner, remote_path).map_err(|e| e.to_string())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_stat(remote_path);
+        let _ = cache.invalidate_listing("/trash");
+    }
+    Ok(())
+}
+
+fn permanently_delete_path(remote_path: &str) -> Result<(), String> {
+    let runner = RealCommandRunner;
+    cli::permanently_delete_path(&runner, remote_path).map_err(|e| e.to_string())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_stat(remote_path);
+        let _ = cache.invalidate_listing("/trash");
+    }
+    Ok(())
+}
+
+fn empty_trash() -> Result<(), String> {
+    let runner = RealCommandRunner;
+    cli::empty_trash(&runner).map_err(|e| e.to_string())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_listing("/trash");
     }
     Ok(())
 }

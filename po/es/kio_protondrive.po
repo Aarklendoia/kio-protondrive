@@ -89,3 +89,24 @@ msgstr "Mantener disponible sin conexión"
 #: worker/fileitemactionplugin.cpp:0
 msgid "Remove Local Copy"
 msgstr "Eliminar copia local"
+
+#. Right-click menu action (KAbstractFileItemActionPlugin): moves a trashed
+#. item back to its original location, shown when every selected item is
+#. under /trash.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Restore"
+msgstr "Restaurar"
+
+#. Right-click menu action shown on the /trash virtual section itself, and
+#. also the confirmation dialog's title and primary button — permanently
+#. deletes everything currently in the trash.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Empty Trash"
+msgstr "Vaciar la papelera"
+
+#. Confirmation dialog text shown before actually emptying the trash
+#. (irreversible, not routed through a KIO job Dolphin would confirm on its
+#. own).
+#: worker/fileitemactionplugin.cpp:0
+msgid "Permanently delete everything in the trash? This cannot be undone."
+msgstr "¿Eliminar permanentemente todo el contenido de la papelera? Esta acción no se puede deshacer."

@@ -14,7 +14,7 @@ include(ECMSetupVersion)
 include(FeatureSummary)
 
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core DBus)
-find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS CoreAddons KIO I18n)
+find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS CoreAddons KIO I18n WidgetsAddons)
 find_package(Gettext REQUIRED)
 
 # Corrosion drives the actual `cargo build` of the core/ Rust crate and

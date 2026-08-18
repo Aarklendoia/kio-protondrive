@@ -446,6 +446,46 @@ pub fn trash_path(runner: &dyn CommandRunner, path: &str) -> Result<(), DriveErr
     Ok(())
 }
 
+/// Restores a trashed item to wherever it was before being trashed — the CLI
+/// takes no destination argument, it remembers the original location itself.
+/// Same `[{uid, ok}]` response shape as [`trash_path`] (confirmed live).
+pub fn restore_path(runner: &dyn CommandRunner, path: &str) -> Result<(), DriveError> {
+    let out = runner.run(&["filesystem", "restore", "-j", path], METADATA_TIMEOUT)?;
+    ensure_success(path, &out)?;
+    let outcomes: Vec<TrashOutcome> = serde_json::from_str(&out.stdout)?;
+    if let Some(failed) = outcomes.iter().find(|o| !o.ok) {
+        return Err(DriveError::Cli(format!("failed to restore {}", failed.uid)));
+    }
+    Ok(())
+}
+
+/// Permanently deletes an already-trashed item (the CLI refuses this on
+/// anything not already in `/trash` — matches [`trash_path`] first, this is
+/// only ever called on a path already known to be under `/trash`, see
+/// `worker/protondriveworker.cpp`'s `del()`). Same response shape as
+/// [`trash_path`] (confirmed live).
+pub fn permanently_delete_path(runner: &dyn CommandRunner, path: &str) -> Result<(), DriveError> {
+    let out = runner.run(&["filesystem", "delete", "-j", path], METADATA_TIMEOUT)?;
+    ensure_success(path, &out)?;
+    let outcomes: Vec<TrashOutcome> = serde_json::from_str(&out.stdout)?;
+    if let Some(failed) = outcomes.iter().find(|o| !o.ok) {
+        return Err(DriveError::Cli(format!(
+            "failed to permanently delete {}",
+            failed.uid
+        )));
+    }
+    Ok(())
+}
+
+/// Permanently deletes everything in `/trash` (not `/photos-trash`, per the
+/// CLI's own `--help`). Asynchronous on Proton's side — a successful return
+/// here doesn't mean `/trash` is already empty, just that the request was
+/// accepted.
+pub fn empty_trash(runner: &dyn CommandRunner) -> Result<(), DriveError> {
+    let out = runner.run(&["filesystem", "empty-trash", "-j"], METADATA_TIMEOUT)?;
+    ensure_success("/trash", &out)
+}
+
 /// Renames the node at `path` in place to `new_name`, without moving it to a
 /// different folder (that's [`move_path`]). Confirmed live that the response
 /// is a single node object, same shape as `create_folder`'s.
@@ -880,6 +920,49 @@ mod tests {
     fn trash_path_errors_when_any_outcome_failed() {
         let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
         let err = trash_path(&runner, "/my-files").unwrap_err();
+        assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn restore_path_succeeds_when_all_outcomes_are_ok() {
+        let runner = MockRunner::success(TRASH_OK);
+        restore_path(&runner, "/trash/Photos").unwrap();
+    }
+
+    #[test]
+    fn restore_path_errors_when_any_outcome_failed() {
+        let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
+        let err = restore_path(&runner, "/trash").unwrap_err();
+        assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn permanently_delete_path_succeeds_when_all_outcomes_are_ok() {
+        let runner = MockRunner::success(TRASH_OK);
+        permanently_delete_path(&runner, "/trash/Photos").unwrap();
+    }
+
+    #[test]
+    fn permanently_delete_path_errors_when_any_outcome_failed() {
+        let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
+        let err = permanently_delete_path(&runner, "/trash").unwrap_err();
+        assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn empty_trash_succeeds_on_a_successful_cli_call() {
+        let runner = MockRunner::success("");
+        empty_trash(&runner).unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec!["filesystem", "empty-trash", "-j"]
+        );
+    }
+
+    #[test]
+    fn empty_trash_propagates_a_cli_failure() {
+        let runner = MockRunner::failure("internal server error");
+        let err = empty_trash(&runner).unwrap_err();
         assert!(matches!(err, DriveError::Cli(_)));
     }
 

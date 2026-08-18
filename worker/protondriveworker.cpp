@@ -156,6 +156,7 @@ QString stripTrailingSlash(QString path)
 }
 
 const QString photosPrefix = QStringLiteral("/photos/");
+const QString trashPrefix = QStringLiteral("/trash/");
 
 }
 
@@ -692,7 +693,16 @@ KIO::WorkerResult ProtonDriveWorker::del(const QUrl &url, bool /*isFile*/)
 {
     const QString path = drivePath(url);
     try {
-        trash(path.toStdString());
+        // An item already under /trash has nowhere further to be
+        // soft-deleted to — the CLI's own `filesystem delete` refuses
+        // anything not already trashed, so this is the only correct
+        // direction: permanently delete instead of trashing again (which
+        // previously just failed/no-opped, see #7).
+        if (path.startsWith(trashPrefix)) {
+            permanently_delete_path(path.toStdString());
+        } else {
+            trash(path.toStdString());
+        }
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
     }
