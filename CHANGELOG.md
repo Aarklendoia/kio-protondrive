@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.6.0...v0.7.0) (2026-08-18)
+
+
+### Features
+
+* opportunistic local file cache with configurable retention ([#60](https://github.com/Aarklendoia/kio-protondrive/issues/60)) ([#61](https://github.com/Aarklendoia/kio-protondrive/issues/61)) ([d40ae37](https://github.com/Aarklendoia/kio-protondrive/commit/d40ae372e0b220512b7ffc0ea696e80df871d52f))
+
 ## [0.6.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.5.0...v0.6.0) (2026-08-18)
 
 
