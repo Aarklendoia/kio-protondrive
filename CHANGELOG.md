@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.4.0...v0.4.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* capture the CLI's stdout for diagnostics on unrecognized failures ([#53](https://github.com/Aarklendoia/kio-protondrive/issues/53)) ([41c9013](https://github.com/Aarklendoia/kio-protondrive/commit/41c901384c9693b0c69c87caf7aba77829a32167))
+* use the freedesktop bookmark:icon element for the Places entry ([#51](https://github.com/Aarklendoia/kio-protondrive/issues/51)) ([4587855](https://github.com/Aarklendoia/kio-protondrive/commit/45878559dad9f546dde9bad16288a88d7b87c9b3))
+
 ## [0.4.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.3.1...v0.4.0) (2026-08-17)
 
 
