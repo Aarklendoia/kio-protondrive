@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.5.0...v0.6.0) (2026-08-18)
+
+
+### Features
+
+* cancellable uploads/downloads with approximate progress ([#9](https://github.com/Aarklendoia/kio-protondrive/issues/9)) ([#59](https://github.com/Aarklendoia/kio-protondrive/issues/59)) ([5945aa6](https://github.com/Aarklendoia/kio-protondrive/commit/5945aa61e9bcddbbb2d2a0b7c6407da787c8febe))
+* persistent filesystem listing/stat cache ([#8](https://github.com/Aarklendoia/kio-protondrive/issues/8)) ([#57](https://github.com/Aarklendoia/kio-protondrive/issues/57)) ([0babf73](https://github.com/Aarklendoia/kio-protondrive/commit/0babf73805111d65ed2c807ac0457128a29389c9))
+* server-side rename and move support ([#56](https://github.com/Aarklendoia/kio-protondrive/issues/56)) ([75b8283](https://github.com/Aarklendoia/kio-protondrive/commit/75b8283c6850d260f8fd69b499540eac483e7ab7))
+
 ## [0.5.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.4.1...v0.5.0) (2026-08-18)
 
 
