@@ -25,6 +25,7 @@ public:
     KIO::WorkerResult put(const QUrl &url, int permissions, KIO::JobFlags flags) override;
     KIO::WorkerResult mkdir(const QUrl &url, int permissions) override;
     KIO::WorkerResult del(const QUrl &url, bool isFile) override;
+    KIO::WorkerResult rename(const QUrl &src, const QUrl &dest, KIO::JobFlags flags) override;
 
 private:
     // Proton Drive posix path for a protondrive:// URL, e.g.
