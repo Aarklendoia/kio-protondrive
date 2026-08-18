@@ -17,6 +17,21 @@
 //! disposable worker processes for `/photos` thumbnailing, each of which
 //! would otherwise pay the ~80s cold-start cost independently and get
 //! killed by an impatient caller before finishing, in a loop.
+//!
+//! And a third: [`Self::cached_stat`]/[`Self::store_stat`]/[`Self::cached_listing`]/
+//! [`Self::store_listing`] cache general `stat`/`list_dir` results for real
+//! Drive paths (see issue #8) — unlike the photo timeline above, these have
+//! **no TTL**: a hit is always served, however old. `crate::bridge`'s
+//! read-through/write-through logic populates this on a genuine cache miss;
+//! staying fresh after that is the sync daemon's job (a periodic sweep,
+//! `daemon/src/fs_refresh.rs`) plus this app's own writes invalidating what
+//! they touch (`crate::bridge`'s `make_dir`/`upload_from`/`trash`/
+//! `rename_or_move`) — never a background thread spawned from the worker
+//! itself, since a KIO worker process is short-lived and poolable and can be
+//! killed mid-thread. This is a real, deliberate deviation from
+//! `docs/DESIGN.md`'s on-demand/stateless philosophy — see that doc's cache
+//! section for the consistency tradeoff this accepts (an external rename or
+//! delete can lag behind by up to the daemon's sweep interval).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -89,6 +104,24 @@ impl Cache {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 fetched_at INTEGER NOT NULL,
                 payload TEXT NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS fs_stat_cache (
+                path TEXT PRIMARY KEY,
+                node_json TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS fs_listing_cache (
+                parent_path TEXT PRIMARY KEY,
+                children_json TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL
             )",
             [],
         )
@@ -413,6 +446,136 @@ impl Cache {
             .map_err(|e| DriveError::Sqlite(e.to_string()))?;
         Ok(())
     }
+
+    /// The cached [`NodeEntry`] for `path`, if any — no TTL, a hit is always
+    /// returned however old (see this module's doc comment for why).
+    pub fn cached_stat(&self, path: &str) -> Result<Option<NodeEntry>, DriveError> {
+        let payload: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT node_json FROM fs_stat_cache WHERE path = ?1",
+                params![path],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        payload
+            .map(|json| serde_json::from_str(&json).map_err(|e| DriveError::Parse(e.to_string())))
+            .transpose()
+    }
+
+    /// Records/replaces `path`'s cached stat result.
+    pub fn store_stat(&self, path: &str, node: &NodeEntry) -> Result<(), DriveError> {
+        let payload = serde_json::to_string(node).map_err(|e| DriveError::Parse(e.to_string()))?;
+        self.conn
+            .execute(
+                "INSERT INTO fs_stat_cache (path, node_json, fetched_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(path) DO UPDATE SET
+                    node_json = excluded.node_json,
+                    fetched_at = excluded.fetched_at",
+                params![path, payload, now_unix_secs()],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Drops `path`'s cached stat result, if any — called after this app's
+    /// own writes (rename/move/trash) so a stale entry doesn't outlive the
+    /// change that made it wrong.
+    pub fn invalidate_stat(&self, path: &str) -> Result<(), DriveError> {
+        self.conn
+            .execute("DELETE FROM fs_stat_cache WHERE path = ?1", params![path])
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
+    /// The cached child list for `parent_path`, if any — no TTL, same as
+    /// [`Self::cached_stat`].
+    pub fn cached_listing(&self, parent_path: &str) -> Result<Option<Vec<NodeEntry>>, DriveError> {
+        let payload: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT children_json FROM fs_listing_cache WHERE parent_path = ?1",
+                params![parent_path],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        payload
+            .map(|json| serde_json::from_str(&json).map_err(|e| DriveError::Parse(e.to_string())))
+            .transpose()
+    }
+
+    /// Records/replaces `parent_path`'s cached child list, and — since a
+    /// full listing already carries every child's complete `NodeEntry` —
+    /// also upserts each child individually into `fs_stat_cache`. This
+    /// primes instant `stat()`s for anything just listed, which is exactly
+    /// the access pattern of e.g. Dolphin's breadcrumb resolving the next
+    /// segment down from a folder just browsed into.
+    pub fn store_listing(&self, parent_path: &str, nodes: &[NodeEntry]) -> Result<(), DriveError> {
+        let payload = serde_json::to_string(nodes).map_err(|e| DriveError::Parse(e.to_string()))?;
+        self.conn
+            .execute(
+                "INSERT INTO fs_listing_cache (parent_path, children_json, fetched_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(parent_path) DO UPDATE SET
+                    children_json = excluded.children_json,
+                    fetched_at = excluded.fetched_at",
+                params![parent_path, payload, now_unix_secs()],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        let child_path = |node: &NodeEntry| {
+            format!(
+                "{}/{}",
+                parent_path.trim_end_matches('/'),
+                node.display_name()
+            )
+        };
+        for node in nodes {
+            self.store_stat(&child_path(node), node)?;
+        }
+        Ok(())
+    }
+
+    /// Drops `parent_path`'s cached child list, if any — called after this
+    /// app's own writes that change a folder's contents (create/upload/
+    /// trash/rename/move).
+    pub fn invalidate_listing(&self, parent_path: &str) -> Result<(), DriveError> {
+        self.conn
+            .execute(
+                "DELETE FROM fs_listing_cache WHERE parent_path = ?1",
+                params![parent_path],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Every path with a cached stat result — read by the sync daemon's
+    /// periodic refresh sweep ([`crate::cache`]'s module doc comment).
+    pub fn all_cached_stat_paths(&self) -> Result<Vec<String>, DriveError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path FROM fs_stat_cache")
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))
+    }
+
+    /// Every parent path with a cached listing — read by the sync daemon's
+    /// periodic refresh sweep.
+    pub fn all_cached_listing_parents(&self) -> Result<Vec<String>, DriveError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT parent_path FROM fs_listing_cache")
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))
+    }
 }
 
 fn now_unix_secs() -> i64 {
@@ -721,5 +884,124 @@ mod tests {
             .collect();
         paths.sort();
         assert_eq!(paths, vec!["/my-files/a.txt", "/my-files/sub/b.txt"]);
+    }
+
+    fn node(uid: &str, name: &str) -> NodeEntry {
+        NodeEntry {
+            uid: uid.to_string(),
+            name: crate::entry::DecryptedField {
+                ok: true,
+                value: Some(name.to_string()),
+            },
+            node_type: "file".to_string(),
+            media_type: None,
+            total_storage_size: Some(123),
+            creation_time: "2026-01-01T00:00:00.000Z".to_string(),
+            modification_time: "2026-01-01T00:00:00.000Z".to_string(),
+            is_shared: false,
+        }
+    }
+
+    #[test]
+    fn cached_stat_is_none_before_anything_is_stored() {
+        let (_dir, cache) = cache();
+        assert!(cache.cached_stat("/my-files/a.txt").unwrap().is_none());
+    }
+
+    #[test]
+    fn store_stat_round_trips_through_cached_stat() {
+        let (_dir, cache) = cache();
+        let n = node("uid-1", "a.txt");
+        cache.store_stat("/my-files/a.txt", &n).unwrap();
+
+        let cached = cache.cached_stat("/my-files/a.txt").unwrap().unwrap();
+        assert_eq!(cached.uid, "uid-1");
+        assert_eq!(cached.display_name(), "a.txt");
+    }
+
+    #[test]
+    fn invalidate_stat_clears_a_cached_entry() {
+        let (_dir, cache) = cache();
+        cache
+            .store_stat("/my-files/a.txt", &node("uid-1", "a.txt"))
+            .unwrap();
+
+        cache.invalidate_stat("/my-files/a.txt").unwrap();
+
+        assert!(cache.cached_stat("/my-files/a.txt").unwrap().is_none());
+    }
+
+    #[test]
+    fn store_listing_round_trips_through_cached_listing() {
+        let (_dir, cache) = cache();
+        let nodes = vec![node("uid-1", "a.txt"), node("uid-2", "b.txt")];
+
+        cache.store_listing("/my-files", &nodes).unwrap();
+
+        let cached = cache.cached_listing("/my-files").unwrap().unwrap();
+        let names: Vec<&str> = cached.iter().map(|n| n.display_name()).collect();
+        assert_eq!(names, vec!["a.txt", "b.txt"]);
+    }
+
+    #[test]
+    fn store_listing_also_primes_the_stat_cache_for_every_child() {
+        let (_dir, cache) = cache();
+        let nodes = vec![node("uid-1", "a.txt"), node("uid-2", "sub")];
+
+        cache.store_listing("/my-files", &nodes).unwrap();
+
+        assert_eq!(
+            cache.cached_stat("/my-files/a.txt").unwrap().unwrap().uid,
+            "uid-1"
+        );
+        assert_eq!(
+            cache.cached_stat("/my-files/sub").unwrap().unwrap().uid,
+            "uid-2"
+        );
+    }
+
+    #[test]
+    fn invalidate_listing_clears_a_cached_entry_but_not_its_primed_stats() {
+        let (_dir, cache) = cache();
+        cache
+            .store_listing("/my-files", &[node("uid-1", "a.txt")])
+            .unwrap();
+
+        cache.invalidate_listing("/my-files").unwrap();
+
+        assert!(cache.cached_listing("/my-files").unwrap().is_none());
+        // Invalidating the listing doesn't imply the individual stats it
+        // primed are now wrong too — those are invalidated independently.
+        assert!(cache.cached_stat("/my-files/a.txt").unwrap().is_some());
+    }
+
+    #[test]
+    fn all_cached_stat_paths_lists_every_stat_entry() {
+        let (_dir, cache) = cache();
+        cache
+            .store_stat("/my-files/a.txt", &node("uid-1", "a.txt"))
+            .unwrap();
+        cache
+            .store_stat("/my-files/b.txt", &node("uid-2", "b.txt"))
+            .unwrap();
+
+        let mut paths = cache.all_cached_stat_paths().unwrap();
+        paths.sort();
+        assert_eq!(paths, vec!["/my-files/a.txt", "/my-files/b.txt"]);
+    }
+
+    #[test]
+    fn all_cached_listing_parents_lists_every_listing_entry() {
+        let (_dir, cache) = cache();
+        cache
+            .store_listing("/my-files", &[node("uid-1", "a.txt")])
+            .unwrap();
+        cache
+            .store_listing("/my-files/sub", &[node("uid-2", "b.txt")])
+            .unwrap();
+
+        let mut parents = cache.all_cached_listing_parents().unwrap();
+        parents.sort();
+        assert_eq!(parents, vec!["/my-files", "/my-files/sub"]);
     }
 }
