@@ -144,6 +144,33 @@ QString translatedSectionName(const QString &rawName)
     return labels.value(rawName);
 }
 
+// Breeze icon names for the same fixed root sections translatedSectionName()
+// labels — confirmed present in this theme's own icon set (as opposed to
+// guessed freedesktop-spec names that might not resolve to anything and
+// silently fall back to a generic folder). "folder-cloud" matches
+// wizard::route_add_favorite's own choice for the protondrive:/ Places
+// bookmark, so the root itself and "My files" read as the same concept.
+// Several sections deliberately share an icon (both trash variants, all
+// four shared/shared-photos variants) — the display *name* already
+// disambiguates those, the icon only needs to signal "trash-like" or
+// "sharing-like" at a glance.
+QString translatedSectionIcon(const QString &rawName)
+{
+    static const QHash<QString, QString> icons = {
+        {QStringLiteral("my-files"), QStringLiteral("folder-cloud")},
+        {QStringLiteral("devices"), QStringLiteral("computer")},
+        {QStringLiteral("photos"), QStringLiteral("folder-pictures")},
+        {QStringLiteral("shared-by-me"), QStringLiteral("folder-publicshare")},
+        {QStringLiteral("shared-with-me"), QStringLiteral("folder-publicshare")},
+        {QStringLiteral("trash"), QStringLiteral("user-trash")},
+        {QStringLiteral("albums"), QStringLiteral("folder-favorites")},
+        {QStringLiteral("photos-shared-by-me"), QStringLiteral("folder-publicshare")},
+        {QStringLiteral("photos-shared-with-me"), QStringLiteral("folder-publicshare")},
+        {QStringLiteral("photos-trash"), QStringLiteral("user-trash")},
+    };
+    return icons.value(rawName);
+}
+
 // Strips a trailing slash left by QUrl::adjusted(QUrl::RemoveFilename) —
 // the `proton-drive` CLI expects parent paths without one (e.g. "/my-files",
 // never "/my-files/").
@@ -216,9 +243,14 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
     for (const FfiEntry &entry : entries) {
         KIO::UDSEntry uds = entryFromFfi(entry);
         if (isVirtualRoot) {
-            const QString label = translatedSectionName(toQString(entry.name));
+            const QString rawName = toQString(entry.name);
+            const QString label = translatedSectionName(rawName);
             if (!label.isEmpty()) {
                 uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, label);
+            }
+            const QString icon = translatedSectionIcon(rawName);
+            if (!icon.isEmpty()) {
+                uds.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, icon);
             }
         }
         listEntry(uds);
@@ -238,11 +270,12 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
         // listPhotos()'s "." entry) — synthesized directly, same as the
         // pinned-cache fast path below does for a pinned file.
         KIO::UDSEntry uds;
-        uds.reserve(4);
+        uds.reserve(5);
         uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
         uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
         uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
         uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, translatedSectionName(QStringLiteral("photos")));
+        uds.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, translatedSectionIcon(QStringLiteral("photos")));
         statEntry(uds);
         return KIO::WorkerResult::pass();
     }
@@ -292,9 +325,14 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
         // once you're inside it. A virtual root section is always exactly
         // one path segment deep (e.g. "/my-files", never "/my-files/sub").
         if (path.count(QLatin1Char('/')) == 1) {
-            const QString label = translatedSectionName(path.mid(1));
+            const QString rawName = path.mid(1);
+            const QString label = translatedSectionName(rawName);
             if (!label.isEmpty()) {
                 uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, label);
+            }
+            const QString icon = translatedSectionIcon(rawName);
+            if (!icon.isEmpty()) {
+                uds.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, icon);
             }
         }
         statEntry(uds);
