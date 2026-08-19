@@ -45,6 +45,108 @@ pub fn find_photo(runner: &dyn CommandRunner, name: &str) -> Result<Photo, Drive
         .ok_or_else(|| DriveError::NotFound(format!("/photos/{name}")))
 }
 
+/// The web app's `/photos` filter tabs (see `crate::entry::PhotoDetails`'s
+/// doc comment for where the underlying tag numbers come from). `LivePhotos`
+/// matches *both* tag 3 and tag 4 — Proton's own web client combines
+/// LivePhoto/MotionPhoto (iOS's and Android's equivalent formats) into one
+/// "Live Photos" filter, confirmed in their `Tags.tsx`'s `PhotosTagsProps`
+/// handling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhotoCategory {
+    Favorites,
+    Screenshots,
+    Videos,
+    LivePhotos,
+    Selfies,
+    Portraits,
+    Bursts,
+    Panoramas,
+    Raw,
+}
+
+impl PhotoCategory {
+    pub const ALL: [PhotoCategory; 9] = [
+        PhotoCategory::Favorites,
+        PhotoCategory::Screenshots,
+        PhotoCategory::Videos,
+        PhotoCategory::LivePhotos,
+        PhotoCategory::Selfies,
+        PhotoCategory::Portraits,
+        PhotoCategory::Bursts,
+        PhotoCategory::Panoramas,
+        PhotoCategory::Raw,
+    ];
+
+    /// The `/photos/<slug>` path segment this category is addressed by.
+    pub fn slug(self) -> &'static str {
+        match self {
+            PhotoCategory::Favorites => "favorites",
+            PhotoCategory::Screenshots => "screenshots",
+            PhotoCategory::Videos => "videos",
+            PhotoCategory::LivePhotos => "live-photos",
+            PhotoCategory::Selfies => "selfies",
+            PhotoCategory::Portraits => "portraits",
+            PhotoCategory::Bursts => "bursts",
+            PhotoCategory::Panoramas => "panoramas",
+            PhotoCategory::Raw => "raw",
+        }
+    }
+
+    /// The tag number(s) (see `crate::entry::PhotoDetails`) that put a photo
+    /// in this category.
+    pub fn tags(self) -> &'static [u8] {
+        match self {
+            PhotoCategory::Favorites => &[0],
+            PhotoCategory::Screenshots => &[1],
+            PhotoCategory::Videos => &[2],
+            PhotoCategory::LivePhotos => &[3, 4],
+            PhotoCategory::Selfies => &[5],
+            PhotoCategory::Portraits => &[6],
+            PhotoCategory::Bursts => &[7],
+            PhotoCategory::Panoramas => &[8],
+            PhotoCategory::Raw => &[9],
+        }
+    }
+
+    pub fn from_slug(slug: &str) -> Option<PhotoCategory> {
+        Self::ALL.into_iter().find(|c| c.slug() == slug)
+    }
+}
+
+/// Filters an already-fetched, already-disambiguated photo list (e.g.
+/// [`list_photos`]'s result, or `crate::bridge`'s cached equivalent) down to
+/// `category`'s members. Split out from [`list_photos_by_category`] so
+/// `crate::bridge`'s memoized `/photos` timeline can be filtered without a
+/// second CLI round-trip. Filtering an already-disambiguated list (not
+/// re-running disambiguation on a pre-filtered subset) matters: a photo's
+/// `/photos/<name>` display name must be identical whether it's reached
+/// through `/photos` directly or through a `/photos/<category>` filter —
+/// re-disambiguating a smaller list could assign a same-named photo a
+/// different " (2)" suffix depending on which other same-named photos
+/// happened to also match the filter.
+pub fn filter_by_category(photos: &[Photo], category: PhotoCategory) -> Vec<Photo> {
+    photos
+        .iter()
+        .filter(|photo| {
+            photo
+                .node
+                .photo
+                .as_ref()
+                .is_some_and(|p| p.tags.iter().any(|t| category.tags().contains(t)))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Lists every photo tagged with `category` — a fresh, non-cached call
+/// (like [`list_photos`]) combining it with [`filter_by_category`].
+pub fn list_photos_by_category(
+    runner: &dyn CommandRunner,
+    category: PhotoCategory,
+) -> Result<Vec<Photo>, DriveError> {
+    Ok(filter_by_category(&list_photos(runner)?, category))
+}
+
 /// Assigns each node a unique `display_name`: the decrypted filename (or
 /// the raw `uid` when undecryptable, matching [`NodeEntry::display_name`],
 /// with any `^<hash>^` import-dedup prefix stripped — see
@@ -157,6 +259,13 @@ mod tests {
         )
     }
 
+    fn node_with_tags(uid: &str, name: &str, tags: &[u8]) -> String {
+        let tags_json = tags.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+        format!(
+            r#"{{"uid":"{uid}","name":{{"ok":true,"value":"{name}"}},"type":"photo","mediaType":"image/jpeg","totalStorageSize":1234,"creationTime":"2026-01-01T00:00:00.000Z","modificationTime":"2026-01-01T00:00:00.000Z","photo":{{"tags":[{tags_json}]}}}}"#
+        )
+    }
+
     #[test]
     fn list_photos_disambiguates_duplicate_names_with_a_numeric_suffix() {
         let stdout = format!(
@@ -193,5 +302,59 @@ mod tests {
         };
         let err = find_photo(&runner, "nope.jpg").unwrap_err();
         assert_eq!(err, DriveError::NotFound("/photos/nope.jpg".to_string()));
+    }
+
+    #[test]
+    fn list_photos_by_category_filters_by_tag() {
+        let stdout = format!(
+            "[{},{},{}]",
+            node_with_tags("uid-1", "video.mp4", &[2]),
+            node_with_tags("uid-2", "screenshot.png", &[1]),
+            node("uid-3", "untagged.jpg"),
+        );
+        let runner = MockRunner { stdout };
+        let photos = list_photos_by_category(&runner, PhotoCategory::Videos).unwrap();
+        assert_eq!(photos.len(), 1);
+        assert_eq!(photos[0].node.uid, "uid-1");
+    }
+
+    #[test]
+    fn list_photos_by_category_matches_either_tag_for_live_photos() {
+        let stdout = format!(
+            "[{},{},{}]",
+            node_with_tags("uid-1", "live.heic", &[3]),
+            node_with_tags("uid-2", "motion.jpg", &[4]),
+            node_with_tags("uid-3", "plain.heic", &[5]),
+        );
+        let runner = MockRunner { stdout };
+        let photos = list_photos_by_category(&runner, PhotoCategory::LivePhotos).unwrap();
+        let uids: Vec<&str> = photos.iter().map(|p| p.node.uid.as_str()).collect();
+        assert_eq!(uids, vec!["uid-1", "uid-2"]);
+    }
+
+    #[test]
+    fn list_photos_by_category_preserves_the_full_lists_disambiguation_suffix() {
+        // Only the second IMG_0001 is tagged Favorites — filtering must not
+        // re-disambiguate against just the filtered subset (which would
+        // wrongly drop its " (2)" suffix back to a bare name), since that
+        // would make the same photo resolve to two different `/photos/...`
+        // names depending on whether it's reached flat or through a filter.
+        let stdout = format!(
+            "[{},{}]",
+            node("uid-1", "IMG_0001.HEIC"),
+            node_with_tags("uid-2", "IMG_0001.HEIC", &[0]),
+        );
+        let runner = MockRunner { stdout };
+        let photos = list_photos_by_category(&runner, PhotoCategory::Favorites).unwrap();
+        assert_eq!(photos.len(), 1);
+        assert_eq!(photos[0].display_name, "IMG_0001 (2).HEIC");
+    }
+
+    #[test]
+    fn photo_category_slugs_round_trip() {
+        for category in PhotoCategory::ALL {
+            assert_eq!(PhotoCategory::from_slug(category.slug()), Some(category));
+        }
+        assert_eq!(PhotoCategory::from_slug("not-a-category"), None);
     }
 }

@@ -188,6 +188,7 @@ mod tests {
             creation_time: "2026-01-01T00:00:00.000Z".to_string(),
             modification_time: "2026-01-01T00:00:00.000Z".to_string(),
             is_shared: false,
+            photo: None,
         }
     }
 

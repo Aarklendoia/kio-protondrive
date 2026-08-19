@@ -110,3 +110,58 @@ msgstr "Esvaziar lixeira"
 #: worker/fileitemactionplugin.cpp:0
 msgid "Permanently delete everything in the trash? This cannot be undone."
 msgstr "Excluir permanentemente todo o conteúdo da lixeira? Esta ação não pode ser desfeita."
+
+#. Photo filter category (photo_categories.h): the web app's "Favorites" tab (photos tagged as favorite server-side).
+#: worker/protondriveworker.cpp:0
+msgid "Favorites"
+msgstr "Favoritos"
+
+#. Photo filter category: screenshots.
+#: worker/protondriveworker.cpp:0
+msgid "Screenshots"
+msgstr "Capturas de tela"
+
+#. Photo filter category: videos.
+#: worker/protondriveworker.cpp:0
+msgid "Videos"
+msgstr "Vídeos"
+
+#. Photo filter category: iOS Live Photos and Android Motion Photos (combined into one filter, matching Proton's own web client).
+#: worker/protondriveworker.cpp:0
+msgid "Live Photos"
+msgstr "Fotos ao vivo"
+
+#. Photo filter category: selfies.
+#: worker/protondriveworker.cpp:0
+msgid "Selfies"
+msgstr "Selfies"
+
+#. Photo filter category: portrait-mode photos.
+#: worker/protondriveworker.cpp:0
+msgid "Portraits"
+msgstr "Retratos"
+
+#. Photo filter category: burst-mode photo sequences.
+#: worker/protondriveworker.cpp:0
+msgid "Bursts"
+msgstr "Rajadas"
+
+#. Photo filter category: panoramas.
+#: worker/protondriveworker.cpp:0
+msgid "Panoramas"
+msgstr "Panoramas"
+
+#. Photo filter category: RAW-format camera files.
+#: worker/protondriveworker.cpp:0
+msgid "RAW"
+msgstr "RAW"
+
+#. Right-click menu action (KAbstractFileItemActionPlugin), background right-click on /photos or one of its filter category folders: opens a submenu of the 9 filter categories.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Filter Photos"
+msgstr "Filtrar fotos"
+
+#. Submenu entry (see "Filter Photos" above), only shown while already viewing a filter category: clears back to the unfiltered /photos listing.
+#: worker/fileitemactionplugin.cpp:0
+msgid "All Photos"
+msgstr "Todas as fotos"

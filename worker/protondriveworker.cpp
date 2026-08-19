@@ -20,6 +20,7 @@
 
 #include "rust/cxx.h"
 
+#include "photo_categories.h"
 #include "protondrive-core-cxxbridge/bridge.h"
 
 using namespace protondrive;
@@ -185,6 +186,27 @@ QString stripTrailingSlash(QString path)
 const QString photosPrefix = QStringLiteral("/photos/");
 const QString trashPrefix = QStringLiteral("/trash/");
 
+// Parses whatever comes after "/photos/": "<category>/<name>" when the
+// first segment is a recognized filter category slug (photo_categories.h),
+// or a bare flat name otherwise — today's plain /photos/<name> addressing,
+// unchanged. `name` is empty when `afterPrefix` is *only* a category slug
+// (browsing the category folder itself, not a photo within it) — a photo's
+// own name is never empty (see photos::disambiguate).
+struct PhotoPathParts {
+    QString category;
+    QString name;
+};
+
+PhotoPathParts splitPhotoPath(const QString &afterPrefix)
+{
+    const int slashAt = afterPrefix.indexOf(QLatin1Char('/'));
+    const QString firstSegment = slashAt >= 0 ? afterPrefix.left(slashAt) : afterPrefix;
+    if (!photoCategorySlugs().contains(firstSegment)) {
+        return {QString(), afterPrefix};
+    }
+    return {firstSegment, slashAt >= 0 ? afterPrefix.mid(slashAt + 1) : QString()};
+}
+
 }
 
 ProtonDriveWorker::ProtonDriveWorker(const QByteArray &protocol, const QByteArray &poolSocket, const QByteArray &appSocket)
@@ -206,6 +228,12 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
 
     if (path == QLatin1String("/photos")) {
         return listPhotos();
+    }
+    if (path.startsWith(photosPrefix)) {
+        const QString afterPrefix = path.mid(photosPrefix.length());
+        if (photoCategorySlugs().contains(afterPrefix)) {
+            return listPhotosCategory(afterPrefix);
+        }
     }
 
     rust::Vec<FfiEntry> entries;
@@ -263,7 +291,23 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
     const QString path = drivePath(url);
 
     if (path.startsWith(photosPrefix)) {
-        return statPhoto(path.mid(photosPrefix.length()));
+        const PhotoPathParts parts = splitPhotoPath(path.mid(photosPrefix.length()));
+        if (!parts.category.isEmpty() && parts.name.isEmpty()) {
+            // The category folder itself — no CLI-backed info call exists
+            // for it (it's synthetic, like /photos below), so it's
+            // synthesized directly with that category's translated
+            // label/icon (photo_categories.h).
+            KIO::UDSEntry uds;
+            uds.reserve(5);
+            uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+            uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
+            uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
+            uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, photoCategoryLabel(parts.category));
+            uds.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, photoCategoryIcon(parts.category));
+            statEntry(uds);
+            return KIO::WorkerResult::pass();
+        }
+        return statPhoto(parts.name);
     }
     if (path == QLatin1String("/photos")) {
         // No CLI-backed info call exists for the section itself (see
@@ -368,8 +412,13 @@ KIO::WorkerResult ProtonDriveWorker::mimetype(const QUrl &url)
     const QString path = drivePath(url);
 
     if (path.startsWith(photosPrefix)) {
+        const PhotoPathParts parts = splitPhotoPath(path.mid(photosPrefix.length()));
+        if (!parts.category.isEmpty() && parts.name.isEmpty()) {
+            mimeType(QStringLiteral("inode/directory"));
+            return KIO::WorkerResult::pass();
+        }
         try {
-            const FfiEntry entry = stat_photo(path.mid(photosPrefix.length()).toStdString());
+            const FfiEntry entry = stat_photo(parts.name.toStdString());
             const QString mediaType = toQString(entry.media_type);
             mimeType(mediaType.isEmpty() ? QMimeDatabase().mimeTypeForFile(path, QMimeDatabase::MatchExtension).name() : mediaType);
             return KIO::WorkerResult::pass();
@@ -401,7 +450,7 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
     const QString path = drivePath(url);
 
     if (path.startsWith(photosPrefix)) {
-        return getPhoto(path.mid(photosPrefix.length()), path);
+        return getPhoto(splitPhotoPath(path.mid(photosPrefix.length())).name, path);
     }
 
     // Pinned files (kept local via the Dolphin "Garder en local" ServiceMenu
@@ -534,6 +583,34 @@ KIO::WorkerResult ProtonDriveWorker::listPhotos()
     self.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
     self.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
     self.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
+    listEntry(self);
+
+    for (const FfiEntry &entry : entries) {
+        listEntry(entryFromFfi(entry));
+    }
+    return KIO::WorkerResult::pass();
+}
+
+KIO::WorkerResult ProtonDriveWorker::listPhotosCategory(const QString &category)
+{
+    rust::Vec<FfiEntry> entries;
+    try {
+        entries = list_photos_by_category(category.toStdString());
+    } catch (const rust::Error &error) {
+        return resultFromRustError(error);
+    }
+
+    // Same synthesized "." entry as listPhotos() above, using this
+    // category's own translated label/icon (photo_categories.h) instead —
+    // matches stat()'s equivalent synthesized entry for the bare category
+    // path, kept in sync since both read from the same lookup functions.
+    KIO::UDSEntry self;
+    self.reserve(5);
+    self.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+    self.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
+    self.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
+    self.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, photoCategoryLabel(category));
+    self.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, photoCategoryIcon(category));
     listEntry(self);
 
     for (const FfiEntry &entry : entries) {
