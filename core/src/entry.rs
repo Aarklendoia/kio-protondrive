@@ -39,6 +39,25 @@ pub struct NodeEntry {
     pub modification_time: String,
     #[serde(default)]
     pub is_shared: bool,
+    /// Only present on nodes from `photo timeline -d` (absent, and left
+    /// `None`, for `filesystem list`/`info` nodes) — see
+    /// `crate::photos::PhotoCategory` for what `tags` means.
+    #[serde(default)]
+    pub photo: Option<PhotoDetails>,
+}
+
+/// The `photo` sub-object `photo timeline -d` nests on each node —
+/// confirmed live against a real account and cross-checked against
+/// Proton's own web client source (`PhotoTag` in
+/// `packages/shared/lib/interfaces/drive/file.ts`,
+/// `github.com/ProtonMail/WebClients`): `tags` is a list of small integer
+/// codes (0=Favorite, 1=Screenshot, 2=Video, 3=LivePhoto, 4=MotionPhoto,
+/// 5=Selfie, 6=Portrait, 7=Burst, 8=Panorama, 9=Raw), server-computed, a
+/// single photo can carry several at once.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PhotoDetails {
+    #[serde(default)]
+    pub tags: Vec<u8>,
 }
 
 impl NodeEntry {

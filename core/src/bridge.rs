@@ -75,6 +75,7 @@ mod ffi {
             -> Result<()>;
         fn is_available_locally(remote_path: &str) -> bool;
         fn list_photos() -> Result<Vec<FfiEntry>>;
+        fn list_photos_by_category(category: &str) -> Result<Vec<FfiEntry>>;
         fn stat_photo(name: &str) -> Result<FfiEntry>;
         fn download_photo(name: &str, local_folder: &str) -> Result<String>;
     }
@@ -470,6 +471,17 @@ fn cached_find_photo(name: &str) -> Result<photos::Photo, String> {
 
 fn list_photos() -> Result<Vec<FfiEntry>, String> {
     Ok(cached_photos()?.iter().map(photo_to_ffi).collect())
+}
+
+/// `category` is one of `photos::PhotoCategory::ALL`'s slugs (e.g.
+/// `"videos"`) — the worker only ever calls this with one it already
+/// validated against that same list, so an unrecognized slug here is a
+/// worker-side bug, not a reachable user-facing error.
+fn list_photos_by_category(category: &str) -> Result<Vec<FfiEntry>, String> {
+    let category = photos::PhotoCategory::from_slug(category)
+        .ok_or_else(|| format!("unknown photo category: {category}"))?;
+    let filtered = photos::filter_by_category(&cached_photos()?, category);
+    Ok(filtered.iter().map(photo_to_ffi).collect())
 }
 
 fn stat_photo(name: &str) -> Result<FfiEntry, String> {

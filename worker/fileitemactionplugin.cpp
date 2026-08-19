@@ -8,13 +8,16 @@
 #include <KStandardGuiItem>
 #include <QAction>
 #include <QDebug>
+#include <QDesktopServices>
 #include <QIcon>
+#include <QMenu>
 #include <QProcess>
 #include <QUrl>
 #include <QWidget>
 
 #include "rust/cxx.h"
 
+#include "photo_categories.h"
 #include "protondrive-core-cxxbridge/bridge.h"
 
 using namespace protondrive;
@@ -34,10 +37,35 @@ bool isPinned(const QString &remotePath)
     }
 }
 
-// Kept as a plain duplicated literal rather than shared with
-// protondriveworker.cpp's own trashPrefix — same precedent as that file's
-// photosPrefix, a single small stable string not worth a shared header for.
+// Kept as plain duplicated literals rather than shared with
+// protondriveworker.cpp's own trashPrefix/photosPrefix — single small
+// stable strings not worth a shared header for (unlike photo_categories.h's
+// 9-entry table, which both files genuinely need kept in sync).
 const QString trashPrefix = QStringLiteral("/trash/");
+const QString photosPrefix = QStringLiteral("/photos/");
+
+// KAbstractFileItemActionPlugin loads into the host file manager's own
+// process (confirmed live: this plugin's pin/unpin actions already run
+// there today) — so for Dolphin specifically, we can skip
+// QDesktopServices::openUrl's xdg-open dance (which spawns a fresh
+// "dolphin <url>" invocation that, per live testing, lands in a *new
+// window* rather than the window the click came from) and instead invoke
+// Dolphin's own public D-Bus-exposed org.kde.dolphin.MainWindow method
+// directly in-process via the meta-object system on the actual window
+// that owns this context menu. `invokeMethod` returns false if no such
+// method exists (any non-Dolphin KIO-aware file manager), in which case
+// this falls back to the portable QDesktopServices path.
+void openPhotosUrl(const QUrl &url, QWidget *parentWidget)
+{
+    if (QWidget *window = parentWidget ? parentWidget->window() : nullptr) {
+        const bool invoked = QMetaObject::invokeMethod(
+            window, "openDirectories", Q_ARG(QStringList, QStringList{url.toString()}), Q_ARG(bool, false));
+        if (invoked) {
+            return;
+        }
+    }
+    QDesktopServices::openUrl(url);
+}
 }
 
 // Replaces the old declarative daemon/kio-protondrive-pin.desktop
@@ -103,6 +131,27 @@ public:
             }
         }
         const bool isEmptyTrashTarget = items.size() == 1 && paths.first() == QLatin1String("/trash");
+
+        // Whether this is a background right-click (or a right-click on
+        // the item itself while it's the only thing selected — same
+        // KFileItemListProperties shape either way, see isEmptyTrashTarget
+        // above) on /photos or one of its filter category folders
+        // (photo_categories.h) — the only two places "Filter Photos" makes
+        // sense. `photosFilterCategory` is empty for bare /photos itself.
+        bool isPhotosBackground = false;
+        QString photosFilterCategory;
+        if (items.size() == 1) {
+            const QString onlyPath = paths.first();
+            if (onlyPath == QLatin1String("/photos")) {
+                isPhotosBackground = true;
+            } else if (onlyPath.startsWith(photosPrefix)) {
+                const QString afterPrefix = onlyPath.mid(photosPrefix.length());
+                if (photoCategorySlugs().contains(afterPrefix)) {
+                    isPhotosBackground = true;
+                    photosFilterCategory = afterPrefix;
+                }
+            }
+        }
 
         QList<QAction *> result;
 
@@ -176,6 +225,38 @@ public:
                 }
             });
             result << emptyTrashAction;
+        }
+
+        // Dolphin/KIO has no toolbar extension point for a protocol plugin
+        // (that would need a full Dolphin-specific plugin, not a KIO
+        // worker) — this submenu is the substitute: a background
+        // right-click on /photos or one of its filter category folders
+        // (see isPhotosBackground above) offers every other category as a
+        // one-click jump, opened via openPhotosUrl (new tab in the
+        // originating Dolphin window when possible, see its doc comment
+        // above; a plain new-tab/window "open" otherwise).
+        if (isPhotosBackground) {
+            QAction *filterMenuAction = new QAction(i18nd("kio_protondrive", "Filter Photos"), parentWidget);
+            filterMenuAction->setIcon(QIcon::fromTheme(QStringLiteral("view-filter")));
+            QMenu *filterMenu = new QMenu(parentWidget);
+            filterMenuAction->setMenu(filterMenu);
+
+            if (!photosFilterCategory.isEmpty()) {
+                QAction *allPhotos = filterMenu->addAction(QIcon::fromTheme(QStringLiteral("folder-pictures")), i18nd("kio_protondrive", "All Photos"));
+                connect(allPhotos, &QAction::triggered, parentWidget, [parentWidget]() {
+                    openPhotosUrl(QUrl(QStringLiteral("protondrive:/photos")), parentWidget);
+                });
+            }
+            for (const QString &slug : photoCategorySlugs()) {
+                if (slug == photosFilterCategory) {
+                    continue;
+                }
+                QAction *categoryAction = filterMenu->addAction(QIcon::fromTheme(photoCategoryIcon(slug)), photoCategoryLabel(slug));
+                connect(categoryAction, &QAction::triggered, parentWidget, [slug, parentWidget]() {
+                    openPhotosUrl(QUrl(QStringLiteral("protondrive:/photos/") + slug), parentWidget);
+                });
+            }
+            result << filterMenuAction;
         }
 
         return result;

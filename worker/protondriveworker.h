@@ -44,6 +44,12 @@ private:
     // issue #18), so it needs its own listDir/stat/get paths rather than
     // going through the generic ones above.
     KIO::WorkerResult listPhotos();
+    // The web app's `/photos` filter tabs (favorites, screenshots, ...) —
+    // see worker/photo_categories.h for the category table and
+    // core/src/photos.rs's PhotoCategory for the tag-matching this filters
+    // on. `category` is a validated slug (checked against
+    // photoCategorySlugs() by every caller before this is reached).
+    KIO::WorkerResult listPhotosCategory(const QString &category);
     KIO::WorkerResult statPhoto(const QString &name);
     KIO::WorkerResult getPhoto(const QString &name, const QString &originalPath);
 };
