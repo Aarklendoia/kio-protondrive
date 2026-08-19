@@ -19,9 +19,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
+use std::time::Duration;
 
 use kio_protondrive_daemon::config::Config;
-use protondrive_core::cli::{self, DriveError, RealCommandRunner};
+use protondrive_core::cli::{self, CommandRunner, DriveError, RealCommandRunner};
+use protondrive_core::cli_update;
 use protondrive_core::local_ctrl::{
     self, constant_time_eq, extract_header, extract_query_param, generate_ctrl_token, json_escape,
     request_method, request_path, which, write_owner_only_file,
@@ -31,6 +33,17 @@ const APP_NAME: &str = "kio-protondrive-wizard";
 const TOKEN_HEADER: &str = "x-kio-protondrive-wizard-token";
 
 fn main() {
+    // Normally launched with no arguments for the full first-run onboarding
+    // flow; `daemon::version_check::offer_wizard_update` spawns this exact
+    // binary with `--update-cli` instead when it detects a newer
+    // `proton-drive` release, to show just the one-page update-confirmation
+    // prompt (see `qml/UpdateCli.qml`) rather than the whole wizard again.
+    let mode = if std::env::args().any(|a| a == "--update-cli") {
+        "update-cli"
+    } else {
+        "setup"
+    };
+
     let qml_path = find_qml_path();
     let uid = local_ctrl::current_uid();
     let runtime_dir = local_ctrl::runtime_dir(uid);
@@ -78,24 +91,28 @@ fn main() {
     }
     let qt_plugin_paths = qt_plugin_dirs.join(":");
 
-    // Trailing `-- <runtime_dir>` is how the QML side learns where to find
-    // its own port/token files — Qt.environmentVariable isn't reliably
-    // available to plain QML, but qml6 forwards anything after `--` into
-    // Qt.application.arguments, which is. Passing the already-resolved
-    // directory (rather than the bare UID and letting QML reconstruct
-    // "/run/user/<uid>" itself) is deliberate: reconstructing it in QML
-    // duplicates local_ctrl::runtime_dir's $XDG_RUNTIME_DIR-over-fallback
-    // logic in a second language, and a prior version that did exactly
-    // that silently broke on any system where $XDG_RUNTIME_DIR isn't
-    // literally "/run/user/<uid>" (containers, some display managers) —
-    // the whole wizard UI would hang on "Checking…" with no visible error.
-    // Must stay the last argument (QML reads it by position).
+    // Trailing `-- <mode> <runtime_dir>` is how the QML side learns which
+    // page to open on and where to find its own port/token files —
+    // Qt.environmentVariable isn't reliably available to plain QML, but
+    // qml6 forwards anything after `--` into Qt.application.arguments,
+    // which is. Passing the already-resolved runtime directory (rather than
+    // the bare UID and letting QML reconstruct "/run/user/<uid>" itself) is
+    // deliberate: reconstructing it in QML duplicates
+    // local_ctrl::runtime_dir's $XDG_RUNTIME_DIR-over-fallback logic in a
+    // second language, and a prior version that did exactly that silently
+    // broke on any system where $XDG_RUNTIME_DIR isn't literally
+    // "/run/user/<uid>" (containers, some display managers) — the whole
+    // wizard UI would hang on "Checking…" with no visible error.
+    // `runtime_dir` must stay the *last* argument (QML reads it by
+    // position); `mode` is always sent right before it so main.qml can read
+    // both positionally without ambiguity between the two call shapes.
     let mut cmd = Command::new("qml6");
     if let Some(qm_path) = resolve_locale().and_then(find_qml_translation_path) {
         cmd.arg("--translation").arg(qm_path);
     }
     cmd.arg(&qml_path)
         .arg("--")
+        .arg(mode)
         .arg(runtime_dir.to_string_lossy().into_owned())
         .env("QML_IMPORT_PATH", &qml_import_paths)
         .env("QML2_IMPORT_PATH", &qml_import_paths)
@@ -256,6 +273,8 @@ fn route(req: &str) -> (&'static str, String) {
         "/setup-pass" => ("200 OK", route_setup_pass(req)),
         "/add-favorite" => ("200 OK", route_add_favorite()),
         "/restart-daemon" => ("200 OK", route_restart_daemon()),
+        "/cli-status" => ("200 OK", route_cli_status()),
+        "/cli-install" => ("200 OK", route_cli_install()),
         _ => ("404 Not Found", "{}".to_string()),
     }
 }
@@ -523,6 +542,68 @@ fn route_restart_daemon() -> String {
         Ok(status) => format!(
             r#"{{"ok":false,"error":"systemctl exited with {}"}}"#,
             status.code().unwrap_or(-1)
+        ),
+        Err(e) => format!(
+            r#"{{"ok":false,"error":"{}"}}"#,
+            json_escape(&e.to_string())
+        ),
+    }
+}
+
+/// Whether `proton-drive` is on `$PATH` at all and, if so, which version —
+/// `Welcome.qml` calls this before proceeding, to route to `InstallCli.qml`
+/// instead of `Credentials.qml` when it's missing (`Auth.qml` right after
+/// needs the real CLI present to run `proton-drive auth login`).
+/// `UpdateCli.qml` doesn't call this — it already knows a newer version
+/// exists (that's why the daemon spawned this process in `--update-cli`
+/// mode in the first place).
+fn route_cli_status() -> String {
+    if !which("proton-drive") {
+        return r#"{"installed":false,"version":null}"#.to_string();
+    }
+    let version = RealCommandRunner
+        .run(&["--version"], Duration::from_secs(10))
+        .ok()
+        .and_then(|out| cli_update::installed_version(&out.stdout).map(str::to_string));
+    match version {
+        Some(v) => format!(r#"{{"installed":true,"version":"{}"}}"#, json_escape(&v)),
+        None => r#"{"installed":true,"version":null}"#.to_string(),
+    }
+}
+
+/// Fetches the latest stable release, downloads and verifies the build for
+/// this platform, and installs it to `~/.local/bin/proton-drive` — shared
+/// by both `InstallCli.qml` (CLI missing at first run) and `UpdateCli.qml`
+/// (a newer version was detected). Blocking, same tolerance as
+/// `route_auth_login` already blocking on the browser login: this
+/// connection's own thread is isolated from the rest of the control server.
+fn route_cli_install() -> String {
+    let Some(platform) = cli_update::current_platform() else {
+        return r#"{"ok":false,"error":"unsupported CPU architecture"}"#.to_string();
+    };
+    let release = match cli_update::fetch_latest_stable() {
+        Ok(release) => release,
+        Err(e) => {
+            return format!(
+                r#"{{"ok":false,"error":"{}"}}"#,
+                json_escape(&e.to_string())
+            )
+        }
+    };
+    let Some(file) = cli_update::file_for_platform(&release, platform) else {
+        return format!(
+            r#"{{"ok":false,"error":"no {} build listed in the release manifest"}}"#,
+            json_escape(platform)
+        );
+    };
+    let Some(home) = std::env::var_os("HOME") else {
+        return r#"{"ok":false,"error":"HOME not set"}"#.to_string();
+    };
+    let dest = PathBuf::from(home).join(".local/bin/proton-drive");
+    match cli_update::download_and_install(file, &dest) {
+        Ok(()) => format!(
+            r#"{{"ok":true,"version":"{}"}}"#,
+            json_escape(&release.version)
         ),
         Err(e) => format!(
             r#"{{"ok":false,"error":"{}"}}"#,

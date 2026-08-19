@@ -14,6 +14,7 @@ Kirigami.Page {
     // consistent here even though Welcome itself only needs `app` once the
     // user clicks Next.
     property QtObject app: null
+    property bool checkingCli: false
 
     ColumnLayout {
         anchors.fill: parent
@@ -47,8 +48,18 @@ Kirigami.Page {
 
         Button {
             text: qsTr("Get Started")
+            enabled: !page.checkingCli
             Layout.alignment: Qt.AlignHCenter
-            onClicked: page.app.pageStack.push(Qt.resolvedUrl("Credentials.qml"), {app: page.app})
+            onClicked: {
+                page.checkingCli = true;
+                page.app.apiGet("/cli-status", function (ok, data) {
+                    page.checkingCli = false;
+                    if (ok && data.installed)
+                        page.app.pageStack.push(Qt.resolvedUrl("Credentials.qml"), {app: page.app});
+                    else
+                        page.app.pageStack.push(Qt.resolvedUrl("InstallCli.qml"), {app: page.app});
+                });
+            }
         }
     }
 }

@@ -54,16 +54,22 @@ pub fn auth_required() {
     }
 }
 
-/// See [`auth_required`] for the notify-send caveat. `message` is the
-/// `proton-drive` CLI's own "A newer version is available: ..." sentence
-/// (see [`crate::version_check`]), relayed as-is — untranslated, since it's
-/// the external CLI's own English text, not ours to localize.
-pub fn cli_update_available(message: &str) {
+/// See [`auth_required`] for the notify-send caveat. Unlike the old
+/// version-check design, `latest`/`installed` are version numbers *this*
+/// daemon compared (see [`crate::version_check`]) — not the external CLI's
+/// own self-reported sentence — so, same as every other body here, they're
+/// built from our own gettext msgids rather than left untranslated.
+pub fn cli_update_available(latest: &str, installed: &str) {
+    let body = format!(
+        "{} {latest}. {} {installed}.",
+        gettext("A newer version of the Proton Drive CLI is available:"),
+        gettext("You have"),
+    );
     let result = Command::new("notify-send")
         .arg("--app-name=Proton Drive")
         .arg("--urgency=normal")
         .arg(gettext("Proton Drive: CLI update available"))
-        .arg(message)
+        .arg(body)
         .status();
     if let Err(err) = result {
         log::debug!("could not send a desktop notification (notify-send missing?): {err}");
@@ -150,14 +156,14 @@ pub fn pin_finished(id: Option<&str>, remote_path: &str, error: Option<&str>) {
 /// popping up on a developer's desktop every `cargo test` run is exactly the
 /// kind of surprise this trait exists to prevent.
 pub trait Notifier {
-    fn cli_update_available(&self, message: &str);
+    fn cli_update_available(&self, latest: &str, installed: &str);
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct RealNotifier;
 
 impl Notifier for RealNotifier {
-    fn cli_update_available(&self, message: &str) {
-        cli_update_available(message);
+    fn cli_update_available(&self, latest: &str, installed: &str) {
+        cli_update_available(latest, installed);
     }
 }

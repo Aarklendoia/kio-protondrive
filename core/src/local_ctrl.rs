@@ -202,15 +202,22 @@ pub fn constant_time_eq(a: &str, b: &str) -> bool {
 /// `which` subprocess. `$PATH`-search semantics only (no absolute-path
 /// support): every caller here passes a bare command name.
 pub fn which(bin: &str) -> bool {
-    let Some(path_var) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path_var).any(|dir| {
+    which_path(bin).is_some()
+}
+
+/// Same `$PATH` scan as [`which`], but returns the resolved path instead of
+/// just whether one exists — needed by callers that go on to act on that
+/// exact file (e.g. `daemon::version_check` deciding whether it can replace
+/// an existing `proton-drive` install in place).
+pub fn which_path(bin: &str) -> Option<std::path::PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    std::env::split_paths(&path_var).find_map(|dir| {
         let candidate = dir.join(bin);
         candidate
             .metadata()
-            .map(|m| m.is_file() && is_executable(&m))
-            .unwrap_or(false)
+            .ok()
+            .filter(|m| m.is_file() && is_executable(m))
+            .map(|_| candidate)
     })
 }
 

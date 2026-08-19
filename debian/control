@@ -46,7 +46,8 @@ Architecture: any
 Section: net
 Depends:
   ${shlibs:Depends},
-  ${misc:Depends}
+  ${misc:Depends},
+  curl
 Recommends:
   libnotify-bin,
   dbus-bin,
@@ -72,6 +73,7 @@ Architecture: any
 Depends:
   ${shlibs:Depends},
   ${misc:Depends},
+  curl,
   qml-qt6,
   qt6-base-dev-tools,
   qml6-module-org-kde-kirigami,
@@ -87,9 +89,10 @@ Recommends:
 Description: First-run setup wizard for the Proton Drive sync daemon
  Graphical wizard that signs you in to Proton Drive and lets you choose
  how the background sync daemon stores your session (plain file vs.
- GPG-encrypted via pass). Launched automatically by
- kio-protondrive-sync-daemon when it needs authentication, or runnable
- manually.
+ GPG-encrypted via pass). Also installs the official Proton Drive CLI
+ itself if it's missing, and offers to apply CLI updates the sync daemon
+ detects. Launched automatically by kio-protondrive-sync-daemon when it
+ needs authentication or a confirmed CLI update, or runnable manually.
  .
  Same architecture as this developer's linux-hello-rust project's own
  configuration GUI: a small Rust launcher spawning Qt's qml6 runtime for

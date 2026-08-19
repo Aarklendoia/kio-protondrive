@@ -45,102 +45,6 @@
     </message>
 </context>
 <context>
-    <name>Credentials</name>
-    <message>
-        <location filename="../qml/Credentials.qml" line="8"/>
-        <source>Credential storage</source>
-        <translation>Speicherung der Anmeldedaten</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="53"/>
-        <source>Could not save the configuration.</source>
-        <translation>Die Konfiguration konnte nicht gespeichert werden.</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="66"/>
-        <source>By default the background sync daemon keeps your Proton Drive session in a plain file (readable only by you, but not encrypted). You can switch it to a GPG-encrypted store (`pass`) instead — or just skip this and change it later.</source>
-        <translation>Standardmäßig speichert der Sync-Dienst im Hintergrund Ihre Proton-Drive-Sitzung in einer Klartextdatei (nur für Sie lesbar, aber nicht verschlüsselt). Sie können stattdessen einen GPG-verschlüsselten Speicher („pass“) verwenden — oder dies überspringen und später ändern.</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="73"/>
-        <source>Checking…</source>
-        <translation>Wird überprüft…</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="83"/>
-        <source>Keep the default (unsafe_file)</source>
-        <translation>Standard beibehalten (unsafe_file)</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="89"/>
-        <source>Use pass (GPG-encrypted)</source>
-        <translation>pass verwenden (GPG-verschlüsselt)</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="97"/>
-        <source>Requires `pass` and `gpg` to be installed first: sudo apt install pass gpg</source>
-        <translation>Erfordert, dass „pass“ und „gpg“ zuerst installiert sind: sudo apt install pass gpg</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="111"/>
-        <source>No usable GPG key found — enter an email to generate one (you&apos;ll be prompted for a passphrase separately):</source>
-        <translation>Kein verwendbarer GPG-Schlüssel gefunden — geben Sie eine E-Mail-Adresse ein, um einen zu erzeugen (nach einer Passphrase werden Sie separat gefragt):</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="122"/>
-        <source>Set up</source>
-        <translation>Einrichten</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="130"/>
-        <source>Could not set up pass.</source>
-        <translation>pass konnte nicht eingerichtet werden.</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="140"/>
-        <source>Generating a key and initializing pass…</source>
-        <translation>Schlüssel wird erzeugt und pass wird initialisiert…</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="160"/>
-        <source>Saving…</source>
-        <translation>Wird gespeichert…</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="169"/>
-        <source>Skip for now</source>
-        <translation>Vorerst überspringen</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="178"/>
-        <source>Next</source>
-        <translation>Weiter</translation>
-    </message>
-</context>
-<context>
-    <name>Favorite</name>
-    <message>
-        <location filename="../qml/Favorite.qml" line="8"/>
-        <source>Dolphin favorite</source>
-        <translation>Dolphin-Favorit</translation>
-    </message>
-    <message>
-        <location filename="../qml/Favorite.qml" line="20"/>
-        <source>Add Proton Drive to Dolphin&apos;s Places panel, for quick access to protondrive:/my-files.</source>
-        <translation>Proton Drive zur Orte-Leiste von Dolphin hinzufügen, für schnellen Zugriff auf protondrive:/my-files.</translation>
-    </message>
-    <message>
-        <location filename="../qml/Favorite.qml" line="26"/>
-        <source>Add to Dolphin&apos;s Places panel</source>
-        <translation>Zur Orte-Leiste von Dolphin hinzufügen</translation>
-    </message>
-    <message>
-        <location filename="../qml/Favorite.qml" line="36"/>
-        <source>Next</source>
-        <translation>Weiter</translation>
-    </message>
-</context>
-<context>
     <name>CacheRetention</name>
     <message>
         <location filename="../qml/CacheRetention.qml" line="8"/>
@@ -171,6 +75,102 @@
         <location filename="../qml/CacheRetention.qml" line="71"/>
         <source>Could not save the configuration.</source>
         <translation>Die Konfiguration konnte nicht gespeichert werden.</translation>
+    </message>
+</context>
+<context>
+    <name>Credentials</name>
+    <message>
+        <location filename="../qml/Credentials.qml" line="8"/>
+        <source>Credential storage</source>
+        <translation>Speicherung der Anmeldedaten</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="55"/>
+        <source>Could not save the configuration.</source>
+        <translation>Die Konfiguration konnte nicht gespeichert werden.</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="68"/>
+        <source>By default the background sync daemon keeps your Proton Drive session in a plain file (readable only by you, but not encrypted). You can switch it to a GPG-encrypted store (`pass`) instead — or just skip this and change it later.</source>
+        <translation>Standardmäßig speichert der Sync-Dienst im Hintergrund Ihre Proton-Drive-Sitzung in einer Klartextdatei (nur für Sie lesbar, aber nicht verschlüsselt). Sie können stattdessen einen GPG-verschlüsselten Speicher („pass“) verwenden — oder dies überspringen und später ändern.</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="75"/>
+        <source>Checking…</source>
+        <translation>Wird überprüft…</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="85"/>
+        <source>Keep the default (unsafe_file)</source>
+        <translation>Standard beibehalten (unsafe_file)</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="91"/>
+        <source>Use pass (GPG-encrypted)</source>
+        <translation>pass verwenden (GPG-verschlüsselt)</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="99"/>
+        <source>Requires `pass` and `gpg` to be installed first: sudo apt install pass gpg</source>
+        <translation>Erfordert, dass „pass“ und „gpg“ zuerst installiert sind: sudo apt install pass gpg</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="113"/>
+        <source>No usable GPG key found — enter an email to generate one (you&apos;ll be prompted for a passphrase separately):</source>
+        <translation>Kein verwendbarer GPG-Schlüssel gefunden — geben Sie eine E-Mail-Adresse ein, um einen zu erzeugen (nach einer Passphrase werden Sie separat gefragt):</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="124"/>
+        <source>Set up</source>
+        <translation>Einrichten</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="132"/>
+        <source>Could not set up pass.</source>
+        <translation>pass konnte nicht eingerichtet werden.</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="142"/>
+        <source>Generating a key and initializing pass…</source>
+        <translation>Schlüssel wird erzeugt und pass wird initialisiert…</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="162"/>
+        <source>Saving…</source>
+        <translation>Wird gespeichert…</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="171"/>
+        <source>Skip for now</source>
+        <translation>Vorerst überspringen</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="180"/>
+        <source>Next</source>
+        <translation>Weiter</translation>
+    </message>
+</context>
+<context>
+    <name>Favorite</name>
+    <message>
+        <location filename="../qml/Favorite.qml" line="8"/>
+        <source>Dolphin favorite</source>
+        <translation>Dolphin-Favorit</translation>
+    </message>
+    <message>
+        <location filename="../qml/Favorite.qml" line="20"/>
+        <source>Add Proton Drive to Dolphin&apos;s Places panel, for quick access to protondrive:/my-files.</source>
+        <translation>Proton Drive zur Orte-Leiste von Dolphin hinzufügen, für schnellen Zugriff auf protondrive:/my-files.</translation>
+    </message>
+    <message>
+        <location filename="../qml/Favorite.qml" line="26"/>
+        <source>Add to Dolphin&apos;s Places panel</source>
+        <translation>Zur Orte-Leiste von Dolphin hinzufügen</translation>
+    </message>
+    <message>
+        <location filename="../qml/Favorite.qml" line="36"/>
+        <source>Next</source>
+        <translation>Weiter</translation>
     </message>
 </context>
 <context>
@@ -212,6 +212,97 @@
     </message>
 </context>
 <context>
+    <name>InstallCli</name>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="13"/>
+        <source>Install the Proton Drive CLI</source>
+        <translation>Das Proton Drive CLI installieren</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="27"/>
+        <source>kio-protondrive needs the official Proton Drive CLI, which isn&apos;t installed yet. It can be downloaded and installed to ~/.local/bin automatically.</source>
+        <translation>kio-protondrive benötigt das offizielle Proton Drive CLI, das noch nicht installiert ist. Es kann automatisch heruntergeladen und nach ~/.local/bin installiert werden.</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="34"/>
+        <source>Downloading and verifying the Proton Drive CLI…</source>
+        <translation>Proton Drive CLI wird heruntergeladen und überprüft…</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="49"/>
+        <source>Proton Drive CLI installed.</source>
+        <translation>Proton Drive CLI installiert.</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="55"/>
+        <source>Install now</source>
+        <translation>Jetzt installieren</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="64"/>
+        <source>Installation failed.</source>
+        <translation>Installation fehlgeschlagen.</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="79"/>
+        <source>You can also download it yourself from proton.me/drive/download and run this wizard again.</source>
+        <translation>Sie können es auch selbst von proton.me/drive/download herunterladen und diesen Assistenten erneut ausführen.</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="90"/>
+        <source>Next</source>
+        <translation>Weiter</translation>
+    </message>
+</context>
+<context>
+    <name>UpdateCli</name>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="14"/>
+        <source>Update available</source>
+        <translation>Update verfügbar</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="36"/>
+        <source>A newer version of the Proton Drive CLI is available.</source>
+        <translation>Eine neuere Version des Proton Drive CLI ist verfügbar.</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="47"/>
+        <source>Downloading and verifying the update…</source>
+        <translation>Update wird heruntergeladen und überprüft…</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="63"/>
+        <source>Updated — Proton Drive sync has restarted.</source>
+        <translation>Aktualisiert — die Proton-Drive-Synchronisierung wurde neu gestartet.</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="64"/>
+        <source>Updated.</source>
+        <translation>Aktualisiert.</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="70"/>
+        <source>Update now</source>
+        <translation>Jetzt aktualisieren</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="79"/>
+        <source>Update failed.</source>
+        <translation>Aktualisierung fehlgeschlagen.</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="104"/>
+        <source>Later</source>
+        <translation>Später</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="111"/>
+        <source>Close</source>
+        <translation>Schließen</translation>
+    </message>
+</context>
+<context>
     <name>Welcome</name>
     <message>
         <location filename="../qml/Welcome.qml" line="8"/>
@@ -219,19 +310,19 @@
         <translation>Willkommen</translation>
     </message>
     <message>
-        <location filename="../qml/Welcome.qml" line="31"/>
+        <location filename="../qml/Welcome.qml" line="32"/>
         <source>Set up Proton Drive</source>
         <translation>Proton Drive einrichten</translation>
     </message>
     <message>
-        <location filename="../qml/Welcome.qml" line="38"/>
+        <location filename="../qml/Welcome.qml" line="39"/>
         <source>This will sign you in to Proton Drive and let you choose how the background sync daemon stores your session. Once set up, you can pin any file or folder in Dolphin to keep it available locally.</source>
         <translation>Dadurch werden Sie bei Proton Drive angemeldet und können festlegen, wie der Sync-Dienst im Hintergrund Ihre Sitzung speichert. Nach der Einrichtung können Sie jede Datei oder jeden Ordner in Dolphin anheften, um sie lokal verfügbar zu halten.</translation>
     </message>
     <message>
-        <location filename="../qml/Welcome.qml" line="49"/>
+        <location filename="../qml/Welcome.qml" line="50"/>
         <source>Get Started</source>
-        <translation>Los geht's</translation>
+        <translation>Los geht&apos;s</translation>
     </message>
 </context>
 <context>
