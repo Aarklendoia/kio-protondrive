@@ -12,6 +12,7 @@ use crate::cache::Cache;
 use crate::cli::{self, RealCommandRunner};
 use crate::entry::{ListItem, NodeEntry};
 use crate::photos;
+use crate::sharing;
 use crate::transfer::{Direction, TransferPoll};
 
 #[cxx::bridge(namespace = "protondrive")]
@@ -28,6 +29,7 @@ mod ffi {
         size: u64,
         creation_time: String,
         modification_time: String,
+        is_shared_by_url: bool,
     }
 
     /// Result of one poll of an in-flight [`TransferHandle`]. `ok`/`error`
@@ -42,6 +44,27 @@ mod ffi {
         ok: bool,
         error: String,
         processed_bytes: u64,
+    }
+
+    /// One person with access to a node, or with a pending invitation (see
+    /// `crate::sharing::ShareMember`).
+    struct FfiShareMember {
+        email: String,
+        role: String,
+        pending: bool,
+    }
+
+    struct FfiSharingStatus {
+        members: Vec<FfiShareMember>,
+        editors_can_share: bool,
+    }
+
+    /// `expiration` is empty when the link has none — same "no
+    /// `Option<String>` across cxx" convention as `FfiEntry`'s `media_type`.
+    struct FfiPublicLink {
+        url: String,
+        role: String,
+        expiration: String,
     }
 
     extern "Rust" {
@@ -78,10 +101,20 @@ mod ffi {
         fn list_photos_by_category(category: &str) -> Result<Vec<FfiEntry>>;
         fn stat_photo(name: &str) -> Result<FfiEntry>;
         fn download_photo(name: &str, local_folder: &str) -> Result<String>;
+        fn sharing_status(path: &str) -> Result<FfiSharingStatus>;
+        fn sharing_invite(path: &str, email: &str, role: &str, message: &str) -> Result<()>;
+        fn sharing_remove_member(path: &str, email: &str) -> Result<()>;
+        fn sharing_set_link(
+            path: &str,
+            role: &str,
+            password: &str,
+            expiration: &str,
+        ) -> Result<FfiPublicLink>;
+        fn sharing_remove_link(path: &str) -> Result<()>;
     }
 }
 
-use ffi::{FfiEntry, FfiTransferPoll};
+use ffi::{FfiEntry, FfiPublicLink, FfiShareMember, FfiSharingStatus, FfiTransferPoll};
 
 /// cxx-exposed wrapper around `crate::transfer::TransferHandle` — adds just
 /// enough context (the path, kept only for `finish_download`/
@@ -102,6 +135,7 @@ fn node_to_ffi(node: &NodeEntry) -> FfiEntry {
         size: node.total_storage_size.unwrap_or(0),
         creation_time: node.creation_time.clone(),
         modification_time: node.modification_time.clone(),
+        is_shared_by_url: node.is_shared_by_url,
     }
 }
 
@@ -114,6 +148,7 @@ fn item_to_ffi(item: &ListItem) -> FfiEntry {
             media_type: String::new(),
             size: 0,
             creation_time: String::new(),
+            is_shared_by_url: false,
             modification_time: String::new(),
         },
     }
@@ -504,4 +539,52 @@ fn download_photo(name: &str, local_folder: &str) -> Result<String, String> {
         .ok_or_else(|| "photo download produced no local file".to_string())?
         .map_err(|e| e.to_string())?;
     Ok(downloaded.file_name().to_string_lossy().into_owned())
+}
+
+fn share_member_to_ffi(member: &sharing::ShareMember) -> FfiShareMember {
+    FfiShareMember {
+        email: member.email.clone(),
+        role: member.role.clone(),
+        pending: member.pending,
+    }
+}
+
+fn sharing_status(path: &str) -> Result<FfiSharingStatus, String> {
+    let runner = RealCommandRunner;
+    let status = sharing::status(&runner, path).map_err(|e| e.to_string())?;
+    Ok(FfiSharingStatus {
+        members: status.members.iter().map(share_member_to_ffi).collect(),
+        editors_can_share: status.editors_can_share,
+    })
+}
+
+fn sharing_invite(path: &str, email: &str, role: &str, message: &str) -> Result<(), String> {
+    let runner = RealCommandRunner;
+    sharing::invite(&runner, path, email, role, message).map_err(|e| e.to_string())
+}
+
+fn sharing_remove_member(path: &str, email: &str) -> Result<(), String> {
+    let runner = RealCommandRunner;
+    sharing::remove_member(&runner, path, email).map_err(|e| e.to_string())
+}
+
+fn sharing_set_link(
+    path: &str,
+    role: &str,
+    password: &str,
+    expiration: &str,
+) -> Result<FfiPublicLink, String> {
+    let runner = RealCommandRunner;
+    let link =
+        sharing::set_link(&runner, path, role, password, expiration).map_err(|e| e.to_string())?;
+    Ok(FfiPublicLink {
+        url: link.url,
+        role: link.role,
+        expiration: link.expiration_time.unwrap_or_default(),
+    })
+}
+
+fn sharing_remove_link(path: &str) -> Result<(), String> {
+    let runner = RealCommandRunner;
+    sharing::remove_link(&runner, path).map_err(|e| e.to_string())
 }

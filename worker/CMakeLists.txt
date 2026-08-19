@@ -45,6 +45,7 @@ set_target_properties(protondrive_overlayicon PROPERTIES OUTPUT_NAME "protondriv
 kcoreaddons_add_plugin(protondrive_fileitemaction
     SOURCES
         fileitemactionplugin.cpp
+        sharedialog.cpp
     INSTALL_NAMESPACE "kf6/kfileitemaction"
 )
 

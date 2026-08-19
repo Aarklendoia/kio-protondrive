@@ -12,4 +12,5 @@ pub mod cli_update;
 pub mod entry;
 pub mod local_ctrl;
 pub mod photos;
+pub mod sharing;
 pub mod transfer;

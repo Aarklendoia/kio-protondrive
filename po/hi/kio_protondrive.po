@@ -165,3 +165,118 @@ msgstr "फ़ोटो फ़िल्टर करें"
 #: worker/fileitemactionplugin.cpp:0
 msgid "All Photos"
 msgstr "सभी फ़ोटो"
+
+#. Context-menu action (KAbstractFileItemActionPlugin) opening the sharing dialog for a single selected item.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Share"
+msgstr "साझा करें"
+
+#. ShareDialog window title; %1 is the item's display name.
+#: worker/sharedialog.cpp:0
+msgid "Share \"%1\""
+msgstr "\"%1\" साझा करें"
+
+#. ShareDialog: heading for the list of current members/pending invitations.
+#: worker/sharedialog.cpp:0
+msgid "People with access"
+msgstr "पहुँच रखने वाले लोग"
+
+#. ShareDialog: button removing the selected member/invitation.
+#: worker/sharedialog.cpp:0
+msgid "Remove Access"
+msgstr "पहुँच हटाएं"
+
+#. Sharing role: read-only access.
+#: worker/sharedialog.cpp:0
+msgid "Viewer"
+msgstr "दर्शक"
+
+#. Sharing role: can edit.
+#: worker/sharedialog.cpp:0
+msgid "Editor"
+msgstr "संपादक"
+
+#. Sharing role: full control (invite role only, not offered for public links).
+#: worker/sharedialog.cpp:0
+msgid "Admin"
+msgstr "व्यवस्थापक"
+
+#. ShareDialog: placeholder text for the invite email field.
+#: worker/sharedialog.cpp:0
+msgid "Email address"
+msgstr "ईमेल पता"
+
+#. ShareDialog: button sending an invitation.
+#: worker/sharedialog.cpp:0
+msgid "Invite"
+msgstr "आमंत्रित करें"
+
+#. ShareDialog: placeholder text for the optional invitation message field.
+#: worker/sharedialog.cpp:0
+msgid "Message (optional)"
+msgstr "संदेश (वैकल्पिक)"
+
+#. ShareDialog: suffix appended after a member's email/role when their invitation hasn't been accepted yet.
+#: worker/sharedialog.cpp:0
+msgid "— pending"
+msgstr "— लंबित"
+
+#. ShareDialog: read-only status line (editorsCanShare = true, no CLI setter exists for it).
+#: worker/sharedialog.cpp:0
+msgid "Editors can invite others to this item."
+msgstr "संपादक इस आइटम पर अन्य लोगों को आमंत्रित कर सकते हैं।"
+
+#. ShareDialog: read-only status line (editorsCanShare = false).
+#: worker/sharedialog.cpp:0
+msgid "Only you can invite others to this item."
+msgstr "इस आइटम पर केवल आप ही अन्य लोगों को आमंत्रित कर सकते हैं।"
+
+#. ShareDialog: heading for the public-link section.
+#: worker/sharedialog.cpp:0
+msgid "Public link"
+msgstr "सार्वजनिक लिंक"
+
+#. ShareDialog: button copying the public link URL to the clipboard.
+#: worker/sharedialog.cpp:0
+msgid "Copy"
+msgstr "कॉपी करें"
+
+#. ShareDialog: placeholder text for the optional public-link password field.
+#: worker/sharedialog.cpp:0
+msgid "Password (optional)"
+msgstr "पासवर्ड (वैकल्पिक)"
+
+#. ShareDialog: label next to the public-link expiration date checkbox/picker.
+#: worker/sharedialog.cpp:0
+msgid "Expires on:"
+msgstr "समाप्ति तिथि:"
+
+#. ShareDialog: button creating a new public link or updating the existing one's settings.
+#: worker/sharedialog.cpp:0
+msgid "Create/Update Link"
+msgstr "लिंक बनाएँ/अपडेट करें"
+
+#. ShareDialog: button removing the public link.
+#: worker/sharedialog.cpp:0
+msgid "Remove Link"
+msgstr "लिंक हटाएं"
+
+#. ShareDialog: status text shown when stat's isSharedByUrl is true but the URL itself isn't known yet (sharing status doesn't carry it).
+#: worker/sharedialog.cpp:0
+msgid "A public link is currently active. Use \"Create/Update Link\" to view or change it."
+msgstr "एक सार्वजनिक लिंक वर्तमान में सक्रिय है। इसे देखने या बदलने के लिए \"लिंक बनाएँ/अपडेट करें\" का उपयोग करें।"
+
+#. ShareDialog: status text shown when the item has no public link.
+#: worker/sharedialog.cpp:0
+msgid "No public link."
+msgstr "कोई सार्वजनिक लिंक नहीं।"
+
+#. ShareDialog: status text shown right after creating/updating a public link.
+#: worker/sharedialog.cpp:0
+msgid "Public link active."
+msgstr "सार्वजनिक लिंक सक्रिय है।"
+
+#. Message box title for sharing errors (QMessageBox::warning).
+#: worker/sharedialog.cpp:0
+msgid "Sharing"
+msgstr "साझाकरण"

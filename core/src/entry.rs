@@ -39,6 +39,14 @@ pub struct NodeEntry {
     pub modification_time: String,
     #[serde(default)]
     pub is_shared: bool,
+    /// Whether the node currently has an active public link — confirmed
+    /// live on a `filesystem list` node. `sharing status`'s own response
+    /// doesn't carry the link (see `SharingStatus`'s doc comment), so this
+    /// is the only currently-known way to tell "has a link" apart from
+    /// "doesn't" without calling `sharing set-url` (which creates/updates
+    /// one, not a safe read-only check).
+    #[serde(default)]
+    pub is_shared_by_url: bool,
     /// Only present on nodes from `photo timeline -d` (absent, and left
     /// `None`, for `filesystem list`/`info` nodes) — see
     /// `crate::photos::PhotoCategory` for what `tags` means.
@@ -113,4 +121,56 @@ pub struct TransferSummary {
 pub struct TrashOutcome {
     pub uid: String,
     pub ok: bool,
+}
+
+/// Response of `sharing status -j path` — confirmed live against a real
+/// shared file. `protonInvitations`/`nonProtonInvitations` were empty on
+/// every node tested so far, so their per-item shape below is this
+/// project's best guess (mirroring `members`'s own shape, the only one
+/// with confirmed fields) rather than something observed directly — to be
+/// corrected once a real pending invitation can be inspected.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharingStatus {
+    #[serde(default)]
+    pub proton_invitations: Vec<ProtonInvitation>,
+    #[serde(default)]
+    pub non_proton_invitations: Vec<NonProtonInvitation>,
+    #[serde(default)]
+    pub members: Vec<ShareMember>,
+    pub editors_can_share: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareMember {
+    pub invitee_email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtonInvitation {
+    pub invitee_email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NonProtonInvitation {
+    pub invitee_email: String,
+    pub role: String,
+}
+
+/// Response of `sharing set-url -j path` — shape not yet confirmed live
+/// (see this module's `SharingStatus` doc comment and the plan's
+/// Verification section); `url` is this project's best guess at the field
+/// name for the created public link's address.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicLink {
+    pub url: String,
+    pub role: String,
+    #[serde(default)]
+    pub expiration_time: Option<String>,
 }

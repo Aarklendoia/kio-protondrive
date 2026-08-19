@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-use crate::entry::{ListItem, NodeEntry, TransferSummary, TrashOutcome};
+use crate::entry::{ListItem, NodeEntry, PublicLink, SharingStatus, TransferSummary, TrashOutcome};
 
 /// `filesystem list`/`info`/`create-folder`/`trash` are plain metadata API
 /// calls — a healthy CLI answers in well under this. Deliberately short so a
@@ -563,6 +563,81 @@ pub fn rename_or_move(
     let moved_path = format!("{}/{}", new_parent.trim_end_matches('/'), old_name);
     rename_path(runner, &moved_path, &new_name)?;
     Ok(())
+}
+
+/// Members, pending invitations, and public link settings for a node — see
+/// `crate::sharing` for the merged, worker-friendly view built on top of
+/// this raw response.
+pub fn sharing_status(runner: &dyn CommandRunner, path: &str) -> Result<SharingStatus, DriveError> {
+    let out = runner.run(&["sharing", "status", "-j", path], METADATA_TIMEOUT)?;
+    ensure_success(path, &out)?;
+    Ok(serde_json::from_str(&out.stdout)?)
+}
+
+/// Invites a single user by email, or updates their role if the node is
+/// already shared with them (matches the CLI's own `sharing invite --help`
+/// wording). `message`, when non-empty, is included as clear text in the
+/// invitation email (`-m`).
+pub fn sharing_invite(
+    runner: &dyn CommandRunner,
+    path: &str,
+    email: &str,
+    role: &str,
+    message: &str,
+) -> Result<(), DriveError> {
+    let mut args = vec!["sharing", "invite", "-j", "-u", email, "-r", role];
+    if !message.is_empty() {
+        args.push("-m");
+        args.push(message);
+    }
+    args.push(path);
+    let out = runner.run(&args, METADATA_TIMEOUT)?;
+    ensure_success(path, &out)
+}
+
+/// Removes one user's access (or pending invitation) by email.
+pub fn sharing_remove_member(
+    runner: &dyn CommandRunner,
+    path: &str,
+    email: &str,
+) -> Result<(), DriveError> {
+    let out = runner.run(
+        &["sharing", "remove", "-j", "-e", email, path],
+        METADATA_TIMEOUT,
+    )?;
+    ensure_success(path, &out)
+}
+
+/// Creates or updates the node's public link. `password`/`expiration` are
+/// forwarded only when non-empty — the CLI treats their absence as "no
+/// password"/"no expiration".
+pub fn sharing_set_link(
+    runner: &dyn CommandRunner,
+    path: &str,
+    role: &str,
+    password: &str,
+    expiration: &str,
+) -> Result<PublicLink, DriveError> {
+    let mut args = vec!["sharing", "set-url", "-j", "--role", role];
+    if !password.is_empty() {
+        args.push("--password");
+        args.push(password);
+    }
+    if !expiration.is_empty() {
+        args.push("--expiration");
+        args.push(expiration);
+    }
+    args.push(path);
+    let out = runner.run(&args, METADATA_TIMEOUT)?;
+    ensure_success(path, &out)?;
+    Ok(serde_json::from_str(&out.stdout)?)
+}
+
+/// Removes the node's public link; direct member access is unaffected (per
+/// the CLI's own `sharing remove-url --help`).
+pub fn sharing_remove_link(runner: &dyn CommandRunner, path: &str) -> Result<(), DriveError> {
+    let out = runner.run(&["sharing", "remove-url", "-j", path], METADATA_TIMEOUT)?;
+    ensure_success(path, &out)
 }
 
 #[cfg(test)]
