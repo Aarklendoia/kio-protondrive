@@ -68,15 +68,18 @@ Kirigami.ApplicationWindow {
     pageStack.initialPage: Kirigami.Page {}
 
     Component.onCompleted: {
-        // Passed by main.rs as the trailing argument after "--" — the
-        // already-resolved $XDG_RUNTIME_DIR (or its /run/user/<uid>
-        // fallback), not a bare UID: reconstructing "/run/user/" + uid
-        // here would silently diverge from main.rs's own fallback logic on
-        // any system where $XDG_RUNTIME_DIR isn't exactly that (containers,
-        // some display managers), leaving this page stuck below with no
-        // visible error.
+        // Passed by main.rs as the two trailing arguments after "--": mode,
+        // then the already-resolved $XDG_RUNTIME_DIR (or its
+        // /run/user/<uid> fallback) — runtimeDir must stay last since it's
+        // read by position, and mode is always sent right before it (see
+        // main.rs's own comment on this). Reconstructing runtimeDir as
+        // "/run/user/" + uid instead of using this value would silently
+        // diverge from main.rs's own fallback logic on any system where
+        // $XDG_RUNTIME_DIR isn't exactly that (containers, some display
+        // managers), leaving this page stuck below with no visible error.
         var args = Qt.application.arguments;
         var runtimeDir = args.length > 0 ? args[args.length - 1] : "/run/user/0";
+        var mode = args.length > 1 ? args[args.length - 2] : "setup";
 
         var portXhr = new XMLHttpRequest();
         portXhr.open("GET", "file://" + runtimeDir + "/kio-protondrive-wizard-ctrl.port", false);
@@ -98,6 +101,7 @@ Kirigami.ApplicationWindow {
         // even one Qt.callLater tick later), for reasons not fully pinned
         // down; passing `app` through explicitly sidesteps the question
         // entirely.
-        root.pageStack.replace(Qt.resolvedUrl("Welcome.qml"), {app: root});
+        var initialPage = mode === "update-cli" ? "UpdateCli.qml" : "Welcome.qml";
+        root.pageStack.replace(Qt.resolvedUrl(initialPage), {app: root});
     }
 }

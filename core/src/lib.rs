@@ -8,6 +8,7 @@
 pub mod bridge;
 pub mod cache;
 pub mod cli;
+pub mod cli_update;
 pub mod entry;
 pub mod local_ctrl;
 pub mod photos;

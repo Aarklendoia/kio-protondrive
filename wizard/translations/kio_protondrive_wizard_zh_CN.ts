@@ -45,102 +45,6 @@
     </message>
 </context>
 <context>
-    <name>Credentials</name>
-    <message>
-        <location filename="../qml/Credentials.qml" line="8"/>
-        <source>Credential storage</source>
-        <translation>凭据存储</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="53"/>
-        <source>Could not save the configuration.</source>
-        <translation>无法保存配置。</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="66"/>
-        <source>By default the background sync daemon keeps your Proton Drive session in a plain file (readable only by you, but not encrypted). You can switch it to a GPG-encrypted store (`pass`) instead — or just skip this and change it later.</source>
-        <translation>默认情况下,后台同步守护进程会将您的 Proton Drive 会话保存在一个明文文件中(仅您可读,但未加密)。您可以改用经 GPG 加密的存储方式(“pass”)—— 或者跳过此步骤,以后再更改。</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="73"/>
-        <source>Checking…</source>
-        <translation>正在检查…</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="83"/>
-        <source>Keep the default (unsafe_file)</source>
-        <translation>保留默认设置 (unsafe_file)</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="89"/>
-        <source>Use pass (GPG-encrypted)</source>
-        <translation>使用 pass(GPG 加密)</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="97"/>
-        <source>Requires `pass` and `gpg` to be installed first: sudo apt install pass gpg</source>
-        <translation>需要先安装“pass”和“gpg”:sudo apt install pass gpg</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="111"/>
-        <source>No usable GPG key found — enter an email to generate one (you&apos;ll be prompted for a passphrase separately):</source>
-        <translation>未找到可用的 GPG 密钥 —— 请输入邮箱地址以生成一个(系统会另行提示您输入密码短语):</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="122"/>
-        <source>Set up</source>
-        <translation>设置</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="130"/>
-        <source>Could not set up pass.</source>
-        <translation>无法设置 pass。</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="140"/>
-        <source>Generating a key and initializing pass…</source>
-        <translation>正在生成密钥并初始化 pass…</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="160"/>
-        <source>Saving…</source>
-        <translation>正在保存…</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="169"/>
-        <source>Skip for now</source>
-        <translation>暂时跳过</translation>
-    </message>
-    <message>
-        <location filename="../qml/Credentials.qml" line="178"/>
-        <source>Next</source>
-        <translation>下一步</translation>
-    </message>
-</context>
-<context>
-    <name>Favorite</name>
-    <message>
-        <location filename="../qml/Favorite.qml" line="8"/>
-        <source>Dolphin favorite</source>
-        <translation>Dolphin 收藏夹</translation>
-    </message>
-    <message>
-        <location filename="../qml/Favorite.qml" line="20"/>
-        <source>Add Proton Drive to Dolphin&apos;s Places panel, for quick access to protondrive:/my-files.</source>
-        <translation>将 Proton Drive 添加到 Dolphin 的位置面板,以便快速访问 protondrive:/my-files。</translation>
-    </message>
-    <message>
-        <location filename="../qml/Favorite.qml" line="26"/>
-        <source>Add to Dolphin&apos;s Places panel</source>
-        <translation>添加到 Dolphin 的位置面板</translation>
-    </message>
-    <message>
-        <location filename="../qml/Favorite.qml" line="36"/>
-        <source>Next</source>
-        <translation>下一步</translation>
-    </message>
-</context>
-<context>
     <name>CacheRetention</name>
     <message>
         <location filename="../qml/CacheRetention.qml" line="8"/>
@@ -171,6 +75,102 @@
         <location filename="../qml/CacheRetention.qml" line="71"/>
         <source>Could not save the configuration.</source>
         <translation>无法保存配置。</translation>
+    </message>
+</context>
+<context>
+    <name>Credentials</name>
+    <message>
+        <location filename="../qml/Credentials.qml" line="8"/>
+        <source>Credential storage</source>
+        <translation>凭据存储</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="55"/>
+        <source>Could not save the configuration.</source>
+        <translation>无法保存配置。</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="68"/>
+        <source>By default the background sync daemon keeps your Proton Drive session in a plain file (readable only by you, but not encrypted). You can switch it to a GPG-encrypted store (`pass`) instead — or just skip this and change it later.</source>
+        <translation>默认情况下,后台同步守护进程会将您的 Proton Drive 会话保存在一个明文文件中(仅您可读,但未加密)。您可以改用经 GPG 加密的存储方式(“pass”)—— 或者跳过此步骤,以后再更改。</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="75"/>
+        <source>Checking…</source>
+        <translation>正在检查…</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="85"/>
+        <source>Keep the default (unsafe_file)</source>
+        <translation>保留默认设置 (unsafe_file)</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="91"/>
+        <source>Use pass (GPG-encrypted)</source>
+        <translation>使用 pass(GPG 加密)</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="99"/>
+        <source>Requires `pass` and `gpg` to be installed first: sudo apt install pass gpg</source>
+        <translation>需要先安装“pass”和“gpg”:sudo apt install pass gpg</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="113"/>
+        <source>No usable GPG key found — enter an email to generate one (you&apos;ll be prompted for a passphrase separately):</source>
+        <translation>未找到可用的 GPG 密钥 —— 请输入邮箱地址以生成一个(系统会另行提示您输入密码短语):</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="124"/>
+        <source>Set up</source>
+        <translation>设置</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="132"/>
+        <source>Could not set up pass.</source>
+        <translation>无法设置 pass。</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="142"/>
+        <source>Generating a key and initializing pass…</source>
+        <translation>正在生成密钥并初始化 pass…</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="162"/>
+        <source>Saving…</source>
+        <translation>正在保存…</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="171"/>
+        <source>Skip for now</source>
+        <translation>暂时跳过</translation>
+    </message>
+    <message>
+        <location filename="../qml/Credentials.qml" line="180"/>
+        <source>Next</source>
+        <translation>下一步</translation>
+    </message>
+</context>
+<context>
+    <name>Favorite</name>
+    <message>
+        <location filename="../qml/Favorite.qml" line="8"/>
+        <source>Dolphin favorite</source>
+        <translation>Dolphin 收藏夹</translation>
+    </message>
+    <message>
+        <location filename="../qml/Favorite.qml" line="20"/>
+        <source>Add Proton Drive to Dolphin&apos;s Places panel, for quick access to protondrive:/my-files.</source>
+        <translation>将 Proton Drive 添加到 Dolphin 的位置面板,以便快速访问 protondrive:/my-files。</translation>
+    </message>
+    <message>
+        <location filename="../qml/Favorite.qml" line="26"/>
+        <source>Add to Dolphin&apos;s Places panel</source>
+        <translation>添加到 Dolphin 的位置面板</translation>
+    </message>
+    <message>
+        <location filename="../qml/Favorite.qml" line="36"/>
+        <source>Next</source>
+        <translation>下一步</translation>
     </message>
 </context>
 <context>
@@ -212,6 +212,97 @@
     </message>
 </context>
 <context>
+    <name>InstallCli</name>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="13"/>
+        <source>Install the Proton Drive CLI</source>
+        <translation>安装 Proton Drive CLI</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="27"/>
+        <source>kio-protondrive needs the official Proton Drive CLI, which isn&apos;t installed yet. It can be downloaded and installed to ~/.local/bin automatically.</source>
+        <translation>kio-protondrive 需要官方的 Proton Drive CLI,但尚未安装。可以自动下载并安装到 ~/.local/bin。</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="34"/>
+        <source>Downloading and verifying the Proton Drive CLI…</source>
+        <translation>正在下载并验证 Proton Drive CLI…</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="49"/>
+        <source>Proton Drive CLI installed.</source>
+        <translation>Proton Drive CLI 已安装。</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="55"/>
+        <source>Install now</source>
+        <translation>立即安装</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="64"/>
+        <source>Installation failed.</source>
+        <translation>安装失败。</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="79"/>
+        <source>You can also download it yourself from proton.me/drive/download and run this wizard again.</source>
+        <translation>您也可以自行从 proton.me/drive/download 下载,然后重新运行此向导。</translation>
+    </message>
+    <message>
+        <location filename="../qml/InstallCli.qml" line="90"/>
+        <source>Next</source>
+        <translation>下一步</translation>
+    </message>
+</context>
+<context>
+    <name>UpdateCli</name>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="14"/>
+        <source>Update available</source>
+        <translation>有可用更新</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="36"/>
+        <source>A newer version of the Proton Drive CLI is available.</source>
+        <translation>有新版本的 Proton Drive CLI 可用。</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="47"/>
+        <source>Downloading and verifying the update…</source>
+        <translation>正在下载并验证更新…</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="63"/>
+        <source>Updated — Proton Drive sync has restarted.</source>
+        <translation>已更新 —— Proton Drive 同步已重新启动。</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="64"/>
+        <source>Updated.</source>
+        <translation>已更新。</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="70"/>
+        <source>Update now</source>
+        <translation>立即更新</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="79"/>
+        <source>Update failed.</source>
+        <translation>更新失败。</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="104"/>
+        <source>Later</source>
+        <translation>稍后</translation>
+    </message>
+    <message>
+        <location filename="../qml/UpdateCli.qml" line="111"/>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+</context>
+<context>
     <name>Welcome</name>
     <message>
         <location filename="../qml/Welcome.qml" line="8"/>
@@ -219,17 +310,17 @@
         <translation>欢迎</translation>
     </message>
     <message>
-        <location filename="../qml/Welcome.qml" line="31"/>
+        <location filename="../qml/Welcome.qml" line="32"/>
         <source>Set up Proton Drive</source>
         <translation>设置 Proton Drive</translation>
     </message>
     <message>
-        <location filename="../qml/Welcome.qml" line="38"/>
+        <location filename="../qml/Welcome.qml" line="39"/>
         <source>This will sign you in to Proton Drive and let you choose how the background sync daemon stores your session. Once set up, you can pin any file or folder in Dolphin to keep it available locally.</source>
         <translation>这将登录 Proton Drive,并让您选择后台同步守护进程如何存储您的会话。设置完成后,您可以在 Dolphin 中固定任意文件或文件夹,使其在本地保持可用。</translation>
     </message>
     <message>
-        <location filename="../qml/Welcome.qml" line="49"/>
+        <location filename="../qml/Welcome.qml" line="50"/>
         <source>Get Started</source>
         <translation>开始使用</translation>
     </message>

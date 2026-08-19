@@ -137,7 +137,13 @@ fn main() {
     // computed below ~INTERVAL (not ~0) — that would silently delay the
     // first check by a full day instead of running it at startup.
     let mut cli_update_notified: Option<String> = None;
-    version_check::check(&runner, &notifier, &mut cli_update_notified);
+    version_check::check(
+        &runner,
+        &notifier,
+        &protondrive_core::cli_update::fetch_latest_stable,
+        &version_check::offer_wizard_update,
+        &mut cli_update_notified,
+    );
     let mut last_version_check = Instant::now();
     // Same "must not be Instant::now() relied on for an immediate first
     // run" reasoning as `last_version_check` above — but the fs cache sweep
@@ -193,7 +199,13 @@ fn main() {
         }
 
         if last_version_check.elapsed() >= VERSION_CHECK_INTERVAL {
-            version_check::check(&runner, &notifier, &mut cli_update_notified);
+            version_check::check(
+                &runner,
+                &notifier,
+                &protondrive_core::cli_update::fetch_latest_stable,
+                &version_check::offer_wizard_update,
+                &mut cli_update_notified,
+            );
             last_version_check = Instant::now();
         }
 

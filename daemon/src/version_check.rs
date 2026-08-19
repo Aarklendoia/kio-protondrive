@@ -1,26 +1,28 @@
-//! Best-effort check for a newer `proton-drive` CLI release (#26).
+//! Checks for a newer `proton-drive` CLI release (#26, #65) and, with the
+//! user's explicit confirmation, applies it.
 //!
-//! Proton doesn't publish an apt/deb repo or any self-update mechanism for
-//! the CLI (see README's "Installing" section) — but the CLI itself, as of
-//! some version between 0.6.0 and 0.8.0, started checking on every
-//! `--version` call and printing the verdict as one of two fixed sentences,
-//! fetching `https://proton.me/download/drive/cli/version.json` internally
-//! (found by reading the CLI's own bundled JS source — undocumented
-//! anywhere, so this could silently stop working if Proton ever changes the
-//! wording). Rather than reimplementing that check ourselves (a second HTTP
-//! call, a second copy of Proton's version-compare logic), this just runs
-//! `proton-drive --version` and relays whichever sentence it printed.
+//! Earlier versions of this check just ran `proton-drive --version` and
+//! relayed whichever "a newer version is available" sentence the CLI itself
+//! printed — but that self-check is a CLI feature that only exists in
+//! builds roughly 0.6.0+, so it's silently absent on anything older,
+//! meaning a daemon watching an old CLI could never tell the user anything
+//! at all (the actual bug #65 was filed for). This now fetches
+//! [`protondrive_core::cli_update`]'s release manifest itself — independent
+//! of whatever CLI version happens to be installed — and compares versions
+//! directly.
 //!
-//! Silently does nothing if the installed CLI predates this feature (no
-//! such sentence in the output) or the check itself failed (e.g. offline —
-//! the CLI swallows that internally and just omits the verdict line) —
-//! matches the CLI's own graceful degradation, and this project's existing
-//! "best-effort, never fail the daemon over it" stance (see
-//! `notification::auth_required`).
+//! Only *notifies* by default. It goes one step further — best-effort
+//! spawning the setup wizard in `--update-cli` mode, so the user can
+//! actually apply it with one click — only when the resolved `proton-drive`
+//! binary is one this process can write to (never a root-owned system
+//! install: this project never escalates privileges itself, same rule as
+//! `wizard::route_setup_pass`'s "never runs `apt install`").
 
 use std::time::Duration;
 
 use protondrive_core::cli::CommandRunner;
+use protondrive_core::cli_update::{self, CliUpdateError, Release};
+use protondrive_core::local_ctrl;
 
 use crate::notification::Notifier;
 
@@ -28,17 +30,25 @@ use crate::notification::Notifier;
 /// CLI's source); this leaves headroom for process startup on top of that.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
-const UP_TO_DATE_MARKER: &str = "You are running the latest version.";
-const UPDATE_AVAILABLE_MARKER: &str = "A newer version is available";
-
-/// Runs `proton-drive --version` and logs/notifies if it reports a newer
-/// release available. `already_notified` suppresses repeat desktop
-/// notifications for the same message across check cycles — reset once the
-/// message changes (e.g. the user updates, or a further release ships) —
-/// same falling-edge pattern as `main::report_authentication_failure`.
+/// Runs `proton-drive --version` to learn the installed version, fetches
+/// the latest stable release via `fetch_latest`, and — if it's newer —
+/// notifies and calls `offer_update` (real production behavior:
+/// [`offer_wizard_update`], gated on the install being one this process can
+/// actually write to). `offer_update` is a separate injected side effect
+/// (rather than hardcoded) purely so tests never spawn a real
+/// `kio-protondrive-wizard` GUI process — a developer running `cargo test`
+/// on a real desktop with the CLI already installed must never see an
+/// actual wizard window pop up from a test fixture's made-up "0.8.0", same
+/// concern `notification::Notifier` already exists to prevent for
+/// `notify-send`. `already_notified` suppresses repeat
+/// notifications/offers for the same remote version across check cycles,
+/// reset once the installed version catches up — same falling-edge pattern
+/// as `main::report_authentication_failure`.
 pub fn check(
     runner: &dyn CommandRunner,
     notifier: &dyn Notifier,
+    fetch_latest: &dyn Fn() -> Result<Release, CliUpdateError>,
+    offer_update: &dyn Fn(),
     already_notified: &mut Option<String>,
 ) {
     let output = match runner.run(&["--version"], CHECK_TIMEOUT) {
@@ -48,39 +58,72 @@ pub fn check(
             return;
         }
     };
-
-    if let Some(line) = find_update_message(&output.stdout) {
-        log::warn!("{line} — see https://proton.me/drive/download");
-        if already_notified.as_deref() != Some(line) {
-            notifier.cli_update_available(line);
-            *already_notified = Some(line.to_string());
-        }
-    } else if output.stdout.contains(UP_TO_DATE_MARKER) {
-        log::debug!("proton-drive CLI is up to date");
-        *already_notified = None;
-    } else {
+    let Some(installed) = cli_update::installed_version(&output.stdout) else {
         log::debug!(
-            "proton-drive CLI's --version output had no update-check verdict \
-             (older CLI without this feature, or the check itself failed offline)"
+            "could not parse the installed proton-drive CLI's version from --version's output"
         );
+        return;
+    };
+
+    let release = match fetch_latest() {
+        Ok(release) => release,
+        Err(err) => {
+            log::debug!("could not check for a newer proton-drive CLI release: {err}");
+            return;
+        }
+    };
+
+    if !cli_update::is_newer(&release.version, installed) {
+        log::debug!("proton-drive CLI {installed} is up to date");
+        *already_notified = None;
+        return;
     }
+
+    log::warn!(
+        "a newer version of the Proton Drive CLI is available: {} (you have {installed})",
+        release.version
+    );
+    if already_notified.as_deref() == Some(release.version.as_str()) {
+        return;
+    }
+    notifier.cli_update_available(&release.version, installed);
+    *already_notified = Some(release.version.clone());
+    offer_update();
 }
 
-/// Pulls out the CLI's own "A newer version is available: X.Y.Z (you have
-/// A.B.C)." line, if present — kept as one opaque string rather than parsing
-/// out the version numbers, since relaying the CLI's exact wording is all
-/// this needs and doesn't require tracking its message format beyond the one
-/// fixed marker.
-fn find_update_message(stdout: &str) -> Option<&str> {
-    stdout
-        .lines()
-        .find(|line| line.starts_with(UPDATE_AVAILABLE_MARKER))
+/// Real `offer_update`: best-effort spawns the setup wizard in
+/// `--update-cli` mode, but only if the resolved `proton-drive` binary is
+/// one this process can write to — never a root-owned system install, same
+/// "never escalate privileges" rule as `wizard::route_setup_pass`'s "never
+/// runs `apt install`".
+pub fn offer_wizard_update() {
+    let Some(cli_path) = local_ctrl::which_path("proton-drive") else {
+        return;
+    };
+    if !cli_update::is_writable(&cli_path) {
+        log::debug!(
+            "{} isn't writable by this process — leaving the update to the user \
+             (never escalating privileges to apply it)",
+            cli_path.display()
+        );
+        return;
+    }
+    // Best-effort: kio-protondrive-wizard is a Recommends, not a hard
+    // Depends, so it may not be installed — that's fine, the notification
+    // already told the user a new version exists.
+    if let Err(err) = std::process::Command::new("kio-protondrive-wizard")
+        .arg("--update-cli")
+        .spawn()
+    {
+        log::debug!("could not launch the setup wizard to offer the update: {err}");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use protondrive_core::cli::{self, DriveError};
+    use protondrive_core::cli_update::ReleaseFile;
     use std::cell::RefCell;
 
     struct ScriptedRunner(cli::CommandOutput);
@@ -101,15 +144,17 @@ mod tests {
     /// notification pop up from a test fixture's made-up "0.9.0" (this is
     /// exactly what happened before this trait existed).
     #[derive(Default)]
-    struct RecordingNotifier(RefCell<Vec<String>>);
+    struct RecordingNotifier(RefCell<Vec<(String, String)>>);
 
     impl Notifier for RecordingNotifier {
-        fn cli_update_available(&self, message: &str) {
-            self.0.borrow_mut().push(message.to_string());
+        fn cli_update_available(&self, latest: &str, installed: &str) {
+            self.0
+                .borrow_mut()
+                .push((latest.to_string(), installed.to_string()));
         }
     }
 
-    fn output(stdout: &str) -> cli::CommandOutput {
+    fn version_output(stdout: &str) -> cli::CommandOutput {
         cli::CommandOutput {
             stdout: stdout.to_string(),
             stderr: String::new(),
@@ -117,70 +162,97 @@ mod tests {
         }
     }
 
-    #[test]
-    fn finds_the_update_available_line() {
-        let stdout = "Proton Drive CLI cli-drive@0.8.0+06e8c605\n\
-                       Proton Drive SDK js@0.21.0+06e8c605\n\
-                       A newer version is available: 0.9.0 (you have 0.8.0).\n\
-                       Download at https://proton.me/download/drive/cli/index.html\n";
-        assert_eq!(
-            find_update_message(stdout),
-            Some("A newer version is available: 0.9.0 (you have 0.8.0).")
-        );
+    fn no_op() {}
+
+    fn release(version: &str) -> Release {
+        Release {
+            category: "Stable".to_string(),
+            version: version.to_string(),
+            files: vec![ReleaseFile {
+                url: "https://proton.me/download/drive/cli/x/linux-x64/proton-drive".to_string(),
+                sha512: "deadbeef".to_string(),
+                platform: "linux/x64".to_string(),
+            }],
+        }
     }
 
     #[test]
-    fn finds_nothing_when_up_to_date() {
-        let stdout = "Proton Drive CLI cli-drive@0.8.0+06e8c605\n\
-                       Proton Drive SDK js@0.21.0+06e8c605\n\
-                       You are running the latest version.\n";
-        assert_eq!(find_update_message(stdout), None);
-    }
-
-    #[test]
-    fn finds_nothing_on_an_older_cli_without_the_verdict_line() {
-        let stdout = "Proton Drive CLI cli-drive@0.6.0+f8e16aac\n\
-                       Proton Drive SDK js@0.19.2+f8e16aac\n";
-        assert_eq!(find_update_message(stdout), None);
-    }
-
-    #[test]
-    fn notifies_once_per_distinct_message() {
-        let runner = ScriptedRunner(output(
-            "Proton Drive CLI cli-drive@0.8.0+06e8c605\n\
-             A newer version is available: 0.9.0 (you have 0.8.0).\n",
+    fn notifies_once_when_a_newer_release_exists_and_offers_to_apply_it() {
+        let runner = ScriptedRunner(version_output(
+            "Proton Drive CLI cli-drive@0.7.0+5174900c\n",
         ));
         let notifier = RecordingNotifier::default();
         let mut notified = None;
-        check(&runner, &notifier, &mut notified);
-        assert_eq!(
-            notified.as_deref(),
-            Some("A newer version is available: 0.9.0 (you have 0.8.0).")
-        );
+        let fetch = || Ok(release("0.8.0"));
+        let offers = RefCell::new(0u32);
+        let offer_update = || *offers.borrow_mut() += 1;
 
-        // A second cycle with the same message shouldn't notify again.
-        check(&runner, &notifier, &mut notified);
+        check(&runner, &notifier, &fetch, &offer_update, &mut notified);
+        assert_eq!(notified.as_deref(), Some("0.8.0"));
         assert_eq!(
-            notified.as_deref(),
-            Some("A newer version is available: 0.9.0 (you have 0.8.0).")
+            notifier.0.borrow().as_slice(),
+            [("0.8.0".to_string(), "0.7.0".to_string())]
         );
-        assert_eq!(
-            notifier.0.into_inner(),
-            vec!["A newer version is available: 0.9.0 (you have 0.8.0).".to_string()]
-        );
+        assert_eq!(*offers.borrow(), 1);
+
+        // A second cycle with the same remote version shouldn't notify
+        // (or re-offer) again.
+        check(&runner, &notifier, &fetch, &offer_update, &mut notified);
+        assert_eq!(notifier.0.borrow().len(), 1);
+        assert_eq!(*offers.borrow(), 1);
+    }
+
+    #[test]
+    fn does_not_notify_when_already_up_to_date() {
+        let runner = ScriptedRunner(version_output(
+            "Proton Drive CLI cli-drive@0.8.0+06e8c605\n",
+        ));
+        let notifier = RecordingNotifier::default();
+        let mut notified = None;
+        let fetch = || Ok(release("0.8.0"));
+
+        check(&runner, &notifier, &fetch, &no_op, &mut notified);
+        assert_eq!(notified, None);
+        assert!(notifier.0.borrow().is_empty());
     }
 
     #[test]
     fn clears_notified_state_once_up_to_date_again() {
-        let mut notified =
-            Some("A newer version is available: 0.9.0 (you have 0.8.0).".to_string());
-        let runner = ScriptedRunner(output(
-            "Proton Drive CLI cli-drive@0.9.0+deadbeef\n\
-             You are running the latest version.\n",
+        let runner = ScriptedRunner(version_output(
+            "Proton Drive CLI cli-drive@0.9.0+deadbeef\n",
         ));
         let notifier = RecordingNotifier::default();
-        check(&runner, &notifier, &mut notified);
+        let mut notified = Some("0.9.0".to_string());
+        let fetch = || Ok(release("0.9.0"));
+
+        check(&runner, &notifier, &fetch, &no_op, &mut notified);
         assert_eq!(notified, None);
-        assert!(notifier.0.into_inner().is_empty());
+        assert!(notifier.0.borrow().is_empty());
+    }
+
+    #[test]
+    fn does_nothing_when_the_manifest_fetch_fails() {
+        let runner = ScriptedRunner(version_output(
+            "Proton Drive CLI cli-drive@0.7.0+5174900c\n",
+        ));
+        let notifier = RecordingNotifier::default();
+        let mut notified = None;
+        let fetch = || Err(CliUpdateError::ChecksumMismatch);
+
+        check(&runner, &notifier, &fetch, &no_op, &mut notified);
+        assert_eq!(notified, None);
+        assert!(notifier.0.borrow().is_empty());
+    }
+
+    #[test]
+    fn does_nothing_when_the_installed_version_cannot_be_parsed() {
+        let runner = ScriptedRunner(version_output("garbage output\n"));
+        let notifier = RecordingNotifier::default();
+        let mut notified = None;
+        let fetch = || Ok(release("0.8.0"));
+
+        check(&runner, &notifier, &fetch, &no_op, &mut notified);
+        assert_eq!(notified, None);
+        assert!(notifier.0.borrow().is_empty());
     }
 }

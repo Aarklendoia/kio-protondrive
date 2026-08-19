@@ -27,10 +27,20 @@ msgstr "Proton Drive:需要身份验证"
 msgid "Run \"proton-drive auth login\" in a terminal, then Proton Drive sync will resume automatically."
 msgstr "请在终端中运行“proton-drive auth login”,之后 Proton Drive 同步将自动恢复。"
 
-#. Title of the desktop notification fired when the installed proton-drive CLI itself reports a newer release exists (see version_check.rs) — the notification body is the CLI's own message, relayed as-is and not translated here.
+#. Title of the desktop notification fired when the daemon detects (via its own release-manifest check, not the CLI's self-report) that a newer proton-drive CLI release exists — see version_check.rs.
 #: daemon/src/notification.rs:0
 msgid "Proton Drive: CLI update available"
 msgstr "Proton Drive:CLI 有可用更新"
+
+#. First half of the CLI-update-available notification body, followed by the new version number (see notification.rs's cli_update_available).
+#: daemon/src/notification.rs:0
+msgid "A newer version of the Proton Drive CLI is available:"
+msgstr "有新版本的 Proton Drive CLI 可用:"
+
+#. Second half of the CLI-update-available notification body, followed by the installed version number.
+#: daemon/src/notification.rs:0
+msgid "You have"
+msgstr "您当前的版本:"
 
 #. Body of the persistent notification shown while a pinned file downloads (see pin_started) — no percentage shown, since the CLI reports none.
 #: daemon/src/notification.rs:0
