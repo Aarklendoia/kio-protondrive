@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.7.0...v0.8.0) (2026-08-19)
+
+
+### Features
+
+* restorable trash via context menu ([#7](https://github.com/Aarklendoia/kio-protondrive/issues/7)) ([#63](https://github.com/Aarklendoia/kio-protondrive/issues/63)) ([75c6ef9](https://github.com/Aarklendoia/kio-protondrive/commit/75c6ef9c96bfd5ec6d8f77e8ec0a0c098ddf0e14))
+* wizard-installed/daemon-updated proton-drive CLI with a real version check ([#65](https://github.com/Aarklendoia/kio-protondrive/issues/65)) ([#66](https://github.com/Aarklendoia/kio-protondrive/issues/66)) ([66814c2](https://github.com/Aarklendoia/kio-protondrive/commit/66814c2655c0d4528dfac5a7fcadb121bb02f416))
+* **worker:** filter Photos by category via the context-menu (favorites, screenshots, videos, ...) ([#68](https://github.com/Aarklendoia/kio-protondrive/issues/68)) ([9b1147e](https://github.com/Aarklendoia/kio-protondrive/commit/9b1147edce9e7e167c31e178d3d097c14df99c51))
+* **worker:** give the Drive root's virtual sections distinct icons ([#67](https://github.com/Aarklendoia/kio-protondrive/issues/67)) ([580880a](https://github.com/Aarklendoia/kio-protondrive/commit/580880a93d5323b4fb643d3b09855b9279a40153))
+
 ## [0.7.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.6.0...v0.7.0) (2026-08-18)
 
 
