@@ -200,12 +200,22 @@ environment already selects.
   how cache hits stay correct (unlike pinning, a hit here is re-verified
   against the remote before being trusted). See
   [#60](https://github.com/Aarklendoia/kio-protondrive/issues/60).
+- Sharing and public links: a "Share via Proton Drive" context-menu action
+  manages a node's members, pending invitations, and public link. A
+  shared-item badge shows directly in the folder view, kept live by the
+  same D-Bus broadcast the pin/local-cache badges use. Note: a public
+  link's password is passed to the `proton-drive` CLI as a command-line
+  argument (its only supported input method), so it's readable by other
+  local users via `ps`/`/proc` for the CLI call's short lifetime — an
+  upstream CLI limitation, not something this project can avoid on its own.
+  See [#6](https://github.com/Aarklendoia/kio-protondrive/issues/6),
+  [#70](https://github.com/Aarklendoia/kio-protondrive/issues/70),
+  [#72](https://github.com/Aarklendoia/kio-protondrive/issues/72).
 
 **Not yet implemented** (contributions welcome):
 
 - Server-side copy (KIO falls back to download+upload, which works but is
   slower) — rename/move are implemented ([#5](https://github.com/Aarklendoia/kio-protondrive/issues/5))
-- Sharing/invitations
 - Albums, uploading to Photos ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18))
 
 **Blocked upstream:** `/albums` and the `photos-shared-by-me`/
