@@ -7,6 +7,7 @@
 //! shim catches and turns into a `KIO::WorkerResult::fail(...)`.
 
 use std::path::Path;
+use std::thread;
 
 use crate::cache::Cache;
 use crate::cli::{self, RealCommandRunner};
@@ -494,31 +495,58 @@ fn lookup_shared(remote_path: &str) -> bool {
         .is_some_and(|node| node.is_shared || node.is_shared_by_url)
 }
 
-/// Re-fetches `path`'s live stat and overwrites its `fs_stat_cache` entry —
-/// called after every mutating `sharing_*` call below so [`lookup_shared`]
-/// (and any other `fs_stat_cache` reader) reflects the change immediately
-/// instead of only after the next unrelated browse/stat of the same path.
-/// Mirrors `daemon::fs_refresh::refresh_all`'s own stat-refresh loop,
-/// including its `NotFound` handling: a sharing action racing a concurrent
-/// delete/move elsewhere shouldn't leave a stale (possibly `is_shared:
-/// true`) cache entry outliving the node itself. Any other error is
-/// best-effort, same stance as `refresh_all` — leaves the previous cached
-/// value in place a little longer rather than surfacing from what's
+/// Re-fetches `path`'s live stat, overwrites its `fs_stat_cache` entry, and
+/// notifies the overlay plugin — spawned on a detached background thread
+/// by every mutating `sharing_*` function below rather than called inline.
+/// Each of those already costs ~1-4s on its own CLI call (confirmed live);
+/// this does a second live `filesystem info` round-trip, and inlining it
+/// would double the GUI-thread latency of every Invite/Remove Access/
+/// Create-or-Update-Link click in `worker/sharedialog.cpp`, which runs
+/// these synchronously (see its own header doc comment). The overlay badge
+/// still lags by the same ~1-4s it always did for this refresh — just off
+/// the GUI thread, notified once the cache is actually fresh rather than
+/// by `sharedialog.cpp` calling its own `notifyOverlayChanged` immediately
+/// (which would repaint using the *stale* pre-refresh value, since this
+/// thread hasn't necessarily finished by the time the dialog's own call
+/// returns) — so `sharedialog.cpp` no longer calls it for these 4 actions.
+/// Best-effort throughout: a failure here just leaves the previous cached
+/// value in place a little longer, not worth surfacing from what's
 /// otherwise a successful sharing action.
-fn refresh_stat_cache(path: &str) {
-    let Ok(cache) = open_cache() else {
-        return;
-    };
-    let runner = RealCommandRunner;
-    match cli::stat_path(&runner, path) {
-        Ok(node) => {
-            let _ = cache.store_stat(path, &node);
+fn refresh_stat_cache_async(path: String) {
+    thread::spawn(move || {
+        let Ok(cache) = open_cache() else {
+            return;
+        };
+        let runner = RealCommandRunner;
+        match cli::stat_path(&runner, &path) {
+            Ok(node) => {
+                let _ = cache.store_stat(&path, &node);
+            }
+            Err(cli::DriveError::NotFound(_)) => {
+                let _ = cache.invalidate_stat(&path);
+            }
+            Err(_) => return,
         }
-        Err(cli::DriveError::NotFound(_)) => {
-            let _ = cache.invalidate_stat(path);
-        }
-        Err(_) => {}
-    }
+        notify_overlay_changed(&path);
+    });
+}
+
+/// Broadcasts the same `org.kde.protondrive.OverlayIcon.PinChanged` D-Bus
+/// signal `daemon/src/control.rs`'s `notify_pin_changed` and
+/// `worker/protondriveworker.cpp`/`worker/sharedialog.cpp`'s own
+/// `notifyOverlayChanged` already send — duplicated here (this crate has
+/// no Qt dependency to call into those instead) rather than shared across
+/// the Rust/C++ boundary, same reasoning those two already duplicate it
+/// from each other. Best-effort: no session bus (e.g. inside a container)
+/// just means the badge lags until the next natural refresh.
+fn notify_overlay_changed(path: &str) {
+    let _ = std::process::Command::new("dbus-send")
+        .arg("--session")
+        .arg("--type=signal")
+        .arg("/")
+        .arg("org.kde.protondrive.OverlayIcon.PinChanged")
+        .arg(format!("string:{path}"))
+        .status();
 }
 
 fn photo_to_ffi(photo: &photos::Photo) -> FfiEntry {
@@ -640,14 +668,14 @@ fn sharing_status(path: &str) -> Result<FfiSharingStatus, String> {
 fn sharing_invite(path: &str, email: &str, role: &str, message: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     sharing::invite(&runner, path, email, role, message).map_err(|e| e.to_string())?;
-    refresh_stat_cache(path);
+    refresh_stat_cache_async(path.to_string());
     Ok(())
 }
 
 fn sharing_remove_member(path: &str, email: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     sharing::remove_member(&runner, path, email).map_err(|e| e.to_string())?;
-    refresh_stat_cache(path);
+    refresh_stat_cache_async(path.to_string());
     Ok(())
 }
 
@@ -660,7 +688,7 @@ fn sharing_set_link(
     let runner = RealCommandRunner;
     let link =
         sharing::set_link(&runner, path, role, password, expiration).map_err(|e| e.to_string())?;
-    refresh_stat_cache(path);
+    refresh_stat_cache_async(path.to_string());
     Ok(FfiPublicLink {
         url: link.url,
         role: link.role,
@@ -672,6 +700,6 @@ fn sharing_set_link(
 fn sharing_remove_link(path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     sharing::remove_link(&runner, path).map_err(|e| e.to_string())?;
-    refresh_stat_cache(path);
+    refresh_stat_cache_async(path.to_string());
     Ok(())
 }

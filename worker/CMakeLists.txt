@@ -55,7 +55,6 @@ target_link_libraries(protondrive_fileitemaction
         KF6::KIOWidgets
         KF6::I18n
         KF6::WidgetsAddons
-        Qt6::DBus
         protondrive-core-cxxbridge
 )
 

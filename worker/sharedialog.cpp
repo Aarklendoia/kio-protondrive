@@ -4,8 +4,6 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
-#include <QDBusConnection>
-#include <QDBusMessage>
 #include <QDateEdit>
 #include <QDateTime>
 #include <QDialogButtonBox>
@@ -50,22 +48,6 @@ QString roleLabel(const QString &role)
     // "inherited" (folder members only) or anything else the CLI might add
     // later — shown as-is rather than silently dropped.
     return role;
-}
-
-// Mirrors protondriveworker.cpp's own notifyOverlayChanged (duplicated
-// rather than shared, same reasoning as toQString above) — tells
-// protondrive_overlayicon.so this path's "shared" badge (see
-// overlayplugin.cpp) may have changed, so it repaints immediately instead
-// of waiting for the next unrelated browse of the same folder. `bridge.rs`'s
-// sharing_* functions already refresh the underlying fs_stat_cache entry
-// this reads from before returning, so by the time this fires the cache is
-// already correct — this only handles telling the *plugin instance* to
-// re-read it.
-void notifyOverlayChanged(const QString &remotePath)
-{
-    QDBusMessage message = QDBusMessage::createSignal(QStringLiteral("/"), QStringLiteral("org.kde.protondrive.OverlayIcon"), QStringLiteral("PinChanged"));
-    message << remotePath;
-    QDBusConnection::sessionBus().send(message);
 }
 }
 
@@ -259,7 +241,12 @@ void ShareDialog::inviteClicked()
     try {
         sharing_invite(m_remotePath.toStdString(), email.toStdString(), role.toStdString(), message.toStdString());
         QGuiApplication::restoreOverrideCursor();
-        notifyOverlayChanged(m_remotePath);
+        // No notifyOverlayChanged call here on purpose: bridge.rs's
+        // sharing_invite already spawns a background refresh that emits
+        // the same PinChanged signal itself once fs_stat_cache is actually
+        // fresh — emitting it here too would just repaint with the *stale*
+        // pre-refresh value, since that refresh (a live CLI round-trip)
+        // hasn't necessarily finished by the time this call returns.
         m_inviteEmail->clear();
         m_inviteMessage->clear();
     } catch (const rust::Error &error) {
@@ -282,7 +269,8 @@ void ShareDialog::removeSelectedMemberClicked()
     try {
         sharing_remove_member(m_remotePath.toStdString(), email.toStdString());
         QGuiApplication::restoreOverrideCursor();
-        notifyOverlayChanged(m_remotePath);
+        // See inviteClicked's comment on why there's no notifyOverlayChanged
+        // call here.
     } catch (const rust::Error &error) {
         QGuiApplication::restoreOverrideCursor();
         QMessageBox::warning(this, i18nd("kio_protondrive", "Sharing"), QString::fromUtf8(error.what()));
@@ -302,7 +290,8 @@ void ShareDialog::createOrUpdateLinkClicked()
         const FfiPublicLink link = sharing_set_link(
             m_remotePath.toStdString(), role.toStdString(), password.toStdString(), expiration.toStdString());
         QGuiApplication::restoreOverrideCursor();
-        notifyOverlayChanged(m_remotePath);
+        // See inviteClicked's comment on why there's no notifyOverlayChanged
+        // call here.
         m_hasPublicLink = true;
         m_linkUrl->setText(toQString(link.url));
         m_linkUrl->setVisible(true);
@@ -324,7 +313,8 @@ void ShareDialog::removeLinkClicked()
     try {
         sharing_remove_link(m_remotePath.toStdString());
         QGuiApplication::restoreOverrideCursor();
-        notifyOverlayChanged(m_remotePath);
+        // See inviteClicked's comment on why there's no notifyOverlayChanged
+        // call here.
         m_hasPublicLink = false;
         m_linkUrl->clear();
         m_linkUrl->setVisible(false);
