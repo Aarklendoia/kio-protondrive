@@ -498,13 +498,26 @@ fn lookup_shared(remote_path: &str) -> bool {
 /// called after every mutating `sharing_*` call below so [`lookup_shared`]
 /// (and any other `fs_stat_cache` reader) reflects the change immediately
 /// instead of only after the next unrelated browse/stat of the same path.
-/// Best-effort: a failure here just leaves the previous cached value in
-/// place a little longer, not worth surfacing from what's otherwise a
-/// successful sharing action.
+/// Mirrors `daemon::fs_refresh::refresh_all`'s own stat-refresh loop,
+/// including its `NotFound` handling: a sharing action racing a concurrent
+/// delete/move elsewhere shouldn't leave a stale (possibly `is_shared:
+/// true`) cache entry outliving the node itself. Any other error is
+/// best-effort, same stance as `refresh_all` — leaves the previous cached
+/// value in place a little longer rather than surfacing from what's
+/// otherwise a successful sharing action.
 fn refresh_stat_cache(path: &str) {
+    let Ok(cache) = open_cache() else {
+        return;
+    };
     let runner = RealCommandRunner;
-    if let (Ok(node), Ok(cache)) = (cli::stat_path(&runner, path), open_cache()) {
-        let _ = cache.store_stat(path, &node);
+    match cli::stat_path(&runner, path) {
+        Ok(node) => {
+            let _ = cache.store_stat(path, &node);
+        }
+        Err(cli::DriveError::NotFound(_)) => {
+            let _ = cache.invalidate_stat(path);
+        }
+        Err(_) => {}
     }
 }
 
