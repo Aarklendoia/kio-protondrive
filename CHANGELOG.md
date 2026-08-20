@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.8.0...v0.9.0) (2026-08-20)
+
+
+### Features
+
+* sharing and public link support ([#69](https://github.com/Aarklendoia/kio-protondrive/issues/69)) ([18657a6](https://github.com/Aarklendoia/kio-protondrive/commit/18657a6b57b7c2981e3dfe9f321779be8960a4f3))
+
 ## [0.8.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.7.0...v0.8.0) (2026-08-19)
 
 
