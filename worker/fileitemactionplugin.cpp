@@ -46,17 +46,26 @@ const QString trashPrefix = QStringLiteral("/trash/");
 const QString photosPrefix = QStringLiteral("/photos/");
 
 // A single selected item can be shared unless it's under /trash (sharing a
-// trashed item makes no sense) or is one of the fixed virtual root sections
+// trashed item makes no sense), is one of the fixed virtual root sections
 // themselves (protondriveworker.cpp's translatedSectionName's raw-name
 // set, e.g. "/my-files", "/photos" — not real nodes, one path depth level:
-// exactly one '/'). /photos/<name> items ARE shareable — confirmed live
-// that `sharing set-url`/`filesystem info` both resolve a /photos/<name>
-// path fine; the "undefined" response that first looked like a
-// photos-specific failure turned out to be `crate::cli::sharing_status`'s
-// own bug (see its doc comment), reproducible on plain /my-files items too.
+// exactly one '/'), or is a /photos/<category> filter folder (favorites,
+// screenshots, ... — see photoCategorySlugs()): synthetic, client-side-only
+// views (protondriveworker.cpp's splitPhotoPath/listPhotosCategory), not
+// real Drive nodes the CLI can resolve at all. /photos/<name> *items* ARE
+// shareable, and share the same one-path-depth-level shape as a category
+// folder, so the category slug itself has to be checked explicitly rather
+// than inferred from depth alone — confirmed live that `sharing
+// set-url`/`filesystem info` both resolve a real /photos/<name> path fine;
+// the "undefined" response that first looked like a photos-specific
+// failure turned out to be `crate::cli::sharing_status`'s own bug (see its
+// doc comment), reproducible on plain /my-files items too.
 bool isShareableItem(const QString &path)
 {
     if (path.startsWith(trashPrefix) || path == QLatin1String("/trash")) {
+        return false;
+    }
+    if (path.startsWith(photosPrefix) && photoCategorySlugs().contains(path.mid(photosPrefix.length()))) {
         return false;
     }
     return path.count(QLatin1Char('/')) > 1;
