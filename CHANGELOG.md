@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.9.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.9.0...v0.9.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* exclude /photos/&lt;category&gt; filter folders from the Share action ([#82](https://github.com/Aarklendoia/kio-protondrive/issues/82)) ([ed9947a](https://github.com/Aarklendoia/kio-protondrive/commit/ed9947a6e722bed4f72c24aba49af3ed9a82a9b3)), closes [#74](https://github.com/Aarklendoia/kio-protondrive/issues/74)
+* invalidate fs_stat_cache on NotFound in refresh_stat_cache ([#84](https://github.com/Aarklendoia/kio-protondrive/issues/84)) ([bbab8c5](https://github.com/Aarklendoia/kio-protondrive/commit/bbab8c5be3411b0613292468bfb133bdfb6f35dc)), closes [#76](https://github.com/Aarklendoia/kio-protondrive/issues/76)
+* preload an existing public link's role/expiration in ShareDialog ([#81](https://github.com/Aarklendoia/kio-protondrive/issues/81)) ([200af63](https://github.com/Aarklendoia/kio-protondrive/commit/200af630c219f2bc51c1ea020befbd5639061ae9)), closes [#73](https://github.com/Aarklendoia/kio-protondrive/issues/73)
+
+
+### Performance Improvements
+
+* batch the daemon's periodic overlay-refresh D-Bus notifications ([#83](https://github.com/Aarklendoia/kio-protondrive/issues/83)) ([747c241](https://github.com/Aarklendoia/kio-protondrive/commit/747c2414ab5cef2a6c4c4572e0257461170e3d82)), closes [#75](https://github.com/Aarklendoia/kio-protondrive/issues/75)
+* stop blocking the GUI thread on sharing actions' cache refresh ([#85](https://github.com/Aarklendoia/kio-protondrive/issues/85)) ([56625b1](https://github.com/Aarklendoia/kio-protondrive/commit/56625b144eee8b917b9ba34e0b6faa096ed2d61e)), closes [#77](https://github.com/Aarklendoia/kio-protondrive/issues/77)
+
+
+### Code Refactoring
+
+* factor ShareDialog's cursor/error boilerplate into tryOrWarn ([#87](https://github.com/Aarklendoia/kio-protondrive/issues/87)) ([2b71123](https://github.com/Aarklendoia/kio-protondrive/commit/2b711237dfe0a5dbf132b96a3210c690eebf70b6)), closes [#79](https://github.com/Aarklendoia/kio-protondrive/issues/79)
+* rename the PinChanged overlay signal to OverlayChanged ([#86](https://github.com/Aarklendoia/kio-protondrive/issues/86)) ([702d5e3](https://github.com/Aarklendoia/kio-protondrive/commit/702d5e3acbf53c25088baa5a3fb7d397910e9f6c)), closes [#78](https://github.com/Aarklendoia/kio-protondrive/issues/78)
+
 ## [0.9.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.8.0...v0.9.0) (2026-08-20)
 
 
