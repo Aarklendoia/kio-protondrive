@@ -57,9 +57,10 @@ override_dh_auto_test:
 	# Runs the Rust unit tests (core/ + daemon/), which need no KF6/Qt6
 	# runtime and no Proton Drive session (see core/src/cli.rs's
 	# CommandRunner mocking, reused by daemon/'s own tests the same way).
-	# There is no C++ test suite (worker/ is a thin, mostly-untested-by-design
-	# KIO glue layer — see the "Scope v1" notes in README.md).
 	cargo test --workspace --profile ci
+	# worker/tests/'s QTest suite (issue #90) — QTEST_GUILESS_MAIN, so no
+	# display/D-Bus session needed either.
+	dh_auto_test
 
 override_dh_auto_install:
 	dh_auto_install
