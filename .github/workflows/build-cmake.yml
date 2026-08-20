@@ -62,3 +62,8 @@ jobs:
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: Test
+        # worker/tests/'s QTest suite (issue #90) — QTEST_GUILESS_MAIN, so no
+        # display/D-Bus session needed inside this container.
+        run: ctest --test-dir build --output-on-failure

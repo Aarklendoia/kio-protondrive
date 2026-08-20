@@ -26,6 +26,7 @@ sudo apt-get install cmake extra-cmake-modules qt6-base-dev \
   libkf6kio-dev libkf6coreaddons-dev pkg-config build-essential
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
+ctest --test-dir build --output-on-failure  # includes worker/tests/'s QTest suite
 ```
 
 ## Contribution Process
@@ -43,7 +44,8 @@ git checkout -b fix/my-fix
 - Follow the code style (rustfmt)
 - Write tests for new logic in `core/` (see `core/src/cli.rs`'s
   `CommandRunner` mock for the pattern — never spawn the real `proton-drive`
-  CLI from a test)
+  CLI from a test), or in `worker/tests/` for pure-logic C++ (see
+  `worker/tests/tst_shareable.cpp` for the pattern — QTest, no live D-Bus/CLI)
 - Update the documentation
 
 ### 3. Test your code

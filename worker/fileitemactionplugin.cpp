@@ -18,6 +18,7 @@
 #include "rust/cxx.h"
 
 #include "photo_categories.h"
+#include "shareable.h"
 #include "sharedialog.h"
 #include "protondrive-core-cxxbridge/bridge.h"
 
@@ -44,32 +45,6 @@ bool isPinned(const QString &remotePath)
 // 9-entry table, which both files genuinely need kept in sync).
 const QString trashPrefix = QStringLiteral("/trash/");
 const QString photosPrefix = QStringLiteral("/photos/");
-
-// A single selected item can be shared unless it's under /trash (sharing a
-// trashed item makes no sense), is one of the fixed virtual root sections
-// themselves (protondriveworker.cpp's translatedSectionName's raw-name
-// set, e.g. "/my-files", "/photos" — not real nodes, one path depth level:
-// exactly one '/'), or is a /photos/<category> filter folder (favorites,
-// screenshots, ... — see photoCategorySlugs()): synthetic, client-side-only
-// views (protondriveworker.cpp's splitPhotoPath/listPhotosCategory), not
-// real Drive nodes the CLI can resolve at all. /photos/<name> *items* ARE
-// shareable, and share the same one-path-depth-level shape as a category
-// folder, so the category slug itself has to be checked explicitly rather
-// than inferred from depth alone — confirmed live that `sharing
-// set-url`/`filesystem info` both resolve a real /photos/<name> path fine;
-// the "undefined" response that first looked like a photos-specific
-// failure turned out to be `crate::cli::sharing_status`'s own bug (see its
-// doc comment), reproducible on plain /my-files items too.
-bool isShareableItem(const QString &path)
-{
-    if (path.startsWith(trashPrefix) || path == QLatin1String("/trash")) {
-        return false;
-    }
-    if (path.startsWith(photosPrefix) && photoCategorySlugs().contains(path.mid(photosPrefix.length()))) {
-        return false;
-    }
-    return path.count(QLatin1Char('/')) > 1;
-}
 
 // KAbstractFileItemActionPlugin loads into the host file manager's own
 // process (confirmed live: this plugin's pin/unpin actions already run
@@ -182,7 +157,7 @@ public:
 
         // A single-item selection that isn't a virtual root section or
         // under /trash gets a "Share" action opening ShareDialog (see
-        // isShareableItem above).
+        // isShareableItem in shareable.h).
         QString shareablePath;
         QString shareableName;
         if (items.size() == 1 && isShareableItem(paths.first())) {

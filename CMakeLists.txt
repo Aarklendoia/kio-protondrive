@@ -11,11 +11,14 @@ include(KDEInstallDirs)
 include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 include(ECMSetupVersion)
+include(ECMAddTests)
 include(FeatureSummary)
 
-find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core DBus)
+find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core DBus Test)
 find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS CoreAddons KIO I18n WidgetsAddons)
 find_package(Gettext REQUIRED)
+
+enable_testing()
 
 # Corrosion drives the actual `cargo build` of the core/ Rust crate and
 # generates the cxx bridge glue consumed by worker/. Two ways to obtain it:

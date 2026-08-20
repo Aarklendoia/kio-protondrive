@@ -59,3 +59,5 @@ target_link_libraries(protondrive_fileitemaction
 )
 
 set_target_properties(protondrive_fileitemaction PROPERTIES OUTPUT_NAME "protondrive_fileitemaction")
+
+add_subdirectory(tests)
