@@ -163,15 +163,28 @@ ShareDialog::ShareDialog(const QString &remotePath, const QString &displayName, 
     reloadStatus();
 }
 
-void ShareDialog::reloadStatus()
+bool ShareDialog::tryOrWarn(const std::function<void()> &action)
 {
     QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+    try {
+        action();
+        QGuiApplication::restoreOverrideCursor();
+        return true;
+    } catch (const rust::Error &error) {
+        QGuiApplication::restoreOverrideCursor();
+        QMessageBox::warning(this, i18nd("kio_protondrive", "Sharing"), QString::fromUtf8(error.what()));
+        return false;
+    }
+}
 
+void ShareDialog::reloadStatus()
+{
     m_memberList->clear();
     m_hasPublicLink = false;
     QString publicLinkUrl;
     quint64 publicLinkDownloads = 0;
-    try {
+
+    tryOrWarn([&]() {
         const FfiSharingStatus status = sharing_status(m_remotePath.toStdString());
         for (const FfiShareMember &member : status.members) {
             const QString email = toQString(member.email);
@@ -210,11 +223,10 @@ void ShareDialog::reloadStatus()
                 m_linkExpiration->setDate(expirationDate);
             }
         }
-    } catch (const rust::Error &error) {
-        QGuiApplication::restoreOverrideCursor();
-        QMessageBox::warning(this, i18nd("kio_protondrive", "Sharing"), QString::fromUtf8(error.what()));
-        QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-    }
+    });
+    // Unlike the other 4 handlers below, a failure here doesn't `return`
+    // early — the link section still needs to reflect m_hasPublicLink's
+    // (unchanged-on-failure) previous value either way.
 
     m_linkUrl->setText(publicLinkUrl);
     m_linkUrl->setVisible(m_hasPublicLink);
@@ -224,8 +236,6 @@ void ShareDialog::reloadStatus()
         m_hasPublicLink
             ? i18ndp("kio_protondrive", "Public link active — downloaded %1 time.", "Public link active — downloaded %1 times.", publicLinkDownloads)
             : i18nd("kio_protondrive", "No public link."));
-
-    QGuiApplication::restoreOverrideCursor();
 }
 
 void ShareDialog::inviteClicked()
@@ -237,24 +247,20 @@ void ShareDialog::inviteClicked()
     const QString role = m_inviteRole->currentData().toString();
     const QString message = m_inviteMessage->text();
 
-    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-    try {
-        sharing_invite(m_remotePath.toStdString(), email.toStdString(), role.toStdString(), message.toStdString());
-        QGuiApplication::restoreOverrideCursor();
-        // No notifyOverlayChanged call here on purpose: bridge.rs's
-        // sharing_invite already spawns a background refresh that emits
-        // the same OverlayChanged signal itself once fs_stat_cache is
-        // actually fresh — emitting it here too would just repaint with
-        // the *stale* pre-refresh value, since that refresh (a live CLI
-        // round-trip) hasn't necessarily finished by the time this call
-        // returns.
-        m_inviteEmail->clear();
-        m_inviteMessage->clear();
-    } catch (const rust::Error &error) {
-        QGuiApplication::restoreOverrideCursor();
-        QMessageBox::warning(this, i18nd("kio_protondrive", "Sharing"), QString::fromUtf8(error.what()));
+    if (!tryOrWarn([&]() {
+            sharing_invite(m_remotePath.toStdString(), email.toStdString(), role.toStdString(), message.toStdString());
+        })) {
         return;
     }
+    // No notifyOverlayChanged call here on purpose: bridge.rs's
+    // sharing_invite already spawns a background refresh that emits
+    // the same OverlayChanged signal itself once fs_stat_cache is
+    // actually fresh — emitting it here too would just repaint with
+    // the *stale* pre-refresh value, since that refresh (a live CLI
+    // round-trip) hasn't necessarily finished by the time this call
+    // returns.
+    m_inviteEmail->clear();
+    m_inviteMessage->clear();
     reloadStatus();
 }
 
@@ -266,17 +272,13 @@ void ShareDialog::removeSelectedMemberClicked()
     }
     const QString email = selected.first()->data(Qt::UserRole).toString();
 
-    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-    try {
-        sharing_remove_member(m_remotePath.toStdString(), email.toStdString());
-        QGuiApplication::restoreOverrideCursor();
-        // See inviteClicked's comment on why there's no notifyOverlayChanged
-        // call here.
-    } catch (const rust::Error &error) {
-        QGuiApplication::restoreOverrideCursor();
-        QMessageBox::warning(this, i18nd("kio_protondrive", "Sharing"), QString::fromUtf8(error.what()));
+    if (!tryOrWarn([&]() {
+            sharing_remove_member(m_remotePath.toStdString(), email.toStdString());
+        })) {
         return;
     }
+    // See inviteClicked's comment on why there's no notifyOverlayChanged
+    // call here.
     reloadStatus();
 }
 
@@ -286,46 +288,41 @@ void ShareDialog::createOrUpdateLinkClicked()
     const QString password = m_linkPassword->text();
     const QString expiration = m_linkHasExpiration->isChecked() ? m_linkExpiration->date().toString(Qt::ISODate) : QString();
 
-    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-    try {
-        const FfiPublicLink link = sharing_set_link(
-            m_remotePath.toStdString(), role.toStdString(), password.toStdString(), expiration.toStdString());
-        QGuiApplication::restoreOverrideCursor();
-        // See inviteClicked's comment on why there's no notifyOverlayChanged
-        // call here.
-        m_hasPublicLink = true;
-        m_linkUrl->setText(toQString(link.url));
-        m_linkUrl->setVisible(true);
-        m_copyLinkButton->setVisible(true);
-        m_removeLinkButton->setEnabled(true);
-        m_linkStatusLabel->setText(i18ndp("kio_protondrive",
-                                           "Public link active — downloaded %1 time.",
-                                           "Public link active — downloaded %1 times.",
-                                           link.downloads));
-    } catch (const rust::Error &error) {
-        QGuiApplication::restoreOverrideCursor();
-        QMessageBox::warning(this, i18nd("kio_protondrive", "Sharing"), QString::fromUtf8(error.what()));
+    FfiPublicLink link;
+    if (!tryOrWarn([&]() {
+            link = sharing_set_link(
+                m_remotePath.toStdString(), role.toStdString(), password.toStdString(), expiration.toStdString());
+        })) {
+        return;
     }
+    // See inviteClicked's comment on why there's no notifyOverlayChanged
+    // call here.
+    m_hasPublicLink = true;
+    m_linkUrl->setText(toQString(link.url));
+    m_linkUrl->setVisible(true);
+    m_copyLinkButton->setVisible(true);
+    m_removeLinkButton->setEnabled(true);
+    m_linkStatusLabel->setText(i18ndp("kio_protondrive",
+                                       "Public link active — downloaded %1 time.",
+                                       "Public link active — downloaded %1 times.",
+                                       link.downloads));
 }
 
 void ShareDialog::removeLinkClicked()
 {
-    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-    try {
-        sharing_remove_link(m_remotePath.toStdString());
-        QGuiApplication::restoreOverrideCursor();
-        // See inviteClicked's comment on why there's no notifyOverlayChanged
-        // call here.
-        m_hasPublicLink = false;
-        m_linkUrl->clear();
-        m_linkUrl->setVisible(false);
-        m_copyLinkButton->setVisible(false);
-        m_removeLinkButton->setEnabled(false);
-        m_linkStatusLabel->setText(i18nd("kio_protondrive", "No public link."));
-    } catch (const rust::Error &error) {
-        QGuiApplication::restoreOverrideCursor();
-        QMessageBox::warning(this, i18nd("kio_protondrive", "Sharing"), QString::fromUtf8(error.what()));
+    if (!tryOrWarn([&]() {
+            sharing_remove_link(m_remotePath.toStdString());
+        })) {
+        return;
     }
+    // See inviteClicked's comment on why there's no notifyOverlayChanged
+    // call here.
+    m_hasPublicLink = false;
+    m_linkUrl->clear();
+    m_linkUrl->setVisible(false);
+    m_copyLinkButton->setVisible(false);
+    m_removeLinkButton->setEnabled(false);
+    m_linkStatusLabel->setText(i18nd("kio_protondrive", "No public link."));
 }
 
 void ShareDialog::copyLinkClicked()
