@@ -531,20 +531,20 @@ fn refresh_stat_cache_async(path: String) {
     });
 }
 
-/// Broadcasts the same `org.kde.protondrive.OverlayIcon.PinChanged` D-Bus
-/// signal `daemon/src/control.rs`'s `notify_pin_changed` and
-/// `worker/protondriveworker.cpp`/`worker/sharedialog.cpp`'s own
-/// `notifyOverlayChanged` already send — duplicated here (this crate has
-/// no Qt dependency to call into those instead) rather than shared across
-/// the Rust/C++ boundary, same reasoning those two already duplicate it
-/// from each other. Best-effort: no session bus (e.g. inside a container)
-/// just means the badge lags until the next natural refresh.
+/// Broadcasts the same `org.kde.protondrive.OverlayIcon.OverlayChanged`
+/// D-Bus signal `daemon/src/control.rs`'s `notify_overlay_changed` and
+/// `worker/protondriveworker.cpp`'s own `notifyOverlayChanged` already
+/// send — duplicated here (this crate has no Qt dependency to call into
+/// those instead) rather than shared across the Rust/C++ boundary, same
+/// reasoning those two already duplicate it from each other. Best-effort:
+/// no session bus (e.g. inside a container) just means the badge lags
+/// until the next natural refresh.
 fn notify_overlay_changed(path: &str) {
     let _ = std::process::Command::new("dbus-send")
         .arg("--session")
         .arg("--type=signal")
         .arg("/")
-        .arg("org.kde.protondrive.OverlayIcon.PinChanged")
+        .arg("org.kde.protondrive.OverlayIcon.OverlayChanged")
         .arg(format!("string:{path}"))
         .status();
 }

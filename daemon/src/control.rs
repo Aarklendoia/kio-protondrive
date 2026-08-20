@@ -131,7 +131,7 @@ fn route_pin(req: &str) -> String {
     );
     match result {
         Ok(local) => {
-            notify_pin_changed(&path);
+            notify_overlay_changed(&path);
             format!(
                 r#"{{"ok":true,"local_path":"{}"}}"#,
                 json_escape(&local.to_string_lossy())
@@ -159,7 +159,7 @@ fn route_unpin(req: &str) -> String {
     };
     match cache.unpin(&path, force_param(req)) {
         Ok(()) => {
-            notify_pin_changed(&path);
+            notify_overlay_changed(&path);
             r#"{"ok":true}"#.to_string()
         }
         Err(e) => format!(
@@ -176,11 +176,12 @@ fn route_unpin(req: &str) -> String {
 /// none of pin/unpin (this daemon's own control server), `fs_refresh`'s
 /// periodic re-stat, or a remote-side change picked up by either of those
 /// happens through any KIO job Dolphin itself initiated, so nothing would
-/// otherwise tell it anything changed. Despite the pin-specific name, also
-/// reused for the local-cache badge (#60) and the sharing badge (#70) —
-/// same "an overlay-relevant state changed" signal either way, see
-/// `worker/protondriveworker.cpp`'s own `notifyOverlayChanged` for the
-/// equivalent call from the worker side of this project.
+/// otherwise tell it anything changed. Originally pin-specific, renamed
+/// (#78) once it was also reused for the local-cache badge (#60) and the
+/// sharing badge (#70) — same "an overlay-relevant state changed" signal
+/// either way, see `worker/protondriveworker.cpp`'s own
+/// `notifyOverlayChanged` for the equivalent call from the worker side of
+/// this project.
 ///
 /// Deliberately *not* `org.kde.KDirNotify.FilesChanged` (an earlier version
 /// of this used that instead): confirmed live that it does make Dolphin
@@ -195,12 +196,12 @@ fn route_unpin(req: &str) -> String {
 /// the wizard's `pass` setup, ...) — no session bus (e.g. inside a
 /// container) just means the icon lags until the next natural refresh, not
 /// a failure worth surfacing.
-pub(crate) fn notify_pin_changed(remote_path: &str) {
+pub(crate) fn notify_overlay_changed(remote_path: &str) {
     let result = Command::new("dbus-send")
         .arg("--session")
         .arg("--type=signal")
         .arg("/")
-        .arg("org.kde.protondrive.OverlayIcon.PinChanged")
+        .arg("org.kde.protondrive.OverlayIcon.OverlayChanged")
         .arg(format!("string:{remote_path}"))
         .status();
     if let Err(err) = result {
@@ -215,13 +216,13 @@ pub(crate) fn dbus_string_array(values: &[String]) -> String {
     format!("array:{}", quoted.join(","))
 }
 
-/// Batched counterpart to [`notify_pin_changed`], for callers that need to
-/// broadcast many paths at once (currently only `fs_refresh`'s periodic
+/// Batched counterpart to [`notify_overlay_changed`], for callers that need
+/// to broadcast many paths at once (currently only `fs_refresh`'s periodic
 /// sweep) — one `dbus-send` process for the whole batch instead of one per
 /// path, the same reasoning `notify_files_changed` already applies to
 /// `FilesChanged`. A *separate* signal (`PathsChanged`, not an overload of
-/// `PinChanged`) rather than changing `PinChanged`'s own argument type,
-/// since its many low-volume single-path callers (pin/unpin, each
+/// `OverlayChanged`) rather than changing `OverlayChanged`'s own argument
+/// type, since its many low-volume single-path callers (pin/unpin, each
 /// `ShareDialog` action) have no batch to build and shouldn't need to wrap
 /// one path in a list just to keep emitting it.
 pub(crate) fn notify_paths_changed(remote_paths: &[String]) {

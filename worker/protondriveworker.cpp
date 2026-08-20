@@ -78,7 +78,7 @@ QString toQString(const rust::String &value)
 // Tells protondrive_overlayicon.so (see overlayplugin.cpp) that
 // remotePath's locally-available/pinned status may have changed, so it
 // repaints just that item's badge instead of waiting for the view's next
-// unrelated refresh. Same signal daemon/src/control.rs's notify_pin_changed
+// unrelated refresh. Same signal daemon/src/control.rs's notify_overlay_changed
 // already sends after a pin/unpin — reused here (issue #60) for "this path
 // just got opportunistically cached" too, since both are "an overlay-
 // relevant state changed" from the plugin's point of view. Best-effort:
@@ -86,7 +86,7 @@ QString toQString(const rust::String &value)
 // until the next natural refresh, not a failure worth surfacing.
 void notifyOverlayChanged(const QString &remotePath)
 {
-    QDBusMessage message = QDBusMessage::createSignal(QStringLiteral("/"), QStringLiteral("org.kde.protondrive.OverlayIcon"), QStringLiteral("PinChanged"));
+    QDBusMessage message = QDBusMessage::createSignal(QStringLiteral("/"), QStringLiteral("org.kde.protondrive.OverlayIcon"), QStringLiteral("OverlayChanged"));
     message << remotePath;
     QDBusConnection::sessionBus().send(message);
 }

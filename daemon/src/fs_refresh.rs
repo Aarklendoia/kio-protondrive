@@ -13,13 +13,13 @@
 //! After a refresh, fires `org.kde.KDirNotify.FilesChanged` for the
 //! refreshed path(s) so any Dolphin window with that folder open re-renders
 //! — confirmed live elsewhere in this project (see `control.rs`'s
-//! `notify_pin_changed` doc comment) that this specific signal does make
+//! `notify_overlay_changed` doc comment) that this specific signal does make
 //! Dolphin visibly re-stat/re-list, unlike the untested `FilesAdded` — and,
 //! separately, a single batched `notify_paths_changed` call (`control.rs`'s
-//! `notify_pin_changed`, despite the name, is a generic "an overlay-
-//! relevant field changed" broadcast, see its own doc comment) for every
-//! refreshed path at once, since `FilesChanged` alone is confirmed *not* to
-//! repaint `worker/overlayplugin.cpp`'s pin/local-cache/sharing badges —
+//! own "an overlay-relevant field changed" broadcast, see its doc comment)
+//! for every refreshed path at once, since `FilesChanged` alone is
+//! confirmed *not* to repaint `worker/overlayplugin.cpp`'s
+//! pin/local-cache/sharing badges —
 //! without this, a sharing change made outside this project (e.g. Proton's
 //! web app) would only reach the "shared" badge after this sweep updated
 //! `fs_stat_cache`, never visibly, until some *other* unrelated overlay
