@@ -243,10 +243,11 @@ void ShareDialog::inviteClicked()
         QGuiApplication::restoreOverrideCursor();
         // No notifyOverlayChanged call here on purpose: bridge.rs's
         // sharing_invite already spawns a background refresh that emits
-        // the same PinChanged signal itself once fs_stat_cache is actually
-        // fresh — emitting it here too would just repaint with the *stale*
-        // pre-refresh value, since that refresh (a live CLI round-trip)
-        // hasn't necessarily finished by the time this call returns.
+        // the same OverlayChanged signal itself once fs_stat_cache is
+        // actually fresh — emitting it here too would just repaint with
+        // the *stale* pre-refresh value, since that refresh (a live CLI
+        // round-trip) hasn't necessarily finished by the time this call
+        // returns.
         m_inviteEmail->clear();
         m_inviteMessage->clear();
     } catch (const rust::Error &error) {

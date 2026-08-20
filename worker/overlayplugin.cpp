@@ -50,7 +50,7 @@ QStringList overlaysFor(const QString &remotePath)
     // ShareDialog itself takes. Cache-only lookup (see lookup_shared's own
     // doc comment for why): populated by ordinary browsing, and refreshed
     // immediately after any ShareDialog action via bridge.rs's
-    // refresh_stat_cache + the notifyOverlayChanged signal below.
+    // refresh_stat_cache_async + its own OverlayChanged broadcast.
     if (lookup_shared(path)) {
         overlays << QStringLiteral("emblem-shared");
     }
@@ -75,11 +75,10 @@ QStringList overlaysFor(const QString &remotePath)
 // different process instance than whichever one is running this plugin.
 // Either way nothing tells *this* plugin instance anything changed without
 // the D-Bus listener below: both the daemon and the worker broadcast
-// org.kde.protondrive.OverlayIcon.PinChanged after a relevant change (a
-// small, purpose-built signal, despite the pin-specific name — not
-// KDirNotify::FilesChanged, which also makes Dolphin re-stat/re-list the
-// whole item, visibly slower and no more effective at actually updating the
-// overlay).
+// org.kde.protondrive.OverlayIcon.OverlayChanged after a relevant change (a
+// small, purpose-built signal — not KDirNotify::FilesChanged, which also
+// makes Dolphin re-stat/re-list the whole item, visibly slower and no more
+// effective at actually updating the overlay).
 class ProtonDriveOverlayPlugin : public KOverlayIconPlugin
 {
     Q_PLUGIN_METADATA(IID "org.kde.overlayicon.protondrive" FILE "protondrive-overlay.json")
@@ -92,12 +91,12 @@ public:
             QString(),
             QStringLiteral("/"),
             QStringLiteral("org.kde.protondrive.OverlayIcon"),
-            QStringLiteral("PinChanged"),
+            QStringLiteral("OverlayChanged"),
             this,
-            SLOT(onPinChanged(QString)));
+            SLOT(onOverlayChanged(QString)));
         // Batched counterpart (daemon/src/control.rs's notify_paths_changed,
         // used by fs_refresh's periodic sweep) — one D-Bus message for many
-        // paths at once instead of one PinChanged per path, which would
+        // paths at once instead of one OverlayChanged per path, which would
         // mean hundreds of individual signals (and dbus-send subprocesses
         // upstream) for a large cache on every 15-minute refresh.
         QDBusConnection::sessionBus().connect(
@@ -123,21 +122,21 @@ private Q_SLOTS:
     // under (see daemon/src/control.rs's notify_files_changed doc comment
     // on the `protondrive:/...` vs `protondrive:///...` ambiguity; the same
     // uncertainty applies here in the push direction).
-    void onPinChanged(const QString &remotePath)
+    void onOverlayChanged(const QString &remotePath)
     {
         const QStringList overlays = overlaysFor(remotePath);
         Q_EMIT overlaysChanged(QUrl(QStringLiteral("protondrive:") + remotePath), overlays);
         Q_EMIT overlaysChanged(QUrl(QStringLiteral("protondrive://") + remotePath), overlays);
     }
 
-    // Same per-path repaint as onPinChanged above, just reached via one
+    // Same per-path repaint as onOverlayChanged above, just reached via one
     // batched D-Bus message instead of many individual ones — the D-Bus
     // transmission is batched, not the actual repaint work, which is cheap
     // (in-process, no subprocess) per path either way.
     void onPathsChanged(const QStringList &remotePaths)
     {
         for (const QString &remotePath : remotePaths) {
-            onPinChanged(remotePath);
+            onOverlayChanged(remotePath);
         }
     }
 };
