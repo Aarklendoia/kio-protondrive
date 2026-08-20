@@ -621,6 +621,14 @@ pub fn sharing_remove_member(
 /// Creates or updates the node's public link. `password`/`expiration` are
 /// forwarded only when non-empty — the CLI treats their absence as "no
 /// password"/"no expiration".
+///
+/// Security note: `--password` has no choice but to go on `password`'s own
+/// command line (checked live — `sharing set-url --help` offers no stdin/
+/// env-var alternative), so it's readable by any other local user via `ps`
+/// or `/proc/<pid>/cmdline` for this call's short lifetime. Not something
+/// this project can fix on its own side; worth an upstream feature request
+/// against the `proton-drive` CLI for a `--password-stdin`-style flag
+/// (see #72).
 pub fn sharing_set_link(
     runner: &dyn CommandRunner,
     path: &str,
