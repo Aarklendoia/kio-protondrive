@@ -7,6 +7,7 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDateEdit>
+#include <QDateTime>
 #include <QDialogButtonBox>
 #include <QGroupBox>
 #include <QGuiApplication>
@@ -210,6 +211,22 @@ void ShareDialog::reloadStatus()
         if (status.has_public_link) {
             publicLinkUrl = toQString(status.public_link_url);
             publicLinkDownloads = status.public_link_downloads;
+            // Preload the existing link's role/expiration into the form —
+            // without this, "Create/Update Link" always sent the form's
+            // *defaults* (viewer, no expiration) on an item whose link
+            // already had different settings, silently downgrading it the
+            // moment the dialog was reopened for an unrelated change (e.g.
+            // just to add a password).
+            const int roleIndex = m_linkRole->findData(toQString(status.public_link_role));
+            if (roleIndex >= 0) {
+                m_linkRole->setCurrentIndex(roleIndex);
+            }
+            const QString expiration = toQString(status.public_link_expiration);
+            const QDate expirationDate = QDateTime::fromString(expiration, Qt::ISODate).date();
+            m_linkHasExpiration->setChecked(expirationDate.isValid());
+            if (expirationDate.isValid()) {
+                m_linkExpiration->setDate(expirationDate);
+            }
         }
     } catch (const rust::Error &error) {
         QGuiApplication::restoreOverrideCursor();
