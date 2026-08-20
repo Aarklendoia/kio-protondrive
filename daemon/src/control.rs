@@ -170,12 +170,17 @@ fn route_unpin(req: &str) -> String {
 }
 
 /// Tells `protondrive_overlayicon.so` (see `worker/overlayplugin.cpp`) that
-/// `remote_path`'s pin status changed, so it can repaint just that item's
-/// checkmark — without this, the icon only updates on the view's next
-/// unrelated refresh (F5, navigating away and back), since pin/unpin
-/// happens through this daemon's own control server, entirely outside any
-/// KIO job Dolphin initiated, so nothing would otherwise tell it anything
-/// changed.
+/// one of `remote_path`'s overlay-relevant fields changed, so it can
+/// repaint just that item's badge — without this, an icon only updates on
+/// the view's next unrelated refresh (F5, navigating away and back), since
+/// none of pin/unpin (this daemon's own control server), `fs_refresh`'s
+/// periodic re-stat, or a remote-side change picked up by either of those
+/// happens through any KIO job Dolphin itself initiated, so nothing would
+/// otherwise tell it anything changed. Despite the pin-specific name, also
+/// reused for the local-cache badge (#60) and the sharing badge (#70) —
+/// same "an overlay-relevant state changed" signal either way, see
+/// `worker/protondriveworker.cpp`'s own `notifyOverlayChanged` for the
+/// equivalent call from the worker side of this project.
 ///
 /// Deliberately *not* `org.kde.KDirNotify.FilesChanged` (an earlier version
 /// of this used that instead): confirmed live that it does make Dolphin
@@ -190,7 +195,7 @@ fn route_unpin(req: &str) -> String {
 /// the wizard's `pass` setup, ...) — no session bus (e.g. inside a
 /// container) just means the icon lags until the next natural refresh, not
 /// a failure worth surfacing.
-fn notify_pin_changed(remote_path: &str) {
+pub(crate) fn notify_pin_changed(remote_path: &str) {
     let result = Command::new("dbus-send")
         .arg("--session")
         .arg("--type=signal")
