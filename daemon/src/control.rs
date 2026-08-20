@@ -208,6 +208,38 @@ pub(crate) fn notify_pin_changed(remote_path: &str) {
     }
 }
 
+/// `dbus-send`'s syntax for a `QStringList` argument — shared by this
+/// module's own batched broadcast below and `fs_refresh`'s `FilesChanged`.
+pub(crate) fn dbus_string_array(values: &[String]) -> String {
+    let quoted: Vec<String> = values.iter().map(|v| format!("string:\"{v}\"")).collect();
+    format!("array:{}", quoted.join(","))
+}
+
+/// Batched counterpart to [`notify_pin_changed`], for callers that need to
+/// broadcast many paths at once (currently only `fs_refresh`'s periodic
+/// sweep) — one `dbus-send` process for the whole batch instead of one per
+/// path, the same reasoning `notify_files_changed` already applies to
+/// `FilesChanged`. A *separate* signal (`PathsChanged`, not an overload of
+/// `PinChanged`) rather than changing `PinChanged`'s own argument type,
+/// since its many low-volume single-path callers (pin/unpin, each
+/// `ShareDialog` action) have no batch to build and shouldn't need to wrap
+/// one path in a list just to keep emitting it.
+pub(crate) fn notify_paths_changed(remote_paths: &[String]) {
+    if remote_paths.is_empty() {
+        return;
+    }
+    let result = Command::new("dbus-send")
+        .arg("--session")
+        .arg("--type=signal")
+        .arg("/")
+        .arg("org.kde.protondrive.OverlayIcon.PathsChanged")
+        .arg(dbus_string_array(remote_paths))
+        .status();
+    if let Err(err) = result {
+        log::debug!("could not notify the overlay icon plugin (dbus-send missing?): {err}");
+    }
+}
+
 /// `kio-protondrive-daemon pin <url>` / `unpin <url>` client mode — what
 /// the Dolphin ServiceMenu action (see `daemon/kio-protondrive-pin.desktop`)
 /// actually invokes. `url` is the raw `protondrive:/...` URL KIO hands the

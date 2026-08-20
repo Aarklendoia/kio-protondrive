@@ -15,10 +15,11 @@
 //! — confirmed live elsewhere in this project (see `control.rs`'s
 //! `notify_pin_changed` doc comment) that this specific signal does make
 //! Dolphin visibly re-stat/re-list, unlike the untested `FilesAdded` — and,
-//! separately, `notify_pin_changed` itself (despite the name, a generic
-//! "an overlay-relevant field changed" broadcast, see its own doc comment)
-//! for each refreshed path, since `FilesChanged` alone is confirmed *not*
-//! to repaint `worker/overlayplugin.cpp`'s pin/local-cache/sharing badges —
+//! separately, a single batched `notify_paths_changed` call (`control.rs`'s
+//! `notify_pin_changed`, despite the name, is a generic "an overlay-
+//! relevant field changed" broadcast, see its own doc comment) for every
+//! refreshed path at once, since `FilesChanged` alone is confirmed *not* to
+//! repaint `worker/overlayplugin.cpp`'s pin/local-cache/sharing badges —
 //! without this, a sharing change made outside this project (e.g. Proton's
 //! web app) would only reach the "shared" badge after this sweep updated
 //! `fs_stat_cache`, never visibly, until some *other* unrelated overlay
@@ -27,22 +28,17 @@
 //! no session bus (e.g. inside a container) just means the view goes stale
 //! until the next natural refresh, not a failure worth surfacing.
 
+use std::collections::BTreeSet;
 use std::process::Command;
 
 use protondrive_core::cache::Cache;
 use protondrive_core::cli::{self, CommandRunner, DriveError};
 use protondrive_core::entry::ListItem;
 
-use crate::control::notify_pin_changed;
+use crate::control::{dbus_string_array, notify_paths_changed};
 
 fn drive_url(path: &str) -> String {
     format!("protondrive:{path}")
-}
-
-/// `dbus-send`'s syntax for a `QStringList` argument.
-fn dbus_string_array(values: &[String]) -> String {
-    let quoted: Vec<String> = values.iter().map(|v| format!("string:\"{v}\"")).collect();
-    format!("array:{}", quoted.join(","))
 }
 
 fn notify_files_changed(urls: &[String]) {
@@ -66,7 +62,19 @@ fn notify_files_changed(urls: &[String]) {
 /// gone, no point keeping a stale record around for the next sweep to redo).
 /// Any other error (auth, timeout, transient CLI hiccup) leaves that entry
 /// as-is for the next cycle rather than losing it over a blip.
+///
+/// Every genuinely refreshed path (from either loop below) is collected
+/// into `changed_paths` and broadcast once, deduplicated, via a single
+/// batched `notify_paths_changed` call at the end — not per-path inline —
+/// since `store_listing` already primes `fs_stat_cache` for every child of
+/// a listing (see its own doc comment), so most children of a cached
+/// folder show up in *both* loops on the same sweep, and a large cache
+/// (hundreds of paths) would otherwise mean hundreds of individual
+/// `dbus-send` subprocess spawns per sweep on this daemon's single main
+/// loop.
 pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
+    let mut changed_paths: BTreeSet<String> = BTreeSet::new();
+
     let stat_paths = match cache.all_cached_stat_paths() {
         Ok(paths) => paths,
         Err(err) => {
@@ -79,7 +87,7 @@ pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
             Ok(node) => {
                 let _ = cache.store_stat(&path, &node);
                 notify_files_changed(&[drive_url(&path)]);
-                notify_pin_changed(&path);
+                changed_paths.insert(path);
             }
             Err(DriveError::NotFound(_)) => {
                 let _ = cache.invalidate_stat(&path);
@@ -114,9 +122,7 @@ pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
                 let urls: Vec<String> = child_paths.iter().map(|p| drive_url(p)).collect();
                 let _ = cache.store_listing(&parent, &nodes);
                 notify_files_changed(&urls);
-                for child_path in &child_paths {
-                    notify_pin_changed(child_path);
-                }
+                changed_paths.extend(child_paths);
             }
             Err(DriveError::NotFound(_)) => {
                 let _ = cache.invalidate_listing(&parent);
@@ -128,6 +134,8 @@ pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
             }
         }
     }
+
+    notify_paths_changed(&changed_paths.into_iter().collect::<Vec<_>>());
 }
 
 #[cfg(test)]

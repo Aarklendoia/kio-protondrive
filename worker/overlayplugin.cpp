@@ -95,6 +95,18 @@ public:
             QStringLiteral("PinChanged"),
             this,
             SLOT(onPinChanged(QString)));
+        // Batched counterpart (daemon/src/control.rs's notify_paths_changed,
+        // used by fs_refresh's periodic sweep) — one D-Bus message for many
+        // paths at once instead of one PinChanged per path, which would
+        // mean hundreds of individual signals (and dbus-send subprocesses
+        // upstream) for a large cache on every 15-minute refresh.
+        QDBusConnection::sessionBus().connect(
+            QString(),
+            QStringLiteral("/"),
+            QStringLiteral("org.kde.protondrive.OverlayIcon"),
+            QStringLiteral("PathsChanged"),
+            this,
+            SLOT(onPathsChanged(QStringList)));
     }
 
     QStringList getOverlays(const QUrl &url) override
@@ -116,6 +128,17 @@ private Q_SLOTS:
         const QStringList overlays = overlaysFor(remotePath);
         Q_EMIT overlaysChanged(QUrl(QStringLiteral("protondrive:") + remotePath), overlays);
         Q_EMIT overlaysChanged(QUrl(QStringLiteral("protondrive://") + remotePath), overlays);
+    }
+
+    // Same per-path repaint as onPinChanged above, just reached via one
+    // batched D-Bus message instead of many individual ones — the D-Bus
+    // transmission is batched, not the actual repaint work, which is cheap
+    // (in-process, no subprocess) per path either way.
+    void onPathsChanged(const QStringList &remotePaths)
+    {
+        for (const QString &remotePath : remotePaths) {
+            onPinChanged(remotePath);
+        }
     }
 };
 
