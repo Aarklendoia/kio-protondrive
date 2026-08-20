@@ -45,6 +45,7 @@ set_target_properties(protondrive_overlayicon PROPERTIES OUTPUT_NAME "protondriv
 kcoreaddons_add_plugin(protondrive_fileitemaction
     SOURCES
         fileitemactionplugin.cpp
+        sharedialog.cpp
     INSTALL_NAMESPACE "kf6/kfileitemaction"
 )
 
@@ -54,6 +55,7 @@ target_link_libraries(protondrive_fileitemaction
         KF6::KIOWidgets
         KF6::I18n
         KF6::WidgetsAddons
+        Qt6::DBus
         protondrive-core-cxxbridge
 )
 

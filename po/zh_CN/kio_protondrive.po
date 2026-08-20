@@ -165,3 +165,119 @@ msgstr "筛选照片"
 #: worker/fileitemactionplugin.cpp:0
 msgid "All Photos"
 msgstr "所有照片"
+
+#. Context-menu action (KAbstractFileItemActionPlugin) opening the sharing dialog for a single selected item.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Share via Proton Drive"
+msgstr "通过 Proton Drive 共享"
+
+#. ShareDialog window title; %1 is the item's display name.
+#: worker/sharedialog.cpp:0
+msgid "Share \"%1\""
+msgstr "共享“%1”"
+
+#. ShareDialog: heading for the list of current members/pending invitations.
+#: worker/sharedialog.cpp:0
+msgid "People with access"
+msgstr "有权访问的人员"
+
+#. ShareDialog: button removing the selected member/invitation.
+#: worker/sharedialog.cpp:0
+msgid "Remove Access"
+msgstr "移除访问权限"
+
+#. Sharing role: read-only access.
+#: worker/sharedialog.cpp:0
+msgid "Viewer"
+msgstr "查看者"
+
+#. Sharing role: can edit.
+#: worker/sharedialog.cpp:0
+msgid "Editor"
+msgstr "编辑者"
+
+#. Sharing role: full control (invite role only, not offered for public links).
+#: worker/sharedialog.cpp:0
+msgid "Admin"
+msgstr "管理员"
+
+#. ShareDialog: placeholder text for the invite email field.
+#: worker/sharedialog.cpp:0
+msgid "Email address"
+msgstr "电子邮件地址"
+
+#. ShareDialog: button sending an invitation.
+#: worker/sharedialog.cpp:0
+msgid "Invite"
+msgstr "邀请"
+
+#. ShareDialog: placeholder text for the optional invitation message field.
+#: worker/sharedialog.cpp:0
+msgid "Message (optional)"
+msgstr "留言（可选）"
+
+#. ShareDialog: suffix appended after a member's email/role when their invitation hasn't been accepted yet.
+#: worker/sharedialog.cpp:0
+msgid "— pending"
+msgstr "— 待处理"
+
+#. ShareDialog: read-only status line (editorsCanShare = true, no CLI setter exists for it).
+#: worker/sharedialog.cpp:0
+msgid "Editors can invite others to this item."
+msgstr "编辑者可以邀请其他人访问此项目。"
+
+#. ShareDialog: read-only status line (editorsCanShare = false).
+#: worker/sharedialog.cpp:0
+msgid "Only you can invite others to this item."
+msgstr "只有您可以邀请其他人访问此项目。"
+
+#. ShareDialog: heading for the public-link section.
+#: worker/sharedialog.cpp:0
+msgid "Public link"
+msgstr "公开链接"
+
+#. ShareDialog: button copying the public link URL to the clipboard.
+#: worker/sharedialog.cpp:0
+msgid "Copy"
+msgstr "复制"
+
+#. ShareDialog: placeholder text for the optional public-link password field.
+#: worker/sharedialog.cpp:0
+msgid "Password (optional)"
+msgstr "密码（可选）"
+
+#. ShareDialog: label next to the public-link expiration date checkbox/picker.
+#: worker/sharedialog.cpp:0
+msgid "Expires on:"
+msgstr "到期日："
+
+#. ShareDialog: button creating a new public link or updating the existing one's settings.
+#: worker/sharedialog.cpp:0
+msgid "Create/Update Link"
+msgstr "创建/更新链接"
+
+#. ShareDialog: button removing the public link.
+#: worker/sharedialog.cpp:0
+msgid "Remove Link"
+msgstr "移除链接"
+
+#. ShareDialog: status text shown when stat's isSharedByUrl is true but the URL itself isn't known yet (sharing status doesn't carry it).
+#: worker/sharedialog.cpp:0
+msgid "A public link is currently active. Use \"Create/Update Link\" to view or change it."
+msgstr "当前有一个公开链接处于活动状态。使用“创建/更新链接”查看或更改它。"
+
+#. ShareDialog: status text shown when the item has no public link.
+#: worker/sharedialog.cpp:0
+msgid "No public link."
+msgstr "没有公开链接。"
+
+#. ShareDialog: status text shown right after creating/updating a public link, or when reopening the dialog on an item that already has one — %1 is how many times it has been used.
+#: worker/sharedialog.cpp:0
+msgid "Public link active — downloaded %1 time."
+msgid_plural "Public link active — downloaded %1 times."
+msgstr[0] "公开链接已激活 — 已下载 %1 次。"
+
+#. Message box title for sharing errors (QMessageBox::warning).
+#: worker/sharedialog.cpp:0
+msgid "Sharing"
+msgstr "共享"

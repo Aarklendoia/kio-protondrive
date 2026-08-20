@@ -14,7 +14,15 @@
 //! refreshed path(s) so any Dolphin window with that folder open re-renders
 //! — confirmed live elsewhere in this project (see `control.rs`'s
 //! `notify_pin_changed` doc comment) that this specific signal does make
-//! Dolphin visibly re-stat/re-list, unlike the untested `FilesAdded`.
+//! Dolphin visibly re-stat/re-list, unlike the untested `FilesAdded` — and,
+//! separately, `notify_pin_changed` itself (despite the name, a generic
+//! "an overlay-relevant field changed" broadcast, see its own doc comment)
+//! for each refreshed path, since `FilesChanged` alone is confirmed *not*
+//! to repaint `worker/overlayplugin.cpp`'s pin/local-cache/sharing badges —
+//! without this, a sharing change made outside this project (e.g. Proton's
+//! web app) would only reach the "shared" badge after this sweep updated
+//! `fs_stat_cache`, never visibly, until some *other* unrelated overlay
+//! event happened to repaint the same icon.
 //! Best-effort, same stance as every other side-channel notification here:
 //! no session bus (e.g. inside a container) just means the view goes stale
 //! until the next natural refresh, not a failure worth surfacing.
@@ -24,6 +32,8 @@ use std::process::Command;
 use protondrive_core::cache::Cache;
 use protondrive_core::cli::{self, CommandRunner, DriveError};
 use protondrive_core::entry::ListItem;
+
+use crate::control::notify_pin_changed;
 
 fn drive_url(path: &str) -> String {
     format!("protondrive:{path}")
@@ -69,6 +79,7 @@ pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
             Ok(node) => {
                 let _ = cache.store_stat(&path, &node);
                 notify_files_changed(&[drive_url(&path)]);
+                notify_pin_changed(&path);
             }
             Err(DriveError::NotFound(_)) => {
                 let _ = cache.invalidate_stat(&path);
@@ -96,18 +107,16 @@ pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
                         ListItem::Section(_) => None,
                     })
                     .collect();
-                let urls: Vec<String> = nodes
+                let child_paths: Vec<String> = nodes
                     .iter()
-                    .map(|n| {
-                        drive_url(&format!(
-                            "{}/{}",
-                            parent.trim_end_matches('/'),
-                            n.display_name()
-                        ))
-                    })
+                    .map(|n| format!("{}/{}", parent.trim_end_matches('/'), n.display_name()))
                     .collect();
+                let urls: Vec<String> = child_paths.iter().map(|p| drive_url(p)).collect();
                 let _ = cache.store_listing(&parent, &nodes);
                 notify_files_changed(&urls);
+                for child_path in &child_paths {
+                    notify_pin_changed(child_path);
+                }
             }
             Err(DriveError::NotFound(_)) => {
                 let _ = cache.invalidate_listing(&parent);
@@ -188,6 +197,7 @@ mod tests {
             creation_time: "2026-01-01T00:00:00.000Z".to_string(),
             modification_time: "2026-01-01T00:00:00.000Z".to_string(),
             is_shared: false,
+            is_shared_by_url: false,
             photo: None,
         }
     }

@@ -165,3 +165,121 @@ msgstr "Фильтр фото"
 #: worker/fileitemactionplugin.cpp:0
 msgid "All Photos"
 msgstr "Все фото"
+
+#. Context-menu action (KAbstractFileItemActionPlugin) opening the sharing dialog for a single selected item.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Share via Proton Drive"
+msgstr "Поделиться через Proton Drive"
+
+#. ShareDialog window title; %1 is the item's display name.
+#: worker/sharedialog.cpp:0
+msgid "Share \"%1\""
+msgstr "Поделиться «%1»"
+
+#. ShareDialog: heading for the list of current members/pending invitations.
+#: worker/sharedialog.cpp:0
+msgid "People with access"
+msgstr "Пользователи с доступом"
+
+#. ShareDialog: button removing the selected member/invitation.
+#: worker/sharedialog.cpp:0
+msgid "Remove Access"
+msgstr "Удалить доступ"
+
+#. Sharing role: read-only access.
+#: worker/sharedialog.cpp:0
+msgid "Viewer"
+msgstr "Читатель"
+
+#. Sharing role: can edit.
+#: worker/sharedialog.cpp:0
+msgid "Editor"
+msgstr "Редактор"
+
+#. Sharing role: full control (invite role only, not offered for public links).
+#: worker/sharedialog.cpp:0
+msgid "Admin"
+msgstr "Администратор"
+
+#. ShareDialog: placeholder text for the invite email field.
+#: worker/sharedialog.cpp:0
+msgid "Email address"
+msgstr "Адрес электронной почты"
+
+#. ShareDialog: button sending an invitation.
+#: worker/sharedialog.cpp:0
+msgid "Invite"
+msgstr "Пригласить"
+
+#. ShareDialog: placeholder text for the optional invitation message field.
+#: worker/sharedialog.cpp:0
+msgid "Message (optional)"
+msgstr "Сообщение (необязательно)"
+
+#. ShareDialog: suffix appended after a member's email/role when their invitation hasn't been accepted yet.
+#: worker/sharedialog.cpp:0
+msgid "— pending"
+msgstr "— ожидает"
+
+#. ShareDialog: read-only status line (editorsCanShare = true, no CLI setter exists for it).
+#: worker/sharedialog.cpp:0
+msgid "Editors can invite others to this item."
+msgstr "Редакторы могут приглашать других пользователей к этому элементу."
+
+#. ShareDialog: read-only status line (editorsCanShare = false).
+#: worker/sharedialog.cpp:0
+msgid "Only you can invite others to this item."
+msgstr "Только вы можете приглашать других пользователей к этому элементу."
+
+#. ShareDialog: heading for the public-link section.
+#: worker/sharedialog.cpp:0
+msgid "Public link"
+msgstr "Публичная ссылка"
+
+#. ShareDialog: button copying the public link URL to the clipboard.
+#: worker/sharedialog.cpp:0
+msgid "Copy"
+msgstr "Копировать"
+
+#. ShareDialog: placeholder text for the optional public-link password field.
+#: worker/sharedialog.cpp:0
+msgid "Password (optional)"
+msgstr "Пароль (необязательно)"
+
+#. ShareDialog: label next to the public-link expiration date checkbox/picker.
+#: worker/sharedialog.cpp:0
+msgid "Expires on:"
+msgstr "Истекает:"
+
+#. ShareDialog: button creating a new public link or updating the existing one's settings.
+#: worker/sharedialog.cpp:0
+msgid "Create/Update Link"
+msgstr "Создать/обновить ссылку"
+
+#. ShareDialog: button removing the public link.
+#: worker/sharedialog.cpp:0
+msgid "Remove Link"
+msgstr "Удалить ссылку"
+
+#. ShareDialog: status text shown when stat's isSharedByUrl is true but the URL itself isn't known yet (sharing status doesn't carry it).
+#: worker/sharedialog.cpp:0
+msgid "A public link is currently active. Use \"Create/Update Link\" to view or change it."
+msgstr "В настоящее время активна публичная ссылка. Используйте «Создать/обновить ссылку», чтобы просмотреть или изменить её."
+
+#. ShareDialog: status text shown when the item has no public link.
+#: worker/sharedialog.cpp:0
+msgid "No public link."
+msgstr "Нет публичной ссылки."
+
+#. ShareDialog: status text shown right after creating/updating a public link, or when reopening the dialog on an item that already has one — %1 is how many times it has been used.
+#: worker/sharedialog.cpp:0
+msgid "Public link active — downloaded %1 time."
+msgid_plural "Public link active — downloaded %1 times."
+msgstr[0] "Публичная ссылка активна — скачано %1 раз."
+msgstr[1] "Публичная ссылка активна — скачано %1 раза."
+msgstr[2] "Публичная ссылка активна — скачано %1 раз."
+
+#. Message box title for sharing errors (QMessageBox::warning).
+#: worker/sharedialog.cpp:0
+msgid "Sharing"
+msgstr "Общий доступ"

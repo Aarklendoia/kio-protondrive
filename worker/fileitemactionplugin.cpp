@@ -18,6 +18,7 @@
 #include "rust/cxx.h"
 
 #include "photo_categories.h"
+#include "sharedialog.h"
 #include "protondrive-core-cxxbridge/bridge.h"
 
 using namespace protondrive;
@@ -43,6 +44,23 @@ bool isPinned(const QString &remotePath)
 // 9-entry table, which both files genuinely need kept in sync).
 const QString trashPrefix = QStringLiteral("/trash/");
 const QString photosPrefix = QStringLiteral("/photos/");
+
+// A single selected item can be shared unless it's under /trash (sharing a
+// trashed item makes no sense) or is one of the fixed virtual root sections
+// themselves (protondriveworker.cpp's translatedSectionName's raw-name
+// set, e.g. "/my-files", "/photos" — not real nodes, one path depth level:
+// exactly one '/'). /photos/<name> items ARE shareable — confirmed live
+// that `sharing set-url`/`filesystem info` both resolve a /photos/<name>
+// path fine; the "undefined" response that first looked like a
+// photos-specific failure turned out to be `crate::cli::sharing_status`'s
+// own bug (see its doc comment), reproducible on plain /my-files items too.
+bool isShareableItem(const QString &path)
+{
+    if (path.startsWith(trashPrefix) || path == QLatin1String("/trash")) {
+        return false;
+    }
+    return path.count(QLatin1Char('/')) > 1;
+}
 
 // KAbstractFileItemActionPlugin loads into the host file manager's own
 // process (confirmed live: this plugin's pin/unpin actions already run
@@ -153,6 +171,16 @@ public:
             }
         }
 
+        // A single-item selection that isn't a virtual root section or
+        // under /trash gets a "Share" action opening ShareDialog (see
+        // isShareableItem above).
+        QString shareablePath;
+        QString shareableName;
+        if (items.size() == 1 && isShareableItem(paths.first())) {
+            shareablePath = paths.first();
+            shareableName = items.first().text();
+        }
+
         QList<QAction *> result;
 
         if (anyNotPinned) {
@@ -257,6 +285,25 @@ public:
                 });
             }
             result << filterMenuAction;
+        }
+
+        // Opens ShareDialog (see sharedialog.h) — modal, matching this
+        // file's existing KMessageBox usage, since there's no other place
+        // to route "the user is filling out a form" than blocking the
+        // context menu's originating window.
+        if (!shareablePath.isEmpty()) {
+            // "Share via Proton Drive", not the bare "Share" — Dolphin
+            // already has a built-in Purpose-based "Share" submenu
+            // (Telegram/email/Nextcloud/Bluetooth/...) unrelated to this
+            // plugin; confirmed live that an identical label next to it is
+            // genuinely confusing, not just a naming nitpick.
+            QAction *shareAction = new QAction(i18nd("kio_protondrive", "Share via Proton Drive"), parentWidget);
+            shareAction->setIcon(QIcon::fromTheme(QStringLiteral("document-share")));
+            connect(shareAction, &QAction::triggered, parentWidget, [shareablePath, shareableName, parentWidget]() {
+                ShareDialog dialog(shareablePath, shareableName, parentWidget);
+                dialog.exec();
+            });
+            result << shareAction;
         }
 
         return result;

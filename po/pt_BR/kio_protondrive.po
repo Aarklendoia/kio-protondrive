@@ -165,3 +165,120 @@ msgstr "Filtrar fotos"
 #: worker/fileitemactionplugin.cpp:0
 msgid "All Photos"
 msgstr "Todas as fotos"
+
+#. Context-menu action (KAbstractFileItemActionPlugin) opening the sharing dialog for a single selected item.
+#: worker/fileitemactionplugin.cpp:0
+msgid "Share via Proton Drive"
+msgstr "Compartilhar via Proton Drive"
+
+#. ShareDialog window title; %1 is the item's display name.
+#: worker/sharedialog.cpp:0
+msgid "Share \"%1\""
+msgstr "Compartilhar \"%1\""
+
+#. ShareDialog: heading for the list of current members/pending invitations.
+#: worker/sharedialog.cpp:0
+msgid "People with access"
+msgstr "Pessoas com acesso"
+
+#. ShareDialog: button removing the selected member/invitation.
+#: worker/sharedialog.cpp:0
+msgid "Remove Access"
+msgstr "Remover acesso"
+
+#. Sharing role: read-only access.
+#: worker/sharedialog.cpp:0
+msgid "Viewer"
+msgstr "Leitor"
+
+#. Sharing role: can edit.
+#: worker/sharedialog.cpp:0
+msgid "Editor"
+msgstr "Editor"
+
+#. Sharing role: full control (invite role only, not offered for public links).
+#: worker/sharedialog.cpp:0
+msgid "Admin"
+msgstr "Administrador"
+
+#. ShareDialog: placeholder text for the invite email field.
+#: worker/sharedialog.cpp:0
+msgid "Email address"
+msgstr "Endereço de e-mail"
+
+#. ShareDialog: button sending an invitation.
+#: worker/sharedialog.cpp:0
+msgid "Invite"
+msgstr "Convidar"
+
+#. ShareDialog: placeholder text for the optional invitation message field.
+#: worker/sharedialog.cpp:0
+msgid "Message (optional)"
+msgstr "Mensagem (opcional)"
+
+#. ShareDialog: suffix appended after a member's email/role when their invitation hasn't been accepted yet.
+#: worker/sharedialog.cpp:0
+msgid "— pending"
+msgstr "— pendente"
+
+#. ShareDialog: read-only status line (editorsCanShare = true, no CLI setter exists for it).
+#: worker/sharedialog.cpp:0
+msgid "Editors can invite others to this item."
+msgstr "Os editores podem convidar outras pessoas para este item."
+
+#. ShareDialog: read-only status line (editorsCanShare = false).
+#: worker/sharedialog.cpp:0
+msgid "Only you can invite others to this item."
+msgstr "Somente você pode convidar outras pessoas para este item."
+
+#. ShareDialog: heading for the public-link section.
+#: worker/sharedialog.cpp:0
+msgid "Public link"
+msgstr "Link público"
+
+#. ShareDialog: button copying the public link URL to the clipboard.
+#: worker/sharedialog.cpp:0
+msgid "Copy"
+msgstr "Copiar"
+
+#. ShareDialog: placeholder text for the optional public-link password field.
+#: worker/sharedialog.cpp:0
+msgid "Password (optional)"
+msgstr "Senha (opcional)"
+
+#. ShareDialog: label next to the public-link expiration date checkbox/picker.
+#: worker/sharedialog.cpp:0
+msgid "Expires on:"
+msgstr "Expira em:"
+
+#. ShareDialog: button creating a new public link or updating the existing one's settings.
+#: worker/sharedialog.cpp:0
+msgid "Create/Update Link"
+msgstr "Criar/atualizar link"
+
+#. ShareDialog: button removing the public link.
+#: worker/sharedialog.cpp:0
+msgid "Remove Link"
+msgstr "Remover link"
+
+#. ShareDialog: status text shown when stat's isSharedByUrl is true but the URL itself isn't known yet (sharing status doesn't carry it).
+#: worker/sharedialog.cpp:0
+msgid "A public link is currently active. Use \"Create/Update Link\" to view or change it."
+msgstr "Um link público está ativo no momento. Use \"Criar/atualizar link\" para visualizá-lo ou altera-lo."
+
+#. ShareDialog: status text shown when the item has no public link.
+#: worker/sharedialog.cpp:0
+msgid "No public link."
+msgstr "Nenhum link público."
+
+#. ShareDialog: status text shown right after creating/updating a public link, or when reopening the dialog on an item that already has one — %1 is how many times it has been used.
+#: worker/sharedialog.cpp:0
+msgid "Public link active — downloaded %1 time."
+msgid_plural "Public link active — downloaded %1 times."
+msgstr[0] "Link público ativo — baixado %1 vez."
+msgstr[1] "Link público ativo — baixado %1 vezes."
+
+#. Message box title for sharing errors (QMessageBox::warning).
+#: worker/sharedialog.cpp:0
+msgid "Sharing"
+msgstr "Compartilhamento"

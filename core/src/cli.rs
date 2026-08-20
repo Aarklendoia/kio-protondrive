@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-use crate::entry::{ListItem, NodeEntry, TransferSummary, TrashOutcome};
+use crate::entry::{ListItem, NodeEntry, PublicLink, SharingStatus, TransferSummary, TrashOutcome};
 
 /// `filesystem list`/`info`/`create-folder`/`trash` are plain metadata API
 /// calls — a healthy CLI answers in well under this. Deliberately short so a
@@ -563,6 +563,98 @@ pub fn rename_or_move(
     let moved_path = format!("{}/{}", new_parent.trim_end_matches('/'), old_name);
     rename_path(runner, &moved_path, &new_name)?;
     Ok(())
+}
+
+/// Members, pending invitations, and public link settings for a node — see
+/// `crate::sharing` for the merged, worker-friendly view built on top of
+/// this raw response.
+pub fn sharing_status(runner: &dyn CommandRunner, path: &str) -> Result<SharingStatus, DriveError> {
+    let out = runner.run(&["sharing", "status", "-j", path], METADATA_TIMEOUT)?;
+    ensure_success(path, &out)?;
+    // A node that has never been shared prints the literal text "undefined"
+    // instead of an empty status object — confirmed live (a
+    // `JSON.stringify(undefined)` result from the CLI's own JS
+    // implementation, not something exit-code/stderr flags as an error).
+    // Every never-shared file hits this on the first "Share" click, so
+    // treating it as anything but the obvious "nothing shared yet" would
+    // break the dialog for the common case rather than the edge case.
+    if out.stdout.trim() == "undefined" {
+        return Ok(SharingStatus::default());
+    }
+    Ok(serde_json::from_str(&out.stdout)?)
+}
+
+/// Invites a single user by email, or updates their role if the node is
+/// already shared with them (matches the CLI's own `sharing invite --help`
+/// wording). `message`, when non-empty, is included as clear text in the
+/// invitation email (`-m`).
+pub fn sharing_invite(
+    runner: &dyn CommandRunner,
+    path: &str,
+    email: &str,
+    role: &str,
+    message: &str,
+) -> Result<(), DriveError> {
+    let mut args = vec!["sharing", "invite", "-j", "-u", email, "-r", role];
+    if !message.is_empty() {
+        args.push("-m");
+        args.push(message);
+    }
+    args.push(path);
+    let out = runner.run(&args, METADATA_TIMEOUT)?;
+    ensure_success(path, &out)
+}
+
+/// Removes one user's access (or pending invitation) by email.
+pub fn sharing_remove_member(
+    runner: &dyn CommandRunner,
+    path: &str,
+    email: &str,
+) -> Result<(), DriveError> {
+    let out = runner.run(
+        &["sharing", "remove", "-j", "-e", email, path],
+        METADATA_TIMEOUT,
+    )?;
+    ensure_success(path, &out)
+}
+
+/// Creates or updates the node's public link. `password`/`expiration` are
+/// forwarded only when non-empty — the CLI treats their absence as "no
+/// password"/"no expiration".
+pub fn sharing_set_link(
+    runner: &dyn CommandRunner,
+    path: &str,
+    role: &str,
+    password: &str,
+    expiration: &str,
+) -> Result<PublicLink, DriveError> {
+    let mut args = vec!["sharing", "set-url", "-j", "--role", role];
+    if !password.is_empty() {
+        args.push("--password");
+        args.push(password);
+    }
+    if !expiration.is_empty() {
+        args.push("--expiration");
+        args.push(expiration);
+    }
+    args.push(path);
+    let out = runner.run(&args, METADATA_TIMEOUT)?;
+    ensure_success(path, &out)?;
+    // set-url returns the whole sharing-status object, not a flat link —
+    // confirmed live (see `SharingStatus::url_access`'s doc comment).
+    let status: SharingStatus = serde_json::from_str(&out.stdout)?;
+    status.url_access.ok_or_else(|| {
+        DriveError::Parse(format!(
+            "sharing set-url for {path} succeeded but returned no urlAccess"
+        ))
+    })
+}
+
+/// Removes the node's public link; direct member access is unaffected (per
+/// the CLI's own `sharing remove-url --help`).
+pub fn sharing_remove_link(runner: &dyn CommandRunner, path: &str) -> Result<(), DriveError> {
+    let out = runner.run(&["sharing", "remove-url", "-j", path], METADATA_TIMEOUT)?;
+    ensure_success(path, &out)
 }
 
 #[cfg(test)]
@@ -1189,5 +1281,64 @@ mod tests {
         let runner = MockRunner::success(INFO);
         let node = stat_path(&runner, "/my-files").unwrap();
         assert_eq!(node.uid, "uid-root");
+    }
+
+    #[test]
+    fn sharing_set_link_extracts_url_access_from_the_whole_status_response() {
+        // Real `sharing set-url -j` output, captured live: the CLI returns
+        // the whole sharing-status object (same shape as `sharing status`),
+        // not a flat link — the link itself is nested under `urlAccess`.
+        const SET_URL_OUTPUT: &str = r#"{
+            "protonInvitations":[],
+            "nonProtonInvitations":[],
+            "members":[],
+            "urlAccess":{
+                "uid":"uid-url-access",
+                "creationTime":"2026-08-20T09:41:32.000Z",
+                "expirationTime":"2026-09-01T00:00:00.000Z",
+                "role":"viewer",
+                "url":"https://drive.proton.me/urls/Y14XRXP714#MWiP4V07VZtv",
+                "creatorEmail":"famille@biton-collomb.fr",
+                "numberOfInitializedDownloads":3
+            },
+            "editorsCanShare":false
+        }"#;
+        let runner = MockRunner::success(SET_URL_OUTPUT);
+        let link =
+            sharing_set_link(&runner, "/my-files/report.pdf", "viewer", "", "2026-09-01").unwrap();
+        assert_eq!(
+            link.url,
+            "https://drive.proton.me/urls/Y14XRXP714#MWiP4V07VZtv"
+        );
+        assert_eq!(link.role, "viewer");
+        assert_eq!(
+            link.expiration_time.as_deref(),
+            Some("2026-09-01T00:00:00.000Z")
+        );
+        assert_eq!(link.number_of_initialized_downloads, 3);
+    }
+
+    #[test]
+    fn sharing_set_link_errors_if_the_response_has_no_url_access() {
+        let runner = MockRunner::success(
+            r#"{"protonInvitations":[],"nonProtonInvitations":[],"members":[],"editorsCanShare":false}"#,
+        );
+        assert!(sharing_set_link(&runner, "/my-files/report.pdf", "viewer", "", "").is_err());
+    }
+
+    #[test]
+    fn sharing_status_treats_the_cli_literal_undefined_output_as_an_empty_status() {
+        // Confirmed live: `sharing status -j` on any node that has never
+        // been shared prints the literal text "undefined" (not JSON, exit
+        // 0) — reproduced on both plain /my-files files and /photos items,
+        // so it's the CLI's own "nothing shared yet" quirk, not a path- or
+        // node-type-specific failure.
+        let runner = MockRunner::success("undefined");
+        let status = sharing_status(&runner, "/my-files/never-shared.pdf").unwrap();
+        assert!(status.members.is_empty());
+        assert!(status.proton_invitations.is_empty());
+        assert!(status.non_proton_invitations.is_empty());
+        assert!(status.url_access.is_none());
+        assert!(!status.editors_can_share);
     }
 }
