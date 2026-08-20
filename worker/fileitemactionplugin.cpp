@@ -49,9 +49,11 @@ const QString photosPrefix = QStringLiteral("/photos/");
 // trashed item makes no sense) or is one of the fixed virtual root sections
 // themselves (protondriveworker.cpp's translatedSectionName's raw-name
 // set, e.g. "/my-files", "/photos" — not real nodes, one path depth level:
-// exactly one '/'). /photos/<name> paths are deliberately *not* excluded
-// here — whether the CLI's `sharing` commands accept that path shape isn't
-// confirmed yet; if not, ShareDialog's own error handling surfaces it.
+// exactly one '/'). /photos/<name> items ARE shareable — confirmed live
+// that `sharing set-url`/`filesystem info` both resolve a /photos/<name>
+// path fine; the "undefined" response that first looked like a
+// photos-specific failure turned out to be `crate::cli::sharing_status`'s
+// own bug (see its doc comment), reproducible on plain /my-files items too.
 bool isShareableItem(const QString &path)
 {
     if (path.startsWith(trashPrefix) || path == QLatin1String("/trash")) {
@@ -290,7 +292,12 @@ public:
         // to route "the user is filling out a form" than blocking the
         // context menu's originating window.
         if (!shareablePath.isEmpty()) {
-            QAction *shareAction = new QAction(i18nd("kio_protondrive", "Share"), parentWidget);
+            // "Share via Proton Drive", not the bare "Share" — Dolphin
+            // already has a built-in Purpose-based "Share" submenu
+            // (Telegram/email/Nextcloud/Bluetooth/...) unrelated to this
+            // plugin; confirmed live that an identical label next to it is
+            // genuinely confusing, not just a naming nitpick.
+            QAction *shareAction = new QAction(i18nd("kio_protondrive", "Share via Proton Drive"), parentWidget);
             shareAction->setIcon(QIcon::fromTheme(QStringLiteral("document-share")));
             connect(shareAction, &QAction::triggered, parentWidget, [shareablePath, shareableName, parentWidget]() {
                 ShareDialog dialog(shareablePath, shareableName, parentWidget);

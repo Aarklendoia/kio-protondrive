@@ -168,8 +168,8 @@ msgstr "すべての写真"
 
 #. Context-menu action (KAbstractFileItemActionPlugin) opening the sharing dialog for a single selected item.
 #: worker/fileitemactionplugin.cpp:0
-msgid "Share"
-msgstr "共有"
+msgid "Share via Proton Drive"
+msgstr "Proton Drive で共有"
 
 #. ShareDialog window title; %1 is the item's display name.
 #: worker/sharedialog.cpp:0
@@ -271,10 +271,11 @@ msgstr "現在、公開リンクが有効になっています。表示または
 msgid "No public link."
 msgstr "公開リンクはありません。"
 
-#. ShareDialog: status text shown right after creating/updating a public link.
+#. ShareDialog: status text shown right after creating/updating a public link, or when reopening the dialog on an item that already has one — %1 is how many times it has been used.
 #: worker/sharedialog.cpp:0
-msgid "Public link active."
-msgstr "公開リンクが有効です。"
+msgid "Public link active — downloaded %1 time."
+msgid_plural "Public link active — downloaded %1 times."
+msgstr[0] "公開リンクが有効です — %1 回ダウンロードされました。"
 
 #. Message box title for sharing errors (QMessageBox::warning).
 #: worker/sharedialog.cpp:0

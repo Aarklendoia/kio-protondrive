@@ -41,11 +41,11 @@ private:
 
     QString m_remotePath;
     // Whether the node had an active public link the last time this was
-    // checked (from stat's isSharedByUrl — `sharing status` itself doesn't
-    // carry this, see core/src/entry.rs's SharingStatus doc comment) or a
-    // link was created/updated in this dialog session. The link's actual
-    // URL is only known once create/update returns it — see this class's
-    // own doc comment on why "remove" stays available even without it.
+    // checked — from `sharing_status`'s own `has_public_link`/
+    // `public_link_url` (confirmed live: `sharing status` does carry the
+    // active link, same as `sharing set-url`'s response shape — see
+    // core/src/entry.rs's SharingStatus doc comment) or a link was
+    // created/updated/removed in this dialog session.
     bool m_hasPublicLink = false;
 
     QListWidget *m_memberList = nullptr;

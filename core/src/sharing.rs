@@ -25,6 +25,7 @@ pub struct ShareMember {
 pub struct SharingStatus {
     pub members: Vec<ShareMember>,
     pub editors_can_share: bool,
+    pub public_link: Option<PublicLink>,
 }
 
 pub fn status(runner: &dyn CommandRunner, path: &str) -> Result<SharingStatus, DriveError> {
@@ -41,16 +42,20 @@ pub fn status(runner: &dyn CommandRunner, path: &str) -> Result<SharingStatus, D
     members.extend(raw.proton_invitations.into_iter().map(|i| ShareMember {
         email: i.invitee_email,
         role: i.role,
-        pending: true,
+        // `state` is confirmed live as always "pending" so far, but this
+        // checks it rather than assuming — see ProtonInvitation's own doc
+        // comment on why.
+        pending: i.state.as_deref().unwrap_or("pending") == "pending",
     }));
     members.extend(raw.non_proton_invitations.into_iter().map(|i| ShareMember {
         email: i.invitee_email,
         role: i.role,
-        pending: true,
+        pending: i.state.as_deref().unwrap_or("pending") == "pending",
     }));
     Ok(SharingStatus {
         members,
         editors_can_share: raw.editors_can_share,
+        public_link: raw.url_access,
     })
 }
 
@@ -140,6 +145,30 @@ mod tests {
                     pending: true,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn status_treats_a_non_pending_invitation_state_as_not_pending() {
+        let runner = MockRunner {
+            stdout: r#"{
+                "protonInvitations": [],
+                "nonProtonInvitations": [{"inviteeEmail": "declined@example.com", "role": "viewer", "state": "declined"}],
+                "members": [],
+                "editorsCanShare": false
+            }"#
+            .to_string(),
+        };
+
+        let result = status(&runner, "/my-files/report.pdf").unwrap();
+
+        assert_eq!(
+            result.members,
+            vec![ShareMember {
+                email: "declined@example.com".to_string(),
+                role: "viewer".to_string(),
+                pending: false,
+            }]
         );
     }
 

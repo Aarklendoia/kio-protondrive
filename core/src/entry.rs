@@ -40,11 +40,12 @@ pub struct NodeEntry {
     #[serde(default)]
     pub is_shared: bool,
     /// Whether the node currently has an active public link — confirmed
-    /// live on a `filesystem list` node. `sharing status`'s own response
-    /// doesn't carry the link (see `SharingStatus`'s doc comment), so this
-    /// is the only currently-known way to tell "has a link" apart from
-    /// "doesn't" without calling `sharing set-url` (which creates/updates
-    /// one, not a safe read-only check).
+    /// live on a `filesystem list` node. `sharing status` also carries this
+    /// (see `SharingStatus::url_access`), so `crate::sharing::status` is the
+    /// richer read-only source when the caller already needs a status call
+    /// anyway (`ShareDialog`); this field is what backs the cheap
+    /// `worker/overlayplugin.cpp` "shared" badge instead, via
+    /// `crate::bridge::lookup_shared`'s `fs_stat_cache` read.
     #[serde(default)]
     pub is_shared_by_url: bool,
     /// Only present on nodes from `photo timeline -d` (absent, and left
@@ -123,13 +124,19 @@ pub struct TrashOutcome {
     pub ok: bool,
 }
 
-/// Response of `sharing status -j path` — confirmed live against a real
-/// shared file. `protonInvitations`/`nonProtonInvitations` were empty on
-/// every node tested so far, so their per-item shape below is this
-/// project's best guess (mirroring `members`'s own shape, the only one
-/// with confirmed fields) rather than something observed directly — to be
-/// corrected once a real pending invitation can be inspected.
-#[derive(Debug, Clone, Deserialize)]
+/// Response of `sharing status -j path` — confirmed live, including a real
+/// pending `nonProtonInvitations` entry (whose shape `protonInvitations` is
+/// assumed to mirror, same underlying invitation mechanism). Also doubles
+/// as `sharing set-url -j path`'s response shape: confirmed live that
+/// set-url returns this same whole-status object with `urlAccess`
+/// populated, not a flat link object.
+///
+/// `Default` backs `crate::cli::sharing_status`'s workaround for a separate
+/// CLI bug: confirmed live that `sharing status -j` on a node that has
+/// never been shared at all prints the literal text `undefined` (a
+/// classic `JSON.stringify(undefined)` result) instead of an empty-but-
+/// valid status object — this is that empty status.
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SharingStatus {
     #[serde(default)]
@@ -138,7 +145,10 @@ pub struct SharingStatus {
     pub non_proton_invitations: Vec<NonProtonInvitation>,
     #[serde(default)]
     pub members: Vec<ShareMember>,
+    #[serde(default)]
     pub editors_can_share: bool,
+    #[serde(default)]
+    pub url_access: Option<PublicLink>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -148,11 +158,17 @@ pub struct ShareMember {
     pub role: String,
 }
 
+/// `state` is confirmed live as `"pending"` on every invitation observed so
+/// far — captured (rather than assumed) so a future state this project
+/// hasn't seen yet (accepted-but-not-yet-a-member? declined-but-not-yet-
+/// removed?) doesn't get mislabeled "— pending" by `crate::sharing::status`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtonInvitation {
     pub invitee_email: String,
     pub role: String,
+    #[serde(default)]
+    pub state: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -160,12 +176,15 @@ pub struct ProtonInvitation {
 pub struct NonProtonInvitation {
     pub invitee_email: String,
     pub role: String,
+    #[serde(default)]
+    pub state: Option<String>,
 }
 
-/// Response of `sharing set-url -j path` — shape not yet confirmed live
-/// (see this module's `SharingStatus` doc comment and the plan's
-/// Verification section); `url` is this project's best guess at the field
-/// name for the created public link's address.
+/// A node's public link, nested under `SharingStatus.url_access` —
+/// confirmed live, including `expirationTime` when `--expiration` is set.
+/// `number_of_initialized_downloads` is also confirmed live (present, at
+/// 0, on a freshly created link) — how many times the link has been used,
+/// worth surfacing next to the URL itself.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicLink {
@@ -173,4 +192,6 @@ pub struct PublicLink {
     pub role: String,
     #[serde(default)]
     pub expiration_time: Option<String>,
+    #[serde(default)]
+    pub number_of_initialized_downloads: u64,
 }

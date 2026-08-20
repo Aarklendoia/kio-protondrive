@@ -11,17 +11,20 @@ using namespace protondrive;
 
 namespace
 {
-// Three states (#60), OneDrive-style: cloud-only (no overlay), available
-// locally — pinned *or* opportunistically cached, same badge either way
-// (emblem-checked) — and pinned specifically, an *additional* badge on top
-// of "available locally" rather than a replacement for it. getOverlays()
-// already supports returning several overlays at once, which is exactly
-// what stacking these two needs. Breeze has no "emblem-pinned" icon at all
-// (confirmed against the installed theme's file list) — QIcon::fromTheme
-// silently renders nothing for a missing name, no error, which is why the
-// pin badge was invisible in testing. emblem-favorite (a star) is the
-// closest existing Breeze emblem, and is already visually distinct from
-// emblem-checked.
+// Independent badges, stacked (getOverlays() already supports returning
+// several at once):
+// - Local availability (#60), OneDrive-style: cloud-only (no overlay),
+//   available locally — pinned *or* opportunistically cached, same badge
+//   either way (emblem-checked) — and pinned specifically, an *additional*
+//   badge on top of "available locally" rather than a replacement for it.
+//   Breeze has no "emblem-pinned" icon at all (confirmed against the
+//   installed theme's file list) — QIcon::fromTheme silently renders
+//   nothing for a missing name, no error, which is why the pin badge was
+//   invisible in testing. emblem-favorite (a star) is the closest existing
+//   Breeze emblem, and is already visually distinct from emblem-checked.
+// - Sharing (#6/#70): emblem-shared, independent of local
+//   availability/pinning — a cloud-only file can be shared, a pinned one
+//   might not be.
 QStringList overlaysFor(const QString &remotePath)
 {
     QStringList overlays;
@@ -40,6 +43,16 @@ QStringList overlaysFor(const QString &remotePath)
             overlays << QStringLiteral("emblem-favorite");
         }
     } catch (const rust::Error &) {
+    }
+
+    // Member access and/or an active public link — one badge either way,
+    // same "no distinction between the two ways to get here" stance
+    // ShareDialog itself takes. Cache-only lookup (see lookup_shared's own
+    // doc comment for why): populated by ordinary browsing, and refreshed
+    // immediately after any ShareDialog action via bridge.rs's
+    // refresh_stat_cache + the notifyOverlayChanged signal below.
+    if (lookup_shared(path)) {
+        overlays << QStringLiteral("emblem-shared");
     }
 
     return overlays;
