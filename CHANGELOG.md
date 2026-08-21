@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.9.1...v0.10.0) (2026-08-21)
+
+
+### Features
+
+* add AUR packaging (PKGBUILD) ([#93](https://github.com/Aarklendoia/kio-protondrive/issues/93)) ([8894fa8](https://github.com/Aarklendoia/kio-protondrive/commit/8894fa8e6398921f6ca1b803dfd5291e5de658f2)), closes [#89](https://github.com/Aarklendoia/kio-protondrive/issues/89)
+
 ## [0.9.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.9.0...v0.9.1) (2026-08-20)
 
 
