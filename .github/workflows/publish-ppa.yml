@@ -42,6 +42,16 @@ env:
 jobs:
   publish-ppa:
     runs-on: ubuntu-latest
+    # Confirmed live: the v0.8.0 release's run of this workflow hung on the
+    # "Install packaging tools" step below for the full 6h GitHub Actions
+    # default before being force-cancelled — never even reached Vendor/
+    # Build/Upload, so v0.8.0 was silently never published to the PPA. Every
+    # other workflow in this repo already sets this (build-cmake.yml,
+    # test.yml, quality.yml); this one was the one exception. Doesn't
+    # explain the hang itself (see DEBIAN_FRONTEND below for the leading
+    # suspect) but turns a repeat into a fast, visible failure instead of
+    # another silent 6h no-op.
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -50,6 +60,20 @@ jobs:
         # No project build-dependencies needed here (qt6-base-dev,
         # libkf6kio-dev, ...) — debuild -S only tars the source, it doesn't
         # compile anything, and cargo vendor doesn't run build scripts either.
+        #
+        # DEBIAN_FRONTEND/NEEDRESTART_MODE: this step runs directly on the
+        # ubuntu-latest VM image (a full system with real running services),
+        # unlike build-debian.yml/build-cmake.yml's minimal `container:`
+        # jobs — the likely reason this one specifically is exposed to
+        # needrestart's interactive "which services to restart?" prompt
+        # after upgrading a library dependency, which `-y` alone doesn't
+        # suppress. Never confirmed directly (GitHub's own timeout kills the
+        # job before it can dump diagnostic output), but it's the standard,
+        # well-documented cause of exactly this "apt-get install just hangs
+        # forever despite -y" symptom on a non-containerized Ubuntu runner.
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
           sudo apt-get update
           sudo apt-get install -y devscripts dpkg-dev debhelper fakeroot quilt dput lintian gnupg jq git
