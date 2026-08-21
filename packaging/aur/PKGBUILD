@@ -1,0 +1,213 @@
+# Maintainer: Aarklendoia <aarklendoia@proton.me>
+
+# Split package, one AUR page (pkgbase) producing three installable
+# packages — mirrors debian/control's own kio-protondrive /
+# kio-protondrive-sync-daemon / kio-protondrive-wizard split, built from
+# the same single cmake+cargo build() rather than three independent
+# builds. No kio-protondrive-full metapackage here (unlike Debian):
+# AUR convention is optdepends on the "main" package instead, see below.
+pkgbase=kio-protondrive
+pkgname=(kio-protondrive kio-protondrive-sync-daemon kio-protondrive-wizard)
+pkgver=0.9.1
+pkgrel=1
+pkgdesc="KIO worker for Proton Drive"
+arch=(x86_64 aarch64)
+url="https://github.com/Aarklendoia/kio-protondrive"
+license=(GPL-3.0-or-later)
+makedepends=(
+  cmake
+  extra-cmake-modules
+  rust
+  git
+  pkgconf
+  qt6-base
+  kio
+  kcoreaddons
+  kwidgetsaddons
+  gettext
+)
+source=("$pkgbase-$pkgver.tar.gz::https://github.com/Aarklendoia/kio-protondrive/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+# Fetched once here (network allowed in prepare(), same as makepkg's own
+# recommendation) and pointed at by CMakeLists.txt's own
+# third_party/corrosion/ fallback (see its top-level comment) — the same
+# mechanism debian/scripts/prepare-offline-build.sh uses to avoid a
+# network fetch during the actual build, except AUR/makepkg builds do have
+# network access, so this is just about pinning the exact version rather
+# than working around a sandboxed builder.
+_corrosion_tag=v0.6.0
+
+
+prepare() {
+  cd "$pkgbase-$pkgver"
+  git clone --depth 1 --branch "$_corrosion_tag" \
+    https://github.com/corrosion-rs/corrosion.git third_party/corrosion
+  rm -rf third_party/corrosion/.git
+
+  # Cargo.lock is deliberately gitignored in this repo (regenerated per
+  # build, not committed) — so a release tarball has none yet. Generate it
+  # here, then fetch against it, so build()'s `--locked` below has a lock
+  # file to actually lock against instead of erroring out.
+  cargo generate-lockfile
+  cargo fetch --locked --manifest-path Cargo.toml
+}
+
+# Confirmed live that makepkg.conf's default CFLAGS/CXXFLAGS (-flto=auto)
+# break the cargo side of this build: rusqlite's bundled-sqlite3 (see
+# core/Cargo.toml's "bundled" feature) gets compiled by the `cc` crate,
+# which honors the ambient CFLAGS — so its sqlite3.o ends up as LTO
+# bytecode, not a normal object. CMake's own C++ link of that same
+# archive (into protondrive.so) works fine, since g++ is invoked with
+# matching -flto and its LTO plugin resolves it — but a plain
+# `cargo build`/`cargo test` links via rustc, which has no concept of
+# GCC's LTO and never passes -flto to the final `cc` link, so every
+# sqlite3_* symbol comes up undefined there. Applied around the specific
+# cargo calls that need it (build()'s own, and check()'s) rather than
+# exported once globally: at the PKGBUILD's global scope (sourced before
+# makepkg has necessarily exported its own CFLAGS/CXXFLAGS yet) a plain
+# `CFLAGS+=...` risks appending onto an still-empty variable. Not
+# something to fix upstream in core/Cargo.toml or CMakeLists.txt: Debian's
+# build environment doesn't default to LTO, so it never hits this.
+_cargo_no_lto() {
+  CFLAGS="$CFLAGS -fno-lto" CXXFLAGS="$CXXFLAGS -fno-lto" cargo "$@"
+}
+
+build() {
+  cd "$pkgbase-$pkgver"
+
+  cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build
+
+  # daemon/ and wizard/ are plain Cargo, not part of the CMake/Corrosion
+  # graph above (which only covers core/'s cxx bridge + the KIO plugin) —
+  # same split build debian/rules' override_dh_auto_build does.
+  _cargo_no_lto build --release --locked --workspace
+
+  # Compiled here rather than shipped as source, same as
+  # debian/rules' override_dh_auto_install does for the wizard's own
+  # Qt Linguist translations (KI18n's ki18n_install(po) already compiles
+  # the worker's/daemon's .po files as part of the cmake build above).
+  #
+  # qtpaths6 itself isn't on PATH here (Arch's qt6-base puts it under
+  # /usr/lib/qt6/bin/, unlike Debian's qt6-base-dev-tools, which symlinks
+  # it into /usr/bin) — try PATH first (debian/rules relies on exactly
+  # that), then Arch's known location.
+  local qtpaths_bin qt_bins
+  qtpaths_bin="$(command -v qtpaths6 || echo /usr/lib/qt6/bin/qtpaths6)"
+  qt_bins="$("$qtpaths_bin" --query QT_INSTALL_BINS)"
+  install -d wizard/translations-compiled
+  for ts in wizard/translations/*.ts; do
+    lang="$(basename "$ts" .ts)"
+    "$qt_bins/lrelease" "$ts" -qm "wizard/translations-compiled/$lang.qm"
+  done
+}
+
+check() {
+  cd "$pkgbase-$pkgver"
+  _cargo_no_lto test --workspace --profile ci
+  ctest --test-dir build --output-on-failure
+}
+
+# Shared staging install, split into per-package file sets below by relative
+# path — CMake/Corrosion only produces one combined install tree (no
+# separate install target per plugin), same reason debian/rules relies on
+# per-package debian/*.install file lists against one dh_auto_install
+# instead of three separate builds.
+_stage() {
+  cd "$pkgbase-$pkgver"
+  if [ ! -d "$srcdir/fakeroot" ]; then
+    DESTDIR="$srcdir/fakeroot" cmake --install build
+  fi
+}
+
+package_kio-protondrive() {
+  pkgdesc="KIO worker for Proton Drive — browse, download and upload files from Dolphin"
+  # ki18n, sqlite: confirmed via `namcap` against the actual built .so
+  # files — protondrive.so links KF6I18n directly, and (see
+  # worker/CMakeLists.txt's SQLite::SQLite3 comment) the system sqlite3
+  # both plugins here link against core/'s bundled-rusqlite code.
+  depends=(qt6-base kio kcoreaddons ki18n sqlite)
+  optdepends=(
+    'kio-protondrive-sync-daemon: pin files for offline access and local-cache eviction'
+    'kio-protondrive-wizard: guided first-run sign-in'
+    'proton-drive-cli: required at runtime — https://proton.me/drive/download'
+  )
+  _stage
+
+  local f rel
+  while IFS= read -r f; do
+    rel="${f#"$srcdir"/fakeroot/}"
+    install -Dm755 "$f" "$pkgdir/$rel"
+  done < <(find "$srcdir/fakeroot" -type f \( -name 'protondrive.so' -o -name 'protondrive_overlayicon.so' \))
+
+  while IFS= read -r f; do
+    rel="${f#"$srcdir"/fakeroot/}"
+    install -Dm644 "$f" "$pkgdir/$rel"
+  done < <(find "$srcdir/fakeroot" -type f -name 'kio_protondrive.mo')
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_kio-protondrive-sync-daemon() {
+  pkgdesc="Background upload sync daemon for Proton Drive"
+  # kwidgetsaddons, ki18n, sqlite: see package_kio-protondrive()'s own
+  # depends comment — same story, for protondrive_fileitemaction.so
+  # (ShareDialog needs KWidgetsAddons; the rest is shared with the other
+  # two plugins).
+  depends=(qt6-base kio kcoreaddons kwidgetsaddons ki18n sqlite curl)
+  optdepends=(
+    'libnotify: pin/unpin progress notifications'
+    'dbus: overlay icon repaint notifications'
+  )
+  _stage
+
+  install -Dm755 target/release/kio-protondrive-daemon \
+    "$pkgdir/usr/bin/kio-protondrive-daemon"
+  install -Dm644 debian/kio-protondrive-sync-daemon.user.service \
+    "$pkgdir/usr/lib/systemd/user/kio-protondrive-sync-daemon.service"
+
+  local f rel
+  while IFS= read -r f; do
+    rel="${f#"$srcdir"/fakeroot/}"
+    install -Dm755 "$f" "$pkgdir/$rel"
+  done < <(find "$srcdir/fakeroot" -type f -name 'protondrive_fileitemaction.so')
+
+  while IFS= read -r f; do
+    rel="${f#"$srcdir"/fakeroot/}"
+    install -Dm644 "$f" "$pkgdir/$rel"
+  done < <(find "$srcdir/fakeroot" -type f -name 'kio_protondrive_daemon.mo')
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_kio-protondrive-wizard() {
+  pkgdesc="First-run setup wizard for the Proton Drive sync daemon"
+  depends=(
+    qt6-base
+    qt6-declarative
+    kirigami
+    curl
+  )
+  optdepends=(
+    'pass: GPG-encrypted session storage'
+    'gnupg: required by pass'
+  )
+  cd "$pkgbase-$pkgver"
+
+  install -Dm755 "target/release/kio-protondrive-wizard" \
+    "$pkgdir/usr/bin/kio-protondrive-wizard"
+  install -Dm644 "wizard/kio-protondrive-wizard.desktop" \
+    "$pkgdir/usr/share/applications/kio-protondrive-wizard.desktop"
+
+  install -d "$pkgdir/usr/share/kio-protondrive-wizard/qml"
+  install -m644 wizard/qml/*.qml "$pkgdir/usr/share/kio-protondrive-wizard/qml/"
+
+  install -d "$pkgdir/usr/share/kio-protondrive-wizard/translations"
+  install -m644 wizard/translations-compiled/*.qm \
+    "$pkgdir/usr/share/kio-protondrive-wizard/translations/"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

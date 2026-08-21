@@ -14,7 +14,17 @@ name = "protondrive_core"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-cxx = "1"
+# Pinned, not "1": confirmed live that cxx 1.0.199 (the next patch release
+# after this) breaks the build against the pinned Corrosion v0.6.0 (see
+# CMakeLists.txt) — Corrosion's own separate `cargo install cxxbridge-cmd`
+# codegen step and the actual `cxx` crate compiled here fell out of sync,
+# leaving `cxxbridge1$std$vector$<T>$...` symbols undefined at link time for
+# the KIO worker plugin. 1.0.198 confirmed working. An unpinned "1" is fine
+# day-to-day (Cargo.lock, once generated, holds it steady) but bites the
+# moment that lockfile gets regenerated fresh — which every packaging build
+# does (debian/scripts/prepare-offline-build.sh's `cargo generate-lockfile`,
+# and any from-source distro package like an AUR PKGBUILD).
+cxx = "=1.0.198"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -22,7 +32,7 @@ thiserror = "2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 
 [build-dependencies]
-cxx-build = "1"
+cxx-build = "=1.0.198"
 
 [dev-dependencies]
 tempfile = "3"
