@@ -24,7 +24,7 @@ crate-type = ["staticlib", "rlib"]
 # moment that lockfile gets regenerated fresh — which every packaging build
 # does (debian/scripts/prepare-offline-build.sh's `cargo generate-lockfile`,
 # and any from-source distro package like an AUR PKGBUILD).
-cxx = "=1.0.198"
+cxx = "=1.0.199"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
