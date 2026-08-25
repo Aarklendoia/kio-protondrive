@@ -25,7 +25,14 @@ const LOCALEDIR: &str = "/usr/share/locale";
 /// loaded just leaves the (English) `msgid`s as the effective text, same
 /// "never fail the daemon over it" stance as the notify-send calls below.
 pub fn init() {
-    setlocale(LocaleCategory::LcAll, "");
+    // Safety: `setlocale` non-atomically mutates process-global state with
+    // no synchronization, which is only sound called this early — this is
+    // the very first thing `main` does (right after `env_logger::init()`),
+    // before any thread or POSIX signal handling starts, matching the
+    // crate's own documented safety requirement for this function.
+    unsafe {
+        setlocale(LocaleCategory::LcAll, "");
+    }
     if let Err(err) = bindtextdomain(DOMAIN, LOCALEDIR) {
         log::debug!("could not bind the {DOMAIN} translation domain at {LOCALEDIR}: {err}");
         return;
