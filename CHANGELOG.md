@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.10.0...v0.10.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **wizard:** sync KIO worker's credentials store via plasma-workspace env ([#99](https://github.com/Aarklendoia/kio-protondrive/issues/99)) ([82ea8a8](https://github.com/Aarklendoia/kio-protondrive/commit/82ea8a8c16f3e0e50dde859fe4d389beeb7cb61c))
+
 ## [0.10.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.9.1...v0.10.0) (2026-08-21)
 
 
