@@ -148,9 +148,22 @@ Environment=PROTON_DRIVE_CREDENTIALS_STORE=pass
 
 (`pass` requires `pass` and a GPG key already set up, and `gpg-agent` able
 to decrypt without an interactive prompt for the daemon to authenticate
-unattended.) The KIO worker is unaffected either way — it keeps using
-whichever store the CLI's own default (`keychain`) or your shell
-environment already selects.
+unattended.)
+
+The KIO worker is a separate process (spawned inside Dolphin/klauncher) that
+never sees `daemon.toml` or the daemon's systemd `Environment=` — left to
+itself it keeps using whichever store the CLI's own default (the desktop
+keyring) or your shell environment already selects, independently of what
+the daemon is using. This used to mean Dolphin and the daemon/wizard could
+disagree about whether you're even signed in. To avoid that, the wizard's
+credential-storage page also writes a small
+`~/.config/plasma-workspace/env/kio-protondrive.sh` that exports
+`PROTON_DRIVE_CREDENTIALS_STORE` for your whole Plasma session — Plasma only
+reads that directory at login, so **log out and back in** after running the
+wizard for it to take effect. If you change the store by editing the
+systemd unit directly (as above) instead of through the wizard, that script
+doesn't get updated — set `PROTON_DRIVE_CREDENTIALS_STORE` in your session
+environment yourself (or re-run the wizard) to keep the KIO worker in sync.
 
 ## Scope
 
