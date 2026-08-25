@@ -76,6 +76,18 @@ Kirigami.Page {
                 horizontalAlignment: Text.AlignHCenter
                 Layout.fillWidth: true
             }
+            Label {
+                // route_save_config already wrote the plasma-workspace/env
+                // script pointing Dolphin's KIO worker at the same
+                // credentials store the daemon uses — but Plasma only reads
+                // that directory at session startup, so it has no effect on
+                // the already-running session.
+                text: qsTr("Log out and back in for Dolphin to fully recognize your Proton Drive session (until then, browsing it may ask you to sign in again there).")
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                opacity: 0.8
+                Layout.fillWidth: true
+            }
         }
 
         Label {
