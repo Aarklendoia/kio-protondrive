@@ -2,3 +2,4 @@ usr/bin/kio-protondrive-wizard
 usr/share/kio-protondrive-wizard/qml/*
 usr/share/kio-protondrive-wizard/translations/*
 wizard/kio-protondrive-wizard.desktop usr/share/applications
+wizard/kio-protondrive-wizard.metainfo.xml usr/share/metainfo
