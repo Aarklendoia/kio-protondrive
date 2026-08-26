@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>kio-protondrive-wizard.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Proton Drive Setup</name>
+  <summary>Sign in and configure the Proton Drive sync daemon</summary>
+  <description>
+    <p>
+      Graphical wizard that signs you in to Proton Drive and lets you choose
+      how the background sync daemon stores your session (plain file vs.
+      GPG-encrypted via pass). Also installs the official Proton Drive CLI
+      itself if it's missing, and offers to apply CLI updates the sync
+      daemon detects.
+    </p>
+    <p>
+      Launched automatically by kio-protondrive-sync-daemon when it needs
+      authentication or a confirmed CLI update, or runnable manually.
+    </p>
+  </description>
+  <launchable type="desktop-id">kio-protondrive-wizard.desktop</launchable>
+  <categories>
+    <category>Qt</category>
+    <category>KDE</category>
+    <category>Network</category>
+  </categories>
+  <url type="homepage">https://github.com/Aarklendoia/kio-protondrive</url>
+  <url type="bugtracker">https://github.com/Aarklendoia/kio-protondrive/issues</url>
+  <developer id="com.aarklendoia">
+    <name>Aarklendoïa</name>
+  </developer>
+  <provides>
+    <binary>kio-protondrive-wizard</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.7.0" date="2026-08-26" />
+  </releases>
+</component>
