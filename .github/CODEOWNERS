@@ -1,0 +1,3 @@
+# Requests the maintainer's review on every pull request, Dependabot's
+# included (replaces dependabot.yml's removed `reviewers` key).
+* @Aarklendoia
