@@ -3,7 +3,7 @@
         "protondrive": {
             "Class": ":internet",
             "Icon": "folder-cloud",
-            "deleteRecursive": false,
+            "deleteRecursive": true,
             "deleting": true,
             "input": "none",
             "linking": false,
