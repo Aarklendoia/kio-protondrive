@@ -143,19 +143,20 @@ future edit doesn't reintroduce them:
   `find_package(SQLite3 QUIET)` finds one (Arch has it; Debian's current
   build environment doesn't, and keeps working without it — see that
   file's own comments for why doing this unconditionally isn't safe
-  there) — and by relaxing `-Wl,-z,undefs` on those same three targets,
-  since ECM's `KDECompilerSettings`-added `-Wl,--no-undefined` otherwise
-  also catches a handful of cxx's own unconditionally-monomorphized
-  `CxxVector<T>` symbols for primitive types this project's FFI surface
-  never actually uses (genuinely dead code, not a real bug).
+  there). The plugins keep ECM's `-Wl,--no-undefined`: an earlier
+  `-Wl,-z,undefs` relaxation, meant for supposedly dead cxx `CxxVector<T>`
+  symbols, turned out to be hiding the LTO problem below and was removed.
 - **`makepkg.conf`'s default `CFLAGS`/`CXXFLAGS` (`-flto=auto`) break
-  linking a `cargo build`/`cargo test` binary against rusqlite's bundled
-  sqlite3.** The `cc` crate (used by `libsqlite3-sys`'s build script)
-  honors the ambient `CFLAGS`, so its `sqlite3.o` ends up as LTO bytecode
-  — fine for CMake's own C++ link of the same archive (`g++` is invoked
-  with matching `-flto` and its LTO plugin resolves it), but not for a
-  plain `cargo build`, which links via `rustc`/`cc` with no `-flto` at
-  all. This one's packaging-only (`PKGBUILD`'s `_cargo_no_lto` wrapping
-  `CFLAGS`/`CXXFLAGS` with `-fno-lto` around the Cargo calls specifically)
-  rather than an upstream `CMakeLists.txt`/`Cargo.toml` fix, since
-  Debian's build environment doesn't default to LTO and so never hits it.
+  the build.** The `cc` crate honors the ambient flags, so the C/C++ it
+  compiles for the Rust side (rusqlite's bundled sqlite3, cxx's own
+  runtime) ends up as GCC LTO bytecode rather than object code. A plain
+  `cargo build`/`cargo test` then fails to link (rustc never passes
+  `-flto` to the final link: undefined `sqlite3_*`). Worse, the CMake
+  build *succeeds*: rustc's index of `libprotondrive_core.a` doesn't list
+  the LTO-only objects' symbols, so the plugins' link never pulls them in,
+  and a `-Wl,-z,undefs` relaxation (since removed) let it through,
+  producing plugins with 300+ undefined `cxxbridge1$...` symbols that fail
+  to `dlopen` (#111). Fixed packaging-side with `options=(!lto)` in the
+  `PKGBUILD`; `check()` also verifies each plugin loads with every symbol
+  resolved. Debian's
+  build environment doesn't default to LTO and so never hits it.
