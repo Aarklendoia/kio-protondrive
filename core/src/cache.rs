@@ -436,6 +436,61 @@ impl Cache {
         Ok(())
     }
 
+    /// After `old_remote_path` was renamed or moved *on Drive* (the worker's
+    /// `rename()`, #135): rekeys every pin at or under it to the matching
+    /// path under `new_remote_path`, and moves each local copy to the
+    /// mirrored place under the cache root, so the file stays pinned under
+    /// its new name instead of the old path still answering from the pin
+    /// cache. The row is updated *before* the file moves, so the daemon's
+    /// watcher sees a `from` it no longer knows and leaves Drive alone
+    /// (`handle_rename` would otherwise try the rename a second time). A
+    /// local copy that's already gone just has its row rekeyed. Same
+    /// literal `path + "/"` prefix match as [`Self::invalidate_tree`].
+    pub fn rename_tree(
+        &self,
+        old_remote_path: &str,
+        new_remote_path: &str,
+    ) -> Result<(), DriveError> {
+        let old = old_remote_path.trim_end_matches('/');
+        let new = new_remote_path.trim_end_matches('/');
+        let prefix = format!("{old}/");
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT remote_path, local_path FROM pins
+                 WHERE remote_path = ?1 OR substr(remote_path, 1, length(?2)) = ?2",
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        let pinned = stmt
+            .query_map(params![old, prefix], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+
+        for (remote_path, local_path) in pinned {
+            let renamed_remote = format!("{new}{}", &remote_path[old.len()..]);
+            let rel = renamed_remote.trim_start_matches('/');
+            let file_name = Path::new(rel).file_name().ok_or_else(|| {
+                DriveError::Cli(format!("cannot pin a bare root path: {renamed_remote}"))
+            })?;
+            let renamed_local = self.target_dir_for(&renamed_remote)?.join(file_name);
+            self.rename(&remote_path, &renamed_remote, &renamed_local)?;
+            match std::fs::rename(&local_path, &renamed_local) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    // Put the row back: it must keep pointing at the file
+                    // that's still actually there.
+                    self.rename(&renamed_remote, &remote_path, Path::new(&local_path))?;
+                    return Err(DriveError::Io(err.to_string()));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Records `remote_path` as freshly uploaded — call after a successful
     /// re-upload of a pinned file's local edits, mirroring
     /// [`Self::needs_upload`]'s mtime/size tracking.
@@ -1067,6 +1122,46 @@ mod tests {
         assert_eq!(cache.lookup("/my-files/F/sub/b.txt").unwrap(), None);
         assert!(sibling.exists());
         assert_eq!(cache.lookup("/my-files/Foo/c.txt").unwrap(), Some(sibling));
+    }
+
+    #[test]
+    fn rename_tree_rekeys_and_moves_the_pins_under_the_path_only() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let file = cache.pin(&runner, "/my-files/F/a.txt", false).unwrap();
+        let nested = cache.pin(&runner, "/my-files/F/sub/b.txt", false).unwrap();
+        let sibling = cache.pin(&runner, "/my-files/Foo/c.txt", false).unwrap();
+
+        cache.rename_tree("/my-files/F", "/my-files/T/G").unwrap();
+
+        assert_eq!(cache.lookup("/my-files/F/a.txt").unwrap(), None);
+        assert_eq!(cache.lookup("/my-files/F/sub/b.txt").unwrap(), None);
+        let moved = cache.lookup("/my-files/T/G/a.txt").unwrap().unwrap();
+        let moved_nested = cache.lookup("/my-files/T/G/sub/b.txt").unwrap().unwrap();
+        assert_eq!(moved, cache.root().join("my-files/T/G/a.txt"));
+        assert_eq!(moved_nested, cache.root().join("my-files/T/G/sub/b.txt"));
+        assert!(!file.exists() && !nested.exists());
+        assert_eq!(std::fs::read(&moved).unwrap(), b"hello");
+        assert_eq!(cache.lookup("/my-files/Foo/c.txt").unwrap(), Some(sibling));
+    }
+
+    #[test]
+    fn rename_tree_renames_a_single_pinned_file() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        cache.pin(&runner, "/my-files/a.txt", false).unwrap();
+
+        cache
+            .rename_tree("/my-files/a.txt", "/my-files/b.txt")
+            .unwrap();
+
+        assert_eq!(cache.lookup("/my-files/a.txt").unwrap(), None);
+        let local = cache.lookup("/my-files/b.txt").unwrap().unwrap();
+        assert_eq!(local, cache.root().join("my-files/b.txt"));
+        assert_eq!(
+            cache.lookup_by_local_path(&local).unwrap(),
+            Some("/my-files/b.txt".to_string())
+        );
     }
 
     #[test]
