@@ -231,11 +231,16 @@ environment yourself (or re-run the wizard) to keep the KIO worker in sync.
   slower) — rename/move are implemented ([#5](https://github.com/Aarklendoia/kio-protondrive/issues/5))
 - Albums, uploading to Photos ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18))
 
-**Blocked upstream:** `/albums` and the `photos-shared-by-me`/
-`photos-shared-with-me`/`photos-trash` sections shown when listing `/` fail
-every operation with "Path type ... is not supported" from the
-`proton-drive` CLI itself — this isn't something a KIO worker can work
-around. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
+**Blocked upstream** (checked with `proton-drive` CLI 0.9.0): these are
+limits of the CLI itself, not something a KIO worker can work around. See
+[#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
+
+- `/albums` fails every operation with "Path type albums is not
+  supported".
+- `/photos-shared-by-me`, `/photos-shared-with-me` and `/photos-trash` can
+  be browsed (listed), but their files can't be opened or copied out: the
+  CLI's `filesystem download` rejects those paths with "Path ... is not
+  supported".
 
 **Known limitation: no thumbnails.** Dolphin/KIO's `PreviewJob` enforces a
 hard, non-configurable 2-second timeout per file (`startTimer(2s)` in KDE
