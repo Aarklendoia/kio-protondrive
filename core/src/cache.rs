@@ -740,6 +740,35 @@ impl Cache {
         Ok(())
     }
 
+    /// [`Self::invalidate_stat`] and [`Self::invalidate_listing`] for `path`
+    /// *and everything under it* (#128): after a folder is renamed, moved or
+    /// trashed, its children's entries would otherwise keep answering for
+    /// paths that no longer exist. Compares a literal `path + "/"` prefix
+    /// rather than using `LIKE`, whose `%`/`_` wildcards can appear in Drive
+    /// names, and so that `/a/F` doesn't match its sibling `/a/Foo`.
+    pub fn invalidate_tree(&self, path: &str) -> Result<(), DriveError> {
+        let prefix = if path.ends_with('/') {
+            path.to_string()
+        } else {
+            format!("{path}/")
+        };
+        self.conn
+            .execute(
+                "DELETE FROM fs_stat_cache
+                 WHERE path = ?1 OR substr(path, 1, length(?2)) = ?2",
+                params![path, prefix],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        self.conn
+            .execute(
+                "DELETE FROM fs_listing_cache
+                 WHERE parent_path = ?1 OR substr(parent_path, 1, length(?2)) = ?2",
+                params![path, prefix],
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
     /// Every path with a cached stat result — read by the sync daemon's
     /// periodic refresh sweep ([`crate::cache`]'s module doc comment).
     pub fn all_cached_stat_paths(&self) -> Result<Vec<String>, DriveError> {
@@ -1122,6 +1151,45 @@ mod tests {
         drop(cache);
         let cache = Cache::open(&db, &files).unwrap();
         assert!(cache.cached_stat("/my-files/a.txt").unwrap().is_some());
+    }
+
+    #[test]
+    fn invalidate_tree_drops_the_path_and_its_descendants_only() {
+        let (_dir, cache) = cache();
+        for path in [
+            "/my-files/F",
+            "/my-files/F/f.txt",
+            "/my-files/F/sub/g.txt",
+            "/my-files/Foo",
+            "/my-files/Foo/h.txt",
+            "/my-files/F_",
+        ] {
+            cache.store_stat(path, &node("u", "x")).unwrap();
+        }
+        for parent in [
+            "/my-files",
+            "/my-files/F",
+            "/my-files/F/sub",
+            "/my-files/Foo",
+        ] {
+            cache.store_listing(parent, &[]).unwrap();
+        }
+
+        cache.invalidate_tree("/my-files/F").unwrap();
+
+        for gone in ["/my-files/F", "/my-files/F/f.txt", "/my-files/F/sub/g.txt"] {
+            assert!(cache.cached_stat(gone).unwrap().is_none(), "{gone}");
+        }
+        for kept in ["/my-files/Foo", "/my-files/Foo/h.txt", "/my-files/F_"] {
+            assert!(cache.cached_stat(kept).unwrap().is_some(), "{kept}");
+        }
+        assert!(cache.cached_listing("/my-files/F").unwrap().is_none());
+        assert!(cache.cached_listing("/my-files/F/sub").unwrap().is_none());
+        assert!(cache.cached_listing("/my-files/Foo").unwrap().is_some());
+        assert!(
+            cache.cached_listing("/my-files").unwrap().is_some(),
+            "the parent's listing is the caller's to invalidate"
+        );
     }
 
     #[test]

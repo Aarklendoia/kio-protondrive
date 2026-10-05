@@ -327,7 +327,7 @@ fn trash(path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     cli::trash_path(&runner, path).map_err(|e| e.to_string())?;
     if let Ok(cache) = open_cache() {
-        let _ = cache.invalidate_stat(path);
+        let _ = cache.invalidate_tree(path);
         if let Some((parent, _)) = path.rsplit_once('/') {
             let parent = if parent.is_empty() { "/" } else { parent };
             let _ = cache.invalidate_listing(parent);
@@ -345,7 +345,7 @@ fn restore_path(remote_path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     cli::restore_path(&runner, remote_path).map_err(|e| e.to_string())?;
     if let Ok(cache) = open_cache() {
-        let _ = cache.invalidate_stat(remote_path);
+        let _ = cache.invalidate_tree(remote_path);
         let _ = cache.invalidate_listing("/trash");
     }
     Ok(())
@@ -355,7 +355,7 @@ fn permanently_delete_path(remote_path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     cli::permanently_delete_path(&runner, remote_path).map_err(|e| e.to_string())?;
     if let Ok(cache) = open_cache() {
-        let _ = cache.invalidate_stat(remote_path);
+        let _ = cache.invalidate_tree(remote_path);
         let _ = cache.invalidate_listing("/trash");
     }
     Ok(())
@@ -374,8 +374,9 @@ fn rename_or_move(old_path: &str, new_path: &str) -> Result<(), String> {
     let runner = RealCommandRunner;
     cli::rename_or_move(&runner, old_path, new_path).map_err(|e| e.to_string())?;
     if let Ok(cache) = open_cache() {
-        let _ = cache.invalidate_stat(old_path);
-        let _ = cache.invalidate_stat(new_path);
+        // Whole subtrees (#128): a renamed folder's children move with it.
+        let _ = cache.invalidate_tree(old_path);
+        let _ = cache.invalidate_tree(new_path);
         for path in [old_path, new_path] {
             if let Some((parent, _)) = path.rsplit_once('/') {
                 let parent = if parent.is_empty() { "/" } else { parent };
