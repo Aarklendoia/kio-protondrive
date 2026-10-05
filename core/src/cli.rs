@@ -866,6 +866,7 @@ mod tests {
             "type":"file",
             "mediaType":"application/pdf",
             "totalStorageSize":12345,
+            "activeRevision":{"storageSize":12345,"claimedSize":12282},
             "isShared":false,
             "creationTime":"2026-01-02T00:00:00.000Z",
             "modificationTime":"2026-01-02T00:00:00.000Z"
@@ -918,7 +919,7 @@ mod tests {
         };
         assert!(!file.is_folder());
         assert_eq!(file.display_name(), "report.pdf");
-        assert_eq!(file.total_storage_size, Some(12345));
+        assert_eq!(file.size(), 12282, "claimedSize, not totalStorageSize");
         assert_eq!(file.media_type.as_deref(), Some("application/pdf"));
 
         let undecryptable = match &items[2] {
@@ -926,6 +927,11 @@ mod tests {
             ListItem::Section(_) => panic!("expected a node"),
         };
         assert_eq!(undecryptable.display_name(), "uid-file-undecryptable-name");
+        assert_eq!(
+            undecryptable.size(),
+            10,
+            "no activeRevision: falls back to totalStorageSize"
+        );
     }
 
     #[test]

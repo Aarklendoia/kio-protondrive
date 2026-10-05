@@ -146,7 +146,7 @@ fn node_to_ffi(node: &NodeEntry) -> FfiEntry {
         name: node.display_name().to_string(),
         is_folder: node.is_folder(),
         media_type: node.media_type.clone().unwrap_or_default(),
-        size: node.total_storage_size.unwrap_or(0),
+        size: node.size(),
         creation_time: node.creation_time.clone(),
         modification_time: node.modification_time.clone(),
         is_shared_by_url: node.is_shared_by_url,

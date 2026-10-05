@@ -33,8 +33,14 @@ pub struct NodeEntry {
     pub node_type: String,
     #[serde(default)]
     pub media_type: Option<String>,
+    /// What Proton stores for the node, encryption overhead and metadata
+    /// included — larger than the file itself (86 bytes for an 8-byte file).
+    /// Only a fallback for [`Self::size`].
     #[serde(default)]
     pub total_storage_size: Option<u64>,
+    /// Absent on folders. Carries the file's real size, see [`Self::size`].
+    #[serde(default)]
+    pub active_revision: Option<ActiveRevision>,
     pub creation_time: String,
     pub modification_time: String,
     #[serde(default)]
@@ -69,7 +75,29 @@ pub struct PhotoDetails {
     pub tags: Vec<u8>,
 }
 
+/// The `activeRevision` sub-object `filesystem list`/`info` and
+/// `photo timeline -d` nest on each file node (CLI 0.9.0). Only the field the
+/// worker needs is mapped.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveRevision {
+    /// The plaintext size the uploading client declared (#125).
+    #[serde(default)]
+    pub claimed_size: Option<u64>,
+}
+
 impl NodeEntry {
+    /// The file's own size, as shown to the user: the active revision's
+    /// `claimedSize`, falling back to `totalStorageSize` (the stored,
+    /// encrypted size) when the CLI doesn't report it, then to 0.
+    pub fn size(&self) -> u64 {
+        self.active_revision
+            .as_ref()
+            .and_then(|r| r.claimed_size)
+            .or(self.total_storage_size)
+            .unwrap_or(0)
+    }
+
     pub fn is_folder(&self) -> bool {
         self.node_type == "folder" || self.node_type == "album"
     }

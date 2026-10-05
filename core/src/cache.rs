@@ -70,6 +70,14 @@ const PHOTO_TIMELINE_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 /// gets an immediate error instead of a chance to wait its turn.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Bumped whenever the JSON stored in the node caches (`fs_stat_cache`,
+/// `fs_listing_cache`, `photo_timeline_cache`) gains a field that changes
+/// what the worker shows: [`Cache::open`] then empties those tables once,
+/// since they have no TTL and would otherwise keep serving the old shape.
+/// They only hold re-fetchable CLI output, never user state.
+/// 1: `activeRevision.claimedSize`, the real file size (#125).
+const NODE_CACHE_VERSION: i64 = 1;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinRecord {
     pub remote_path: String,
@@ -157,6 +165,20 @@ impl Cache {
             [],
         )
         .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        if version < NODE_CACHE_VERSION {
+            conn.execute_batch(&format!(
+                "BEGIN IMMEDIATE;
+                 DELETE FROM fs_stat_cache;
+                 DELETE FROM fs_listing_cache;
+                 DELETE FROM photo_timeline_cache;
+                 PRAGMA user_version = {NODE_CACHE_VERSION};
+                 COMMIT;"
+            ))
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        }
         Ok(Self {
             conn,
             root: root.to_path_buf(),
@@ -1065,12 +1087,41 @@ mod tests {
             node_type: "file".to_string(),
             media_type: None,
             total_storage_size: Some(123),
+            active_revision: None,
             creation_time: "2026-01-01T00:00:00.000Z".to_string(),
             modification_time: "2026-01-01T00:00:00.000Z".to_string(),
             is_shared: false,
             is_shared_by_url: false,
             photo: None,
         }
+    }
+
+    #[test]
+    fn open_drops_node_caches_written_before_the_current_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("index.sqlite3");
+        let files = dir.path().join("files");
+        {
+            let cache = Cache::open(&db, &files).unwrap();
+            cache
+                .store_stat("/my-files/a.txt", &node("u1", "a.txt"))
+                .unwrap();
+            cache
+                .store_listing("/my-files", &[node("u1", "a.txt")])
+                .unwrap();
+            cache.conn.execute_batch("PRAGMA user_version = 0").unwrap();
+        }
+        let cache = Cache::open(&db, &files).unwrap();
+        assert!(cache.cached_stat("/my-files/a.txt").unwrap().is_none());
+        assert!(cache.cached_listing("/my-files").unwrap().is_none());
+
+        // Up to date: a later open keeps what's cached.
+        cache
+            .store_stat("/my-files/a.txt", &node("u1", "a.txt"))
+            .unwrap();
+        drop(cache);
+        let cache = Cache::open(&db, &files).unwrap();
+        assert!(cache.cached_stat("/my-files/a.txt").unwrap().is_some());
     }
 
     #[test]
