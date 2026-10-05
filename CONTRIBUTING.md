@@ -107,6 +107,34 @@ dpkg-buildpackage -us -uc -b -d
 The generated packages will be in the parent directory. See
 [docs/LAUNCHPAD.md](docs/LAUNCHPAD.md) for publishing to the Launchpad PPA.
 
+### Dependency constraints
+
+A dependency change that passes CI can still break the packaged builds, so
+keep these in mind:
+
+- **Minimum Rust: 1.93** (`rust-version` in the workspace `Cargo.toml`).
+  The Launchpad PPA builds offline with the target Ubuntu series' own
+  packaged rustc/cargo (resolute: 1.93.1, check with
+  `rmadison -u ubuntu cargo`). Raise `rust-version` only when every
+  packaged target ships the newer version.
+- **`Cargo.lock` isn't committed**: every packaging build regenerates it,
+  so transitive dependencies float to their latest release on build day.
+  The workspace uses `resolver = "3"`, so that resolution skips releases
+  needing a newer rustc than `rust-version`.
+- **`cxx` and `cxx-build` are pinned to the same exact version**
+  (`core/Cargo.toml`), and Corrosion to a release tag (`CMakeLists.txt`,
+  `debian/scripts/prepare-offline-build.sh`,
+  `packaging/aur/PKGBUILD`). Bump the two cxx crates together, in one PR
+  (Dependabot groups them).
+
+Before merging a dependency bump, run the offline PPA flow locally:
+`RUST_TOOLCHAIN=1.93.1 ./debian/scripts/prepare-offline-build.sh` on a
+scratch copy of the tree, then `dpkg-buildpackage -b -us -uc` in an
+`ubuntu:resolute` container started with `--network none`. Check that each
+plugin loads (`ldd -r` on the `.so` files must report no undefined
+symbol), not only that it links. For the AUR, `makepkg -s` in an
+`archlinux:latest` container (see [docs/AUR.md](docs/AUR.md)).
+
 ## Releases
 
 Versioning and releases are automated by

@@ -337,9 +337,10 @@ cmake --build build
 cmake --install build --prefix "$HOME/.local"  # test without root
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development workflow,
-and [docs/LAUNCHPAD.md](docs/LAUNCHPAD.md) for the Debian/Launchpad release
-process.
+Requires Rust 1.93 or newer. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+full development workflow (including the dependency constraints imposed by
+the packaged builds), and [docs/LAUNCHPAD.md](docs/LAUNCHPAD.md) for the
+Debian/Launchpad release process.
 
 ## License
 
