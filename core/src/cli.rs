@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-use crate::entry::{ListItem, NodeEntry, PublicLink, SharingStatus, TransferSummary, TrashOutcome};
+use crate::entry::{
+    CopyOutcome, ListItem, NodeEntry, PublicLink, SharingStatus, TransferSummary, TrashOutcome,
+};
 
 /// `filesystem list`/`info`/`create-folder`/`trash` are plain metadata API
 /// calls — a healthy CLI answers in well under this. Deliberately short so a
@@ -36,6 +38,12 @@ pub enum DriveError {
     NotAuthenticated,
     #[error("a file or folder with this name already exists: {0}")]
     AlreadyExists(String),
+    /// The CLI refuses the operation for this path ("Path ... is not
+    /// supported"), e.g. copying out of `/trash` — as opposed to the path
+    /// not existing. Only [`copy_path`] raises it, so the worker can fall
+    /// back to KIO's own download+upload instead of reporting "not found".
+    #[error("operation not supported for: {0}")]
+    Unsupported(String),
     #[error("proton-drive reported an error: {0}")]
     Cli(String),
     #[error("could not parse proton-drive output: {0}")]
@@ -518,6 +526,48 @@ pub fn move_path(
     let outcomes: Vec<TrashOutcome> = serde_json::from_str(&out.stdout)?;
     if let Some(failed) = outcomes.iter().find(|o| !o.ok) {
         return Err(DriveError::Cli(format!("failed to move {}", failed.uid)));
+    }
+    Ok(())
+}
+
+/// Copies `source_path` into `target_parent_path` under `new_name`, entirely
+/// server-side (`filesystem copy -n`). Folders are copied recursively.
+/// Confirmed live: a name collision in the target comes back as an
+/// `ok: false` outcome with a zero exit code, not as a CLI failure, and a
+/// source the CLI can't copy from (e.g. `/trash`) fails with "Path ... is
+/// not supported".
+pub fn copy_path(
+    runner: &dyn CommandRunner,
+    source_path: &str,
+    target_parent_path: &str,
+    new_name: &str,
+) -> Result<(), DriveError> {
+    let out = runner.run(
+        &[
+            "filesystem",
+            "copy",
+            "-j",
+            "-n",
+            new_name,
+            source_path,
+            target_parent_path,
+        ],
+        METADATA_TIMEOUT,
+    )?;
+    if !out.success && out.stderr.to_lowercase().contains("is not supported") {
+        return Err(DriveError::Unsupported(source_path.to_string()));
+    }
+    ensure_success(source_path, &out)?;
+    let outcomes: Vec<CopyOutcome> = serde_json::from_str(&out.stdout)?;
+    if let Some(failed) = outcomes.iter().find(|o| !o.ok) {
+        let target = format!("{}/{new_name}", target_parent_path.trim_end_matches('/'));
+        return match failed.error.as_ref().map(|e| e.name.as_str()) {
+            Some("NodeWithSameNameExistsValidationError") => Err(DriveError::AlreadyExists(target)),
+            Some(name) => Err(DriveError::Cli(format!(
+                "failed to copy {source_path}: {name}"
+            ))),
+            None => Err(DriveError::Cli(format!("failed to copy {source_path}"))),
+        };
     }
     Ok(())
 }
@@ -1112,6 +1162,59 @@ mod tests {
         let runner = MockRunner::success(TRASH_PARTIAL_FAILURE);
         let err = move_path(&runner, "/my-files/a.txt", "/my-files/Sub").unwrap_err();
         assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn copy_path_passes_the_new_name_and_target_parent() {
+        let runner = MockRunner::success(r#"[{"uid":"uid-a","newUid":"uid-b","ok":true}]"#);
+        copy_path(&runner, "/my-files/a.txt", "/my-files/Sub", "b.txt").unwrap();
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "filesystem",
+                "copy",
+                "-j",
+                "-n",
+                "b.txt",
+                "/my-files/a.txt",
+                "/my-files/Sub"
+            ]
+        );
+    }
+
+    #[test]
+    fn copy_path_maps_a_name_collision_outcome_to_already_exists() {
+        // Shape confirmed live with CLI 0.9.0 (exit code 0).
+        let runner = MockRunner::success(
+            r#"[{"uid":"uid-a","ok":false,"error":{"name":"NodeWithSameNameExistsValidationError","code":2500,"existingNodeUid":"uid-x","isUnfinishedUpload":false}}]"#,
+        );
+        let err = copy_path(&runner, "/my-files/a.txt", "/my-files/Sub/", "a.txt").unwrap_err();
+        assert_eq!(
+            err,
+            DriveError::AlreadyExists("/my-files/Sub/a.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn copy_path_errors_on_any_other_failed_outcome() {
+        let runner =
+            MockRunner::success(r#"[{"uid":"uid-a","ok":false,"error":{"name":"SomethingElse"}}]"#);
+        let err = copy_path(&runner, "/my-files/a.txt", "/my-files/Sub", "a.txt").unwrap_err();
+        assert!(matches!(err, DriveError::Cli(_)));
+    }
+
+    #[test]
+    fn copy_path_reports_an_unsupported_source_as_unsupported_not_missing() {
+        let runner = MockRunner::failure(r#"Path "/trash/a.txt" is not supported"#);
+        let err = copy_path(&runner, "/trash/a.txt", "/my-files", "a.txt").unwrap_err();
+        assert_eq!(err, DriveError::Unsupported("/trash/a.txt".to_string()));
+    }
+
+    #[test]
+    fn copy_path_still_reports_a_missing_source_as_not_found() {
+        let runner = MockRunner::failure("Node not found: nope.txt");
+        let err = copy_path(&runner, "/my-files/nope.txt", "/my-files", "nope.txt").unwrap_err();
+        assert_eq!(err, DriveError::NotFound("/my-files/nope.txt".to_string()));
     }
 
     #[test]

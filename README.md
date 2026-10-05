@@ -171,7 +171,14 @@ environment yourself (or re-run the wizard) to keep the KIO worker in sync.
 
 - Browsing folders, including Proton Drive's virtual top-level sections
   (`/my-files`, `/devices`, `/shared-with-me`, `/trash`, ...)
-- Opening/downloading files, uploading/overwriting files, creating folders
+- Opening/downloading files, uploading/overwriting files, creating folders,
+  renaming and moving ([#5](https://github.com/Aarklendoia/kio-protondrive/issues/5))
+- Copying within `protondrive:/` happens server-side (`proton-drive
+  filesystem copy`), without going through the local disk. KIO falls back
+  to download+upload when the CLI can't do it: overwriting an existing
+  file, and anything involving `/photos`. Items in `/trash` can't be copied
+  out at all (the CLI refuses both copying and downloading them). See
+  [#109](https://github.com/Aarklendoia/kio-protondrive/issues/109).
 - Deleting a file or folder moves it to Proton Drive's own trash (browsable
   as `/trash`). A right-click on a trashed item offers "Restore" (back to
   its original location); a right-click on the Trash entry itself offers
@@ -227,8 +234,6 @@ environment yourself (or re-run the wizard) to keep the KIO worker in sync.
 
 **Not yet implemented** (contributions welcome):
 
-- Server-side copy (KIO falls back to download+upload, which works but is
-  slower) — rename/move are implemented ([#5](https://github.com/Aarklendoia/kio-protondrive/issues/5))
 - Albums, uploading to Photos ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18))
 
 **Blocked upstream** (checked with `proton-drive` CLI 0.9.0): these are

@@ -833,6 +833,46 @@ KIO::WorkerResult ProtonDriveWorker::rename(const QUrl &src, const QUrl &dest, K
     return KIO::WorkerResult::pass();
 }
 
+// Server-side copy (`filesystem copy`), so a protondrive:/ -> protondrive:/
+// copy no longer round-trips every byte through the local disk. Whenever it
+// can't do the job, this returns ERR_UNSUPPORTED_ACTION, which makes KIO
+// fall back to its own get()+put() — the only path before this existed:
+//   - /photos is a separate, read-only CLI command family with no copy;
+//   - the CLI refuses some sources outright (e.g. /trash: "Path ... is not
+//     supported");
+//   - overwriting: the CLI has no replace option for copy, while put()
+//     already uploads with `-f replace`.
+KIO::WorkerResult ProtonDriveWorker::copy(const QUrl &src, const QUrl &dest, int /*permissions*/, KIO::JobFlags flags)
+{
+    const QString sourcePath = drivePath(src);
+    const QString destPath = stripTrailingSlash(drivePath(dest));
+    const auto isPhotos = [](const QString &path) {
+        return path == QLatin1String("/photos") || path.startsWith(photosPrefix);
+    };
+    if (isPhotos(sourcePath) || isPhotos(destPath)) {
+        return KIO::WorkerResult::fail(KIO::ERR_UNSUPPORTED_ACTION, sourcePath);
+    }
+
+    try {
+        copy_path(sourcePath.toStdString(), destPath.toStdString());
+    } catch (const rust::Error &error) {
+        const QString message = QString::fromUtf8(error.what());
+        if (message.startsWith(QLatin1String("operation not supported for:"))) {
+            return KIO::WorkerResult::fail(KIO::ERR_UNSUPPORTED_ACTION, message);
+        }
+        if (message.startsWith(QLatin1String("a file or folder with this name already exists:"))) {
+            // No pre-copy stat needed (unlike rename()): the CLI itself
+            // reports the collision, without copying anything.
+            if (flags.testFlag(KIO::Overwrite)) {
+                return KIO::WorkerResult::fail(KIO::ERR_UNSUPPORTED_ACTION, destPath);
+            }
+            return KIO::WorkerResult::fail(KIO::ERR_FILE_ALREADY_EXIST, destPath);
+        }
+        return resultFromErrorMessage(message);
+    }
+    return KIO::WorkerResult::pass();
+}
+
 KIO::WorkerResult ProtonDriveWorker::del(const QUrl &url, bool /*isFile*/)
 {
     const QString path = drivePath(url);
