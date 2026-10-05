@@ -14,17 +14,20 @@ name = "protondrive_core"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-# Pinned, not "1": confirmed live that cxx 1.0.199 (the next patch release
-# after this) breaks the build against the pinned Corrosion v0.6.0 (see
-# CMakeLists.txt) — Corrosion's own separate `cargo install cxxbridge-cmd`
-# codegen step and the actual `cxx` crate compiled here fell out of sync,
-# leaving `cxxbridge1$std$vector$<T>$...` symbols undefined at link time for
-# the KIO worker plugin. 1.0.198 confirmed working. An unpinned "1" is fine
-# day-to-day (Cargo.lock, once generated, holds it steady) but bites the
-# moment that lockfile gets regenerated fresh — which every packaging build
-# does (debian/scripts/prepare-offline-build.sh's `cargo generate-lockfile`,
-# and any from-source distro package like an AUR PKGBUILD).
-cxx = "=1.0.198"
+# Pinned, not "1": Cargo.lock is gitignored and regenerated fresh by every
+# packaging build (debian/scripts/prepare-offline-build.sh's `cargo
+# generate-lockfile`, the AUR PKGBUILD's prepare()), so an unpinned "1"
+# would ship whatever cxx release is newest on build day, untested. The
+# exact pin keeps the cxx crate, cxx-build and the cxxbridge-cmd Corrosion
+# installs to match (see CMakeLists.txt) on a version CI actually built.
+# Bump cxx and cxx-build together, and validate the offline PPA build with
+# the target series' rustc (docs/LAUNCHPAD.md) before merging.
+#
+# This used to be held at 1.0.198 on the belief that 1.0.199+ broke the
+# link (undefined `cxxbridge1$std$vector$<T>$...` symbols in the KIO
+# plugins). That turned out to be Arch makepkg's LTO, not cxx: the same
+# undefined symbols show up with 1.0.198 too (#103, #111).
+cxx = "=1.0.202"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -32,7 +35,7 @@ thiserror = "2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 
 [build-dependencies]
-cxx-build = "=1.0.198"
+cxx-build = "=1.0.202"
 
 [dev-dependencies]
 tempfile = "3"

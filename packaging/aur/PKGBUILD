@@ -36,7 +36,7 @@ sha256sums=('SKIP')
 # network fetch during the actual build, except AUR/makepkg builds do have
 # network access, so this is just about pinning the exact version rather
 # than working around a sandboxed builder.
-_corrosion_tag=v0.6.0
+_corrosion_tag=v0.6.1
 
 
 prepare() {
