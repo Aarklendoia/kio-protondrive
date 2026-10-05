@@ -199,14 +199,30 @@ bool isVirtualRootOrSection(const QString &path)
     return normalized.lastIndexOf(QLatin1Char('/')) == 0 && !translatedSectionName(normalized.mid(1)).isEmpty();
 }
 
-// The "." entry for a path isVirtualRootOrSection() accepts, with the same
-// translated label/icon listDir() gives that section in the root listing.
+// UDS_NAME for stat()'s entry: the item's own name, i.e. the path's last
+// segment ("." only for the root). Unlike a listing's self entry, a stat
+// entry must not be called ".": KIO's CopyJob builds a single-file copy from
+// it and silently skips entries named "." or ".." (copyjob.cpp's
+// addCopyInfoFromUDSEntry()), so copying one file out of protondrive:/ did
+// nothing at all (#122).
+QString statEntryName(const QString &path)
+{
+    const QString normalized = stripTrailingSlash(path);
+    if (normalized == QLatin1String("/")) {
+        return QStringLiteral(".");
+    }
+    return normalized.mid(normalized.lastIndexOf(QLatin1Char('/')) + 1);
+}
+
+// The entry for a path isVirtualRootOrSection() accepts, with the same
+// translated label/icon listDir() gives that section in the root listing,
+// named `name` ("." as listDir()'s self entry, statEntryName() for stat()).
 // Same 0755 access as KIO's own default "." stub.
-KIO::UDSEntry syntheticDirEntry(const QString &path)
+KIO::UDSEntry syntheticDirEntry(const QString &path, const QString &name)
 {
     KIO::UDSEntry uds;
     uds.reserve(5);
-    uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+    uds.fastInsert(KIO::UDSEntry::UDS_NAME, name);
     uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
     uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
     const QString rawName = stripTrailingSlash(path).mid(1);
@@ -291,7 +307,7 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
     // entry rather than failing the whole listing when it's unavailable,
     // list_dir() above having already succeeded.
     if (isVirtualRootOrSection(path)) {
-        listEntry(syntheticDirEntry(path));
+        listEntry(syntheticDirEntry(path, QStringLiteral(".")));
     } else {
         try {
             const FfiEntry self = stat_path(path.toStdString());
@@ -337,7 +353,7 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
             // label/icon (photo_categories.h).
             KIO::UDSEntry uds;
             uds.reserve(5);
-            uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+            uds.fastInsert(KIO::UDSEntry::UDS_NAME, statEntryName(path));
             uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
             uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
             uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, photoCategoryLabel(parts.category));
@@ -353,7 +369,7 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
         // KUrlNavigator's breadcrumb its translated label for the current
         // section (it reads this entry, not the sibling one listDir() emits
         // for it in the root listing).
-        statEntry(syntheticDirEntry(path));
+        statEntry(syntheticDirEntry(path, statEntryName(path)));
         return KIO::WorkerResult::pass();
     }
 
@@ -371,7 +387,7 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
             const QFileInfo info(localPath);
             KIO::UDSEntry uds;
             uds.reserve(4);
-            uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+            uds.fastInsert(KIO::UDSEntry::UDS_NAME, statEntryName(path));
             uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFREG);
             uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0644);
             uds.fastInsert(KIO::UDSEntry::UDS_SIZE, static_cast<long long>(info.size()));
@@ -389,12 +405,10 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
         qWarning() << "pin cache lookup failed for" << path << "(falling back to a normal stat):" << error.what();
     }
 
-    // KIO's convention for the entry describing the URL itself (as opposed
-    // to an entry inside a directory listing) is to name it "." rather than
-    // repeating the full path.
+    // Named after the item itself, not "." — see statEntryName().
     try {
         const FfiEntry entry = stat_path(path.toStdString());
-        statEntry(entryFromFfi(entry, QStringLiteral(".")));
+        statEntry(entryFromFfi(entry, statEntryName(path)));
         return KIO::WorkerResult::pass();
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
@@ -638,7 +652,7 @@ KIO::WorkerResult ProtonDriveWorker::statPhoto(const QString &name)
 {
     try {
         const FfiEntry entry = stat_photo(name.toStdString());
-        statEntry(entryFromFfi(entry, QStringLiteral(".")));
+        statEntry(entryFromFfi(entry, statEntryName(name)));
         return KIO::WorkerResult::pass();
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
