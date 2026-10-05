@@ -102,6 +102,7 @@ mod ffi {
         fn permanently_delete_path(remote_path: &str) -> Result<()>;
         fn empty_trash() -> Result<()>;
         fn rename_or_move(old_path: &str, new_path: &str) -> Result<()>;
+        fn copy_path(source_path: &str, dest_path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
         fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
         fn lookup_cached(remote_path: &str) -> Result<String>;
@@ -381,6 +382,24 @@ fn rename_or_move(old_path: &str, new_path: &str) -> Result<(), String> {
                 let _ = cache.invalidate_listing(parent);
             }
         }
+    }
+    Ok(())
+}
+
+/// Server-side copy of `source_path` to `dest_path` (full destination
+/// path, so the copy can be renamed on the way, like KIO's own copy()). Only
+/// the destination side changes, so only its stat/listing are invalidated.
+fn copy_path(source_path: &str, dest_path: &str) -> Result<(), String> {
+    let (parent, name) = match dest_path.rsplit_once('/') {
+        Some(("", name)) => ("/", name),
+        Some((parent, name)) => (parent, name),
+        None => return Err(cli::DriveError::NotFound(dest_path.to_string()).to_string()),
+    };
+    let runner = RealCommandRunner;
+    cli::copy_path(&runner, source_path, parent, name).map_err(|e| e.to_string())?;
+    if let Ok(cache) = open_cache() {
+        let _ = cache.invalidate_stat(dest_path);
+        let _ = cache.invalidate_listing(parent);
     }
     Ok(())
 }

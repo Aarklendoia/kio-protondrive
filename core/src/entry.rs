@@ -124,6 +124,23 @@ pub struct TrashOutcome {
     pub ok: bool,
 }
 
+/// One entry of the array returned by `filesystem copy -j`. Confirmed live:
+/// `{"uid", "newUid", "ok": true}` on success, `{"uid", "ok": false,
+/// "error": {"name": ..., ...}}` on failure — notably a name collision in the
+/// target folder, which the CLI reports this way with a zero exit code.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CopyOutcome {
+    pub uid: String,
+    pub ok: bool,
+    #[serde(default)]
+    pub error: Option<CopyOutcomeError>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CopyOutcomeError {
+    pub name: String,
+}
+
 /// Response of `sharing status -j path` — confirmed live, including a real
 /// pending `nonProtonInvitations` entry (whose shape `protonInvitations` is
 /// assumed to mirror, same underlying invitation mechanism). Also doubles
