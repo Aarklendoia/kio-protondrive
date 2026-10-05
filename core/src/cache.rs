@@ -363,6 +363,36 @@ impl Cache {
         Ok(())
     }
 
+    /// [`Self::unpin`] for `remote_path` *and every pin under it* (#131):
+    /// a folder trashed in one call takes its pinned files with it, which
+    /// would otherwise keep being served from the pin cache. Same literal
+    /// `path + "/"` prefix match as [`Self::invalidate_tree`]. Stops at the
+    /// first pin that can't be dropped (e.g. unsynced edits without
+    /// `force`), leaving that one and the rest intact.
+    pub fn unpin_tree(&self, remote_path: &str, force: bool) -> Result<(), DriveError> {
+        let prefix = if remote_path.ends_with('/') {
+            remote_path.to_string()
+        } else {
+            format!("{remote_path}/")
+        };
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT remote_path FROM pins
+                 WHERE remote_path = ?1 OR substr(remote_path, 1, length(?2)) = ?2",
+            )
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        let pinned = stmt
+            .query_map(params![remote_path, prefix], |row| row.get::<_, String>(0))
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| DriveError::Sqlite(e.to_string()))?;
+        for path in pinned {
+            self.unpin(&path, force)?;
+        }
+        Ok(())
+    }
+
     /// Whether `local_path`'s current on-disk state differs from what was
     /// last recorded as synced for `remote_path` — same check
     /// [`Self::needs_upload`] does, but stats the file itself instead of
@@ -1019,6 +1049,24 @@ mod tests {
 
         assert!(!local_path.exists());
         assert_eq!(cache.lookup("/my-files/a.txt").unwrap(), None);
+    }
+
+    #[test]
+    fn unpin_tree_drops_the_pins_under_the_path_only() {
+        let (_dir, cache) = cache();
+        let runner = DownloadingMockRunner::file(b"hello");
+        let inside = cache.pin(&runner, "/my-files/F/a.txt", false).unwrap();
+        let nested = cache.pin(&runner, "/my-files/F/sub/b.txt", false).unwrap();
+        let sibling = cache.pin(&runner, "/my-files/Foo/c.txt", false).unwrap();
+
+        cache.unpin_tree("/my-files/F", true).unwrap();
+
+        assert!(!inside.exists());
+        assert!(!nested.exists());
+        assert_eq!(cache.lookup("/my-files/F/a.txt").unwrap(), None);
+        assert_eq!(cache.lookup("/my-files/F/sub/b.txt").unwrap(), None);
+        assert!(sibling.exists());
+        assert_eq!(cache.lookup("/my-files/Foo/c.txt").unwrap(), Some(sibling));
     }
 
     #[test]

@@ -876,6 +876,9 @@ KIO::WorkerResult ProtonDriveWorker::copy(const QUrl &src, const QUrl &dest, int
 KIO::WorkerResult ProtonDriveWorker::del(const QUrl &url, bool /*isFile*/)
 {
     const QString path = drivePath(url);
+    // protondrive.json declares deleteRecursive, so a folder arrives here
+    // whole rather than child by child (#131): one CLI call moves it to the
+    // trash with its contents, and restoring it brings the tree back.
     try {
         // An item already under /trash has nowhere further to be
         // soft-deleted to — the CLI's own `filesystem delete` refuses
@@ -891,15 +894,16 @@ KIO::WorkerResult ProtonDriveWorker::del(const QUrl &url, bool /*isFile*/)
         return resultFromRustError(error);
     }
 
-    // Best-effort: if this path was pinned, drop its now-stale local cache
-    // copy — without this, stat()/get() keep serving it from the pin cache
-    // indefinitely after the remote it came from is gone (Cache::lookup()
-    // only checks local file existence, never remote validity). Forced
+    // Best-effort: if this path (or, for a folder, anything under it) was
+    // pinned, drop its now-stale local cache copy — without this,
+    // stat()/get() keep serving it from the pin cache indefinitely after
+    // the remote it came from is gone (Cache::lookup() only checks local
+    // file existence, never remote validity). Forced
     // unconditionally: the remote is already trashed, so there's no longer
     // an "upload local edits first" option to protect by refusing on dirty
     // local content (see Cache::unpin's normal, non-forced guard).
     try {
-        unpin_path(path.toStdString(), true);
+        unpin_tree(path.toStdString(), true);
     } catch (const rust::Error &error) {
         qWarning() << "could not unpin" << path << "after trashing it:" << error.what();
     }

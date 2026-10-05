@@ -104,7 +104,7 @@ mod ffi {
         fn rename_or_move(old_path: &str, new_path: &str) -> Result<()>;
         fn copy_path(source_path: &str, dest_path: &str) -> Result<()>;
         fn lookup_pin(remote_path: &str) -> Result<String>;
-        fn unpin_path(remote_path: &str, force: bool) -> Result<()>;
+        fn unpin_tree(remote_path: &str, force: bool) -> Result<()>;
         fn lookup_cached(remote_path: &str) -> Result<String>;
         fn cache_target_dir(remote_path: &str) -> Result<String>;
         fn store_cached(remote_path: &str, local_path: &str, modification_time: &str)
@@ -417,11 +417,14 @@ fn lookup_pin(remote_path: &str) -> Result<String, String> {
 
 /// Called from `del()` after a successful trash — with `force: true`,
 /// always dropping the local cache copy regardless of unsynced edits, since
-/// the remote it would otherwise be uploaded to no longer exists. A no-op
-/// (via [`crate::cache::Cache::unpin`]) if `remote_path` wasn't pinned.
-fn unpin_path(remote_path: &str, force: bool) -> Result<(), String> {
+/// the remote it would otherwise be uploaded to no longer exists. Covers a
+/// trashed folder's pinned files too (#131). A no-op if nothing at or under
+/// `remote_path` was pinned.
+fn unpin_tree(remote_path: &str, force: bool) -> Result<(), String> {
     let cache = open_cache()?;
-    cache.unpin(remote_path, force).map_err(|e| e.to_string())
+    cache
+        .unpin_tree(remote_path, force)
+        .map_err(|e| e.to_string())
 }
 
 /// Opportunistic-cache read (issue #60) — empty string means "miss", same
