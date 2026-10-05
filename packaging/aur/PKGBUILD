@@ -21,6 +21,7 @@ makedepends=(
   git
   pkgconf
   qt6-base
+  qt6-tools
   kio
   kcoreaddons
   kwidgetsaddons
