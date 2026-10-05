@@ -202,6 +202,7 @@ mod tests {
             node_type: "file".to_string(),
             media_type: None,
             total_storage_size: Some(123),
+            active_revision: None,
             creation_time: "2026-01-01T00:00:00.000Z".to_string(),
             modification_time: "2026-01-01T00:00:00.000Z".to_string(),
             is_shared: false,
