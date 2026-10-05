@@ -617,15 +617,28 @@ fn route_restart_daemon() -> String {
 /// mode in the first place).
 fn route_cli_status() -> String {
     if !which("proton-drive") {
-        return r#"{"installed":false,"version":null}"#.to_string();
+        return format!(
+            r#"{{"installed":false,"version":null,"supported":false,"minimum":"{}"}}"#,
+            cli_update::MIN_CLI_VERSION
+        );
     }
     let version = RealCommandRunner
         .run(&["--version"], Duration::from_secs(10))
         .ok()
         .and_then(|out| cli_update::installed_version(&out.stdout).map(str::to_string));
+    // `supported` (#127): below cli_update::MIN_CLI_VERSION, Welcome.qml
+    // routes to InstallCli.qml to update it. An unreadable version counts
+    // as supported, same safe default as cli_update::is_supported.
+    let minimum = cli_update::MIN_CLI_VERSION;
     match version {
-        Some(v) => format!(r#"{{"installed":true,"version":"{}"}}"#, json_escape(&v)),
-        None => r#"{"installed":true,"version":null}"#.to_string(),
+        Some(v) => format!(
+            r#"{{"installed":true,"version":"{}","supported":{},"minimum":"{minimum}"}}"#,
+            json_escape(&v),
+            cli_update::is_supported(&v)
+        ),
+        None => {
+            format!(r#"{{"installed":true,"version":null,"supported":true,"minimum":"{minimum}"}}"#)
+        }
     }
 }
 

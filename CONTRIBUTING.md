@@ -127,6 +127,13 @@ keep these in mind:
   `packaging/aur/PKGBUILD`). Bump the two cxx crates together, in one PR
   (Dependabot groups them).
 
+- **Minimum `proton-drive` CLI: 0.9.0** (`MIN_CLI_VERSION` in
+  `core/src/cli_update.rs`, also stated in the README's "Installing"
+  section). It's the oldest release the code was tested against: the
+  wizard won't continue past an older CLI, and the daemon flags it as
+  unsupported. When the worker starts relying on a newer CLI's behavior,
+  raise it in the same PR.
+
 Before merging a dependency bump, run the offline PPA flow locally:
 `RUST_TOOLCHAIN=1.93.1 ./debian/scripts/prepare-offline-build.sh` on a
 scratch copy of the tree, then `dpkg-buildpackage -b -us -uc` in an

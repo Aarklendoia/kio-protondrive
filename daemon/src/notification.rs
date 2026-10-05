@@ -83,6 +83,27 @@ pub fn cli_update_available(latest: &str, installed: &str) {
     }
 }
 
+/// Fired instead of [`cli_update_available`] when the installed CLI is
+/// older than `protondrive_core::cli_update::MIN_CLI_VERSION` (#127):
+/// unlike a plain update, parts of `protondrive:/` won't work until the
+/// user updates, hence the critical urgency.
+pub fn cli_unsupported(installed: &str, minimum: &str) {
+    let body = format!(
+        "{} {installed}. {} {minimum}.",
+        gettext("This version of the Proton Drive CLI is no longer supported:"),
+        gettext("Minimum version:"),
+    );
+    let result = Command::new("notify-send")
+        .arg("--app-name=Proton Drive")
+        .arg("--urgency=critical")
+        .arg(gettext("Proton Drive: CLI update required"))
+        .arg(body)
+        .status();
+    if let Err(err) = result {
+        log::debug!("could not send a desktop notification (notify-send missing?): {err}");
+    }
+}
+
 /// The last path segment, for display in a notification — a bare filename
 /// reads better than the full Drive path, and (unlike the path) never needs
 /// translation, so it's kept out of any gettext msgid.
@@ -164,6 +185,7 @@ pub fn pin_finished(id: Option<&str>, remote_path: &str, error: Option<&str>) {
 /// kind of surprise this trait exists to prevent.
 pub trait Notifier {
     fn cli_update_available(&self, latest: &str, installed: &str);
+    fn cli_unsupported(&self, installed: &str, minimum: &str);
 }
 
 #[derive(Debug, Default, Clone)]
@@ -172,5 +194,9 @@ pub struct RealNotifier;
 impl Notifier for RealNotifier {
     fn cli_update_available(&self, latest: &str, installed: &str) {
         cli_update_available(latest, installed);
+    }
+
+    fn cli_unsupported(&self, installed: &str, minimum: &str) {
+        cli_unsupported(installed, minimum);
     }
 }

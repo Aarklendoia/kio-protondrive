@@ -4,7 +4,8 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 
 // Only ever pushed by Welcome.qml, and only when its own /cli-status check
-// already found no `proton-drive` on $PATH — Credentials.qml/Auth.qml right
+// found no `proton-drive` on $PATH, or one older than the minimum supported
+// version (#127, outdatedVersion set) — Credentials.qml/Auth.qml right
 // after this need the real CLI present (Auth.qml runs `proton-drive auth
 // login`), so this page is the gate that makes sure it exists before the
 // rest of the flow can proceed.
@@ -13,6 +14,9 @@ Kirigami.Page {
     title: qsTr("Install the Proton Drive CLI")
 
     property QtObject app: null
+    // Set when the CLI is installed but older than minimumVersion.
+    property string outdatedVersion: ""
+    property string minimumVersion: ""
 
     property bool installing: false
     property bool installed: false
@@ -24,7 +28,9 @@ Kirigami.Page {
         spacing: Kirigami.Units.largeSpacing
 
         Label {
-            text: qsTr("kio-protondrive needs the official Proton Drive CLI, which isn't installed yet. It can be downloaded and installed to ~/.local/bin automatically.")
+            text: page.outdatedVersion !== ""
+                  ? qsTr("kio-protondrive needs version %1 or later of the Proton Drive CLI, but version %2 is installed. The latest version can be downloaded and installed to ~/.local/bin automatically.").arg(page.minimumVersion).arg(page.outdatedVersion)
+                  : qsTr("kio-protondrive needs the official Proton Drive CLI, which isn't installed yet. It can be downloaded and installed to ~/.local/bin automatically.")
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }

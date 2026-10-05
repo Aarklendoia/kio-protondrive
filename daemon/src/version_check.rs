@@ -65,6 +65,24 @@ pub fn check(
         return;
     };
 
+    // Below the minimum (#127), the worker's features fail in confusing
+    // ways: say so, and offer the update without waiting on the release
+    // manifest, which may be unreachable. Keyed apart from the
+    // update-available case so each fires once.
+    if !cli_update::is_supported(installed) {
+        log::warn!(
+            "proton-drive CLI {installed} is older than the minimum supported version {}",
+            cli_update::MIN_CLI_VERSION
+        );
+        let key = format!("unsupported:{installed}");
+        if already_notified.as_deref() != Some(key.as_str()) {
+            notifier.cli_unsupported(installed, cli_update::MIN_CLI_VERSION);
+            *already_notified = Some(key);
+            offer_update();
+        }
+        return;
+    }
+
     let release = match fetch_latest() {
         Ok(release) => release,
         Err(err) => {
@@ -152,6 +170,12 @@ mod tests {
                 .borrow_mut()
                 .push((latest.to_string(), installed.to_string()));
         }
+
+        fn cli_unsupported(&self, installed: &str, minimum: &str) {
+            self.0
+                .borrow_mut()
+                .push((format!("unsupported<{minimum}"), installed.to_string()));
+        }
     }
 
     fn version_output(stdout: &str) -> cli::CommandOutput {
@@ -179,19 +203,19 @@ mod tests {
     #[test]
     fn notifies_once_when_a_newer_release_exists_and_offers_to_apply_it() {
         let runner = ScriptedRunner(version_output(
-            "Proton Drive CLI cli-drive@0.7.0+5174900c\n",
+            "Proton Drive CLI cli-drive@0.9.0+5174900c\n",
         ));
         let notifier = RecordingNotifier::default();
         let mut notified = None;
-        let fetch = || Ok(release("0.8.0"));
+        let fetch = || Ok(release("0.10.0"));
         let offers = RefCell::new(0u32);
         let offer_update = || *offers.borrow_mut() += 1;
 
         check(&runner, &notifier, &fetch, &offer_update, &mut notified);
-        assert_eq!(notified.as_deref(), Some("0.8.0"));
+        assert_eq!(notified.as_deref(), Some("0.10.0"));
         assert_eq!(
             notifier.0.borrow().as_slice(),
-            [("0.8.0".to_string(), "0.7.0".to_string())]
+            [("0.10.0".to_string(), "0.9.0".to_string())]
         );
         assert_eq!(*offers.borrow(), 1);
 
@@ -205,11 +229,11 @@ mod tests {
     #[test]
     fn does_not_notify_when_already_up_to_date() {
         let runner = ScriptedRunner(version_output(
-            "Proton Drive CLI cli-drive@0.8.0+06e8c605\n",
+            "Proton Drive CLI cli-drive@0.10.0+06e8c605\n",
         ));
         let notifier = RecordingNotifier::default();
         let mut notified = None;
-        let fetch = || Ok(release("0.8.0"));
+        let fetch = || Ok(release("0.10.0"));
 
         check(&runner, &notifier, &fetch, &no_op, &mut notified);
         assert_eq!(notified, None);
@@ -233,7 +257,7 @@ mod tests {
     #[test]
     fn does_nothing_when_the_manifest_fetch_fails() {
         let runner = ScriptedRunner(version_output(
-            "Proton Drive CLI cli-drive@0.7.0+5174900c\n",
+            "Proton Drive CLI cli-drive@0.9.0+5174900c\n",
         ));
         let notifier = RecordingNotifier::default();
         let mut notified = None;
@@ -254,5 +278,32 @@ mod tests {
         check(&runner, &notifier, &fetch, &no_op, &mut notified);
         assert_eq!(notified, None);
         assert!(notifier.0.borrow().is_empty());
+    }
+
+    #[test]
+    fn below_the_minimum_notifies_unsupported_even_without_the_manifest() {
+        let runner = ScriptedRunner(version_output(
+            "Proton Drive CLI cli-drive@0.8.0+06e8c605\n",
+        ));
+        let notifier = RecordingNotifier::default();
+        let mut notified = None;
+        let fetch = || Err(CliUpdateError::ChecksumMismatch);
+        let offers = RefCell::new(0u32);
+        let offer_update = || *offers.borrow_mut() += 1;
+
+        check(&runner, &notifier, &fetch, &offer_update, &mut notified);
+        assert_eq!(
+            notifier.0.borrow().as_slice(),
+            [(
+                format!("unsupported<{}", cli_update::MIN_CLI_VERSION),
+                "0.8.0".to_string()
+            )]
+        );
+        assert_eq!(*offers.borrow(), 1);
+
+        // Once per installed version, not on every cycle.
+        check(&runner, &notifier, &fetch, &offer_update, &mut notified);
+        assert_eq!(notifier.0.borrow().len(), 1);
+        assert_eq!(*offers.borrow(), 1);
     }
 }

@@ -32,6 +32,13 @@ use thiserror::Error;
 /// silently absent on anything older (the actual bug #65 was filed for).
 const MANIFEST_URL: &str = "https://proton.me/download/drive/cli/version.json";
 
+/// The oldest `proton-drive` CLI release this project is tested against
+/// (#127). The worker relies on its JSON output shapes (`filesystem copy`'s
+/// per-item `ok`/`error`, the virtual sections' behavior), which older
+/// releases don't match. Raise it when the code starts depending on a newer
+/// release, never lower it to a version nobody tested.
+pub const MIN_CLI_VERSION: &str = "0.9.0";
+
 #[derive(Debug, Error)]
 pub enum CliUpdateError {
     #[error("could not fetch {0}: {1}")]
@@ -124,6 +131,13 @@ pub fn is_newer(remote: &str, installed: &str) -> bool {
         (Some(remote), Some(installed)) => remote > installed,
         _ => false,
     }
+}
+
+/// Whether `installed` is at least [`MIN_CLI_VERSION`]. A version that
+/// doesn't parse counts as supported, same safe default as [`is_newer`]:
+/// better to let a misread version through than to nag about it.
+pub fn is_supported(installed: &str) -> bool {
+    !is_newer(MIN_CLI_VERSION, installed)
 }
 
 /// `curl -fsSL <MANIFEST_URL>`, parsed via [`parse_manifest`].
@@ -296,6 +310,16 @@ mod tests {
         assert!(!is_newer("not-a-version", "0.7.0"));
         assert!(!is_newer("0.8.0", "also-not-a-version"));
         assert!(!is_newer("", ""));
+    }
+
+    #[test]
+    fn is_supported_compares_against_the_minimum() {
+        assert!(is_supported(MIN_CLI_VERSION));
+        assert!(is_supported("0.10.0"));
+        assert!(is_supported("1.0.0"));
+        assert!(!is_supported("0.8.1"));
+        assert!(!is_supported("0.7.0"));
+        assert!(is_supported("garbage"), "unparseable: don't nag");
     }
 
     #[test]
