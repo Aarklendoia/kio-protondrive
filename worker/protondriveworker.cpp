@@ -184,6 +184,39 @@ QString stripTrailingSlash(QString path)
     return path;
 }
 
+// Whether `path` is the virtual root or one of its fixed sections
+// (translatedSectionName()'s table). `filesystem info` supports none of them
+// except /my-files ("Not implemented", "Trashed node not found", "Root node
+// not found", ... after 1-5s of CLI startup each), so their entry is
+// synthesized by syntheticDirEntry() instead. A section name the table
+// doesn't know (one Proton adds later) still goes through the CLI.
+bool isVirtualRootOrSection(const QString &path)
+{
+    const QString normalized = stripTrailingSlash(path);
+    if (normalized == QLatin1String("/")) {
+        return true;
+    }
+    return normalized.lastIndexOf(QLatin1Char('/')) == 0 && !translatedSectionName(normalized.mid(1)).isEmpty();
+}
+
+// The "." entry for a path isVirtualRootOrSection() accepts, with the same
+// translated label/icon listDir() gives that section in the root listing.
+// Same 0755 access as KIO's own default "." stub.
+KIO::UDSEntry syntheticDirEntry(const QString &path)
+{
+    KIO::UDSEntry uds;
+    uds.reserve(5);
+    uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
+    uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
+    uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
+    const QString rawName = stripTrailingSlash(path).mid(1);
+    if (!rawName.isEmpty()) {
+        uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, translatedSectionName(rawName));
+        uds.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, translatedSectionIcon(rawName));
+    }
+    return uds;
+}
+
 const QString photosPrefix = QStringLiteral("/photos/");
 const QString trashPrefix = QStringLiteral("/trash/");
 
@@ -252,15 +285,19 @@ KIO::WorkerResult ProtonDriveWorker::listDir(const QUrl &url)
     // KIO expects a "." entry describing the listed directory itself (used
     // for e.g. the item count/permissions of the folder being browsed) —
     // without it, KIO::WorkerBase logs "UDSEntry for '.' not found, creating
-    // a default one" and falls back to a stub. Best-effort: `filesystem info`
-    // doesn't support the virtual root's sections (`/`, `/my-files`, ...), so
-    // skip the "." entry rather than failing the whole listing when it's
-    // unavailable — list_dir() above having already succeeded is what makes
-    // this safe to still attempt here.
-    try {
-        const FfiEntry self = stat_path(path.toStdString());
-        listEntry(entryFromFfi(self, QStringLiteral(".")));
-    } catch (const rust::Error &) {
+    // a default one" and falls back to a stub. The virtual root and its
+    // sections get a synthesized one (no CLI call, see
+    // isVirtualRootOrSection()); anything else is best-effort — skip the "."
+    // entry rather than failing the whole listing when it's unavailable,
+    // list_dir() above having already succeeded.
+    if (isVirtualRootOrSection(path)) {
+        listEntry(syntheticDirEntry(path));
+    } else {
+        try {
+            const FfiEntry self = stat_path(path.toStdString());
+            listEntry(entryFromFfi(self, QStringLiteral(".")));
+        } catch (const rust::Error &) {
+        }
     }
 
     // The virtual root's entries are Proton Drive's fixed sections
@@ -310,18 +347,13 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
         }
         return statPhoto(parts.name);
     }
-    if (path == QLatin1String("/photos")) {
-        // No CLI-backed info call exists for the section itself (see
-        // listPhotos()'s "." entry) — synthesized directly, same as the
-        // pinned-cache fast path below does for a pinned file.
-        KIO::UDSEntry uds;
-        uds.reserve(5);
-        uds.fastInsert(KIO::UDSEntry::UDS_NAME, QStringLiteral("."));
-        uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR);
-        uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, 0755);
-        uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, translatedSectionName(QStringLiteral("photos")));
-        uds.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, translatedSectionIcon(QStringLiteral("photos")));
-        statEntry(uds);
+    if (isVirtualRootOrSection(path)) {
+        // `filesystem info` can't describe these (see
+        // isVirtualRootOrSection()) — synthesized directly. Also what gives
+        // KUrlNavigator's breadcrumb its translated label for the current
+        // section (it reads this entry, not the sibling one listDir() emits
+        // for it in the root listing).
+        statEntry(syntheticDirEntry(path));
         return KIO::WorkerResult::pass();
     }
 
@@ -362,25 +394,7 @@ KIO::WorkerResult ProtonDriveWorker::stat(const QUrl &url)
     // repeating the full path.
     try {
         const FfiEntry entry = stat_path(path.toStdString());
-        KIO::UDSEntry uds = entryFromFfi(entry, QStringLiteral("."));
-        // KUrlNavigator's breadcrumb label for the *current* directory is
-        // read from here, not from the sibling entry listDir() emits for it
-        // — without this, browsing into /my-files shows "Mes fichiers" in
-        // the icon grid but reverts to the raw "my-files" in the breadcrumb
-        // once you're inside it. A virtual root section is always exactly
-        // one path segment deep (e.g. "/my-files", never "/my-files/sub").
-        if (path.count(QLatin1Char('/')) == 1) {
-            const QString rawName = path.mid(1);
-            const QString label = translatedSectionName(rawName);
-            if (!label.isEmpty()) {
-                uds.fastInsert(KIO::UDSEntry::UDS_DISPLAY_NAME, label);
-            }
-            const QString icon = translatedSectionIcon(rawName);
-            if (!icon.isEmpty()) {
-                uds.fastInsert(KIO::UDSEntry::UDS_ICON_NAME, icon);
-            }
-        }
-        statEntry(uds);
+        statEntry(entryFromFfi(entry, QStringLiteral(".")));
         return KIO::WorkerResult::pass();
     } catch (const rust::Error &error) {
         return resultFromRustError(error);
