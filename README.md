@@ -304,7 +304,7 @@ sudo apt install ./kio-protondrive_*.deb ./kio-protondrive-sync-daemon_*.deb \
 ```
 
 Then open `protondrive:/` in Dolphin's location bar (or
-`kioclient5 ls protondrive:/` from a terminal) to browse your Drive.
+`kioclient ls protondrive:/` from a terminal) to browse your Drive.
 
 ### Pinning it to Dolphin's sidebar
 

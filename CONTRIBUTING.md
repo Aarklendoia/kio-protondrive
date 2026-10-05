@@ -126,7 +126,7 @@ Create a GitHub issue with:
 - Steps to reproduce
 - Expected vs actual behavior
 - `proton-drive --version` output
-- Whether the failure happens via `kioclient5` directly or only in Dolphin
+- Whether the failure happens via `kioclient` directly or only in Dolphin
 
 ## License
 
