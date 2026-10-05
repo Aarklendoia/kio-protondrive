@@ -54,10 +54,14 @@ Kirigami.Page {
                 page.checkingCli = true;
                 page.app.apiGet("/cli-status", function (ok, data) {
                     page.checkingCli = false;
-                    if (ok && data.installed)
+                    if (ok && data.installed && data.supported)
                         page.app.pageStack.push(Qt.resolvedUrl("Credentials.qml"), {app: page.app});
                     else
-                        page.app.pageStack.push(Qt.resolvedUrl("InstallCli.qml"), {app: page.app});
+                        page.app.pageStack.push(Qt.resolvedUrl("InstallCli.qml"), {
+                            app: page.app,
+                            outdatedVersion: (ok && data.installed && data.version) || "",
+                            minimumVersion: (ok && data.minimum) || ""
+                        });
                 });
             }
         }

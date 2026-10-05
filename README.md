@@ -88,7 +88,8 @@ with the KIO worker and the [setup wizard](#setup-wizard). It's a
   [docs/DESIGN.md](docs/DESIGN.md)), so a rename/delete made elsewhere
   doesn't go unnoticed in Dolphin for too long;
 - checks whether a newer `proton-drive` CLI release is available,
-  notifies you if so, and — if the setup wizard is installed and the CLI
+  notifies you if so (with a more urgent notification when the installed
+  CLI is older than the minimum supported version, see "Installing" below), and — if the setup wizard is installed and the CLI
   is one this daemon can write to — offers to install it with one click
   (see "Installing" below) —
   [#26](https://github.com/Aarklendoia/kio-protondrive/issues/26),
@@ -273,10 +274,11 @@ Proton Drive.
 
 ## Installing
 
-Requires the official [Proton Drive CLI](https://proton.me/drive/download).
+Requires the official [Proton Drive CLI](https://proton.me/drive/download),
+version 0.9.0 or newer.
 If you install `kio-protondrive-full` (recommended — see "Local caching and
 pinning" above), its [setup wizard](#setup-wizard) installs the CLI itself
-if it's missing, on top of doing the sign-in step
+if it's missing or too old, on top of doing the sign-in step
 (`proton-drive auth login`) for you. Otherwise, install it yourself first —
 `kio-protondrive` (the bare KIO worker package) only adds the Dolphin
 integration on top of an already-installed, already-authenticated CLI.

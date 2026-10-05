@@ -219,6 +219,11 @@
         <translation>Installer le CLI Proton Drive</translation>
     </message>
     <message>
+        <location filename="../qml/InstallCli.qml" line="32"/>
+        <source>kio-protondrive needs version %1 or later of the Proton Drive CLI, but version %2 is installed. The latest version can be downloaded and installed to ~/.local/bin automatically.</source>
+        <translation>kio-protondrive a besoin de la version %1 ou ultérieure du CLI Proton Drive, mais la version %2 est installée. La dernière version peut être téléchargée et installée automatiquement dans ~/.local/bin.</translation>
+    </message>
+    <message>
         <location filename="../qml/InstallCli.qml" line="27"/>
         <source>kio-protondrive needs the official Proton Drive CLI, which isn&apos;t installed yet. It can be downloaded and installed to ~/.local/bin automatically.</source>
         <translation>kio-protondrive a besoin du CLI officiel Proton Drive, qui n&apos;est pas encore installé. Il peut être téléchargé et installé automatiquement dans ~/.local/bin.</translation>

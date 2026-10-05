@@ -42,6 +42,21 @@ msgstr "Hay una nueva versión del CLI de Proton Drive disponible:"
 msgid "You have"
 msgstr "Tienes"
 
+#. Title of the desktop notification fired when the installed proton-drive CLI is older than the minimum supported version (MIN_CLI_VERSION in core/src/cli_update.rs, see version_check.rs).
+#: daemon/src/notification.rs:0
+msgid "Proton Drive: CLI update required"
+msgstr "Proton Drive: se requiere actualizar la CLI"
+
+#. First half of the CLI-unsupported notification body, followed by the installed version number (see notification.rs's cli_unsupported).
+#: daemon/src/notification.rs:0
+msgid "This version of the Proton Drive CLI is no longer supported:"
+msgstr "Esta versión de la CLI de Proton Drive ya no es compatible:"
+
+#. Second half of the CLI-unsupported notification body, followed by the minimum supported version number.
+#: daemon/src/notification.rs:0
+msgid "Minimum version:"
+msgstr "Versión mínima:"
+
 #. Body of the persistent notification shown while a pinned file downloads (see pin_started) — no percentage shown, since the CLI reports none.
 #: daemon/src/notification.rs:0
 msgid "Downloading to keep available offline…"

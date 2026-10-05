@@ -219,6 +219,11 @@
         <translation>تثبيت واجهة سطر أوامر Proton Drive</translation>
     </message>
     <message>
+        <location filename="../qml/InstallCli.qml" line="32"/>
+        <source>kio-protondrive needs version %1 or later of the Proton Drive CLI, but version %2 is installed. The latest version can be downloaded and installed to ~/.local/bin automatically.</source>
+        <translation>يحتاج kio-protondrive إلى الإصدار %1 أو أحدث من واجهة سطر أوامر Proton Drive، لكن الإصدار المثبت هو %2. يمكن تنزيل أحدث إصدار وتثبيته تلقائيًا في ~/.local/bin.</translation>
+    </message>
+    <message>
         <location filename="../qml/InstallCli.qml" line="27"/>
         <source>kio-protondrive needs the official Proton Drive CLI, which isn&apos;t installed yet. It can be downloaded and installed to ~/.local/bin automatically.</source>
         <translation>يحتاج kio-protondrive إلى واجهة سطر أوامر Proton Drive الرسمية، وهي غير مثبَّتة بعد. يمكن تنزيلها وتثبيتها تلقائيًا في ~/.local/bin.</translation>

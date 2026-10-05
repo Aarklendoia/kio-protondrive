@@ -219,6 +219,11 @@
         <translation>Proton Drive CLI इंस्टॉल करें</translation>
     </message>
     <message>
+        <location filename="../qml/InstallCli.qml" line="32"/>
+        <source>kio-protondrive needs version %1 or later of the Proton Drive CLI, but version %2 is installed. The latest version can be downloaded and installed to ~/.local/bin automatically.</source>
+        <translation>kio-protondrive को Proton Drive CLI का संस्करण %1 या उसके बाद का चाहिए, लेकिन संस्करण %2 इंस्टॉल है। नवीनतम संस्करण को स्वचालित रूप से डाउनलोड करके ~/.local/bin में इंस्टॉल किया जा सकता है।</translation>
+    </message>
+    <message>
         <location filename="../qml/InstallCli.qml" line="27"/>
         <source>kio-protondrive needs the official Proton Drive CLI, which isn&apos;t installed yet. It can be downloaded and installed to ~/.local/bin automatically.</source>
         <translation>kio-protondrive को आधिकारिक Proton Drive CLI की आवश्यकता है, जो अभी इंस्टॉल नहीं है। इसे स्वचालित रूप से डाउनलोड करके ~/.local/bin में इंस्टॉल किया जा सकता है।</translation>
