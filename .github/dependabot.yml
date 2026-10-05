@@ -16,6 +16,15 @@ updates:
       prefix: "chore: "
       prefix-development: "chore(dev): "
       include: "scope"
+    groups:
+      # cxx and cxx-build are both pinned to the same exact version in
+      # core/Cargo.toml: bumped one at a time, Cargo can't resolve the
+      # other (#97/#98). Before merging such a bump, validate the offline
+      # PPA build (core/Cargo.toml's comment, docs/LAUNCHPAD.md).
+      cxx:
+        patterns:
+          - "cxx"
+          - "cxx-build"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
