@@ -19,23 +19,13 @@ if(TARGET SQLite::SQLite3)
     list(APPEND _protondrive_core_link_libs SQLite::SQLite3)
 endif()
 
-# Even fully linked as above, confirmed live (Arch) that a handful of cxx's
-# own CxxVector<T> C++ symbols (e.g. T=f64 — cxx's proc-macro expansion
-# monomorphizes VectorElement for a fixed set of primitive types
-# unconditionally, not just the ones bridge.rs's FFI surface actually uses)
-# can still come up undefined: genuinely dead code, never called since
-# nothing in this project exposes e.g. a Vec<f64> across the bridge, but
-# still enough to trip ECM's KDECompilerSettings -Wl,--no-undefined
-# (applied repo-wide, upheld everywhere else — this is the one place it's
-# relaxed, not turned off project-wide). "-z,undefs" is GNU ld's documented
-# inverse of "-z,defs"/"--no-undefined", placed after it on each of these
-# targets' own link line so it wins (ld resolves this class of toggle by
-# last-flag-wins, not by which was added first).
-set(_protondrive_core_link_options "-Wl,-z,undefs")
-
+# Keep ECM's -Wl,--no-undefined in force here: these plugins used to relax
+# it with -Wl,-z,undefs over supposedly dead cxx CxxVector<T> symbols, but
+# those undefined symbols were really Arch makepkg's LTO (see
+# packaging/aur/PKGBUILD's options=(!lto)), and the relaxation is what let
+# unloadable plugins build successfully (#111).
 function(protondrive_link_core target)
     target_link_libraries(${target} PRIVATE ${_protondrive_core_link_libs})
-    target_link_options(${target} PRIVATE ${_protondrive_core_link_options})
 endfunction()
 
 # KIO workers are Qt plugins loaded at runtime by the generic `kioworker`

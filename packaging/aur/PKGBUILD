@@ -29,6 +29,21 @@ makedepends=(
 source=("$pkgbase-$pkgver.tar.gz::https://github.com/Aarklendoia/kio-protondrive/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
+# makepkg.conf's default -flto=auto breaks this build twice over, because
+# the `cc` crate honors the ambient CFLAGS/CXXFLAGS and so compiles the C
+# and C++ parts of the Rust side (rusqlite's bundled sqlite3, cxx's own
+# runtime) to GCC LTO bytecode instead of real object code:
+#   - plain `cargo build`/`cargo test` link through rustc, which never
+#     passes -flto to the final link, so every sqlite3_* symbol comes up
+#     undefined;
+#   - inside libprotondrive_core.a, rustc's archive index doesn't list
+#     the symbols of those LTO-only objects, so the CMake link of the KIO
+#     plugins never pulls them in, leaving 300+ cxxbridge1$... symbols
+#     undefined (#111).
+# Debian doesn't default to LTO, so it never hits either. check() verifies
+# the plugins load with every symbol resolved.
+options=(!lto)
+
 # Fetched once here (network allowed in prepare(), same as makepkg's own
 # recommendation) and pointed at by CMakeLists.txt's own
 # third_party/corrosion/ fallback (see its top-level comment) — the same
@@ -53,26 +68,6 @@ prepare() {
   cargo fetch --locked --manifest-path Cargo.toml
 }
 
-# Confirmed live that makepkg.conf's default CFLAGS/CXXFLAGS (-flto=auto)
-# break the cargo side of this build: rusqlite's bundled-sqlite3 (see
-# core/Cargo.toml's "bundled" feature) gets compiled by the `cc` crate,
-# which honors the ambient CFLAGS — so its sqlite3.o ends up as LTO
-# bytecode, not a normal object. CMake's own C++ link of that same
-# archive (into protondrive.so) works fine, since g++ is invoked with
-# matching -flto and its LTO plugin resolves it — but a plain
-# `cargo build`/`cargo test` links via rustc, which has no concept of
-# GCC's LTO and never passes -flto to the final `cc` link, so every
-# sqlite3_* symbol comes up undefined there. Applied around the specific
-# cargo calls that need it (build()'s own, and check()'s) rather than
-# exported once globally: at the PKGBUILD's global scope (sourced before
-# makepkg has necessarily exported its own CFLAGS/CXXFLAGS yet) a plain
-# `CFLAGS+=...` risks appending onto an still-empty variable. Not
-# something to fix upstream in core/Cargo.toml or CMakeLists.txt: Debian's
-# build environment doesn't default to LTO, so it never hits this.
-_cargo_no_lto() {
-  CFLAGS="$CFLAGS -fno-lto" CXXFLAGS="$CXXFLAGS -fno-lto" cargo "$@"
-}
-
 build() {
   cd "$pkgbase-$pkgver"
 
@@ -84,7 +79,7 @@ build() {
   # daemon/ and wizard/ are plain Cargo, not part of the CMake/Corrosion
   # graph above (which only covers core/'s cxx bridge + the KIO plugin) —
   # same split build debian/rules' override_dh_auto_build does.
-  _cargo_no_lto build --release --locked --workspace
+  cargo build --release --locked --workspace
 
   # Compiled here rather than shipped as source, same as
   # debian/rules' override_dh_auto_install does for the wizard's own
@@ -107,8 +102,19 @@ build() {
 
 check() {
   cd "$pkgbase-$pkgver"
-  _cargo_no_lto test --workspace --profile ci
+  cargo test --workspace --profile ci
   ctest --test-dir build --output-on-failure
+
+  # Belt and braces on top of the link's own --no-undefined: resolve every
+  # symbol of each plugin now, like kioworker would when loading it.
+  local so undefined
+  for so in build/bin/kf6/*/*.so; do
+    undefined="$(LC_ALL=C ldd -r "$so" 2>&1 | grep 'undefined symbol' || true)"
+    if [[ -n $undefined ]]; then
+      printf '%s has unresolved symbols:\n%s\n' "$so" "$(head -5 <<<"$undefined")" >&2
+      return 1
+    fi
+  done
 }
 
 # Shared staging install, split into per-package file sets below by relative
