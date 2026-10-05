@@ -125,8 +125,9 @@ KIO::UDSEntry entryFromFfi(const FfiEntry &entry, const QString &nameOverride = 
 // listPhotos(), routed through a separate nodeUid-based CLI command family —
 // see core/src/photos.rs and issue #18); the last four (albums and the
 // photos-* variants) aren't shown as top-level sidebar entries in the web UI
-// either — they're nested under its "Photos" view and still have no CLI
-// support at all (see the README's Scope section) — so their translations
+// either — they're nested under its "Photos" view; the CLI can list the
+// photos-* ones but not download from them, and rejects albums outright
+// (see the README's Scope section) — so their translations
 // are this project's best guess, not confirmed against Proton's own wording.
 QString translatedSectionName(const QString &rawName)
 {
