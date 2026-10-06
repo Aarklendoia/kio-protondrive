@@ -206,7 +206,12 @@
         <translation>セットアップが完了しました — Proton Drive の同期が実行中です。</translation>
     </message>
     <message>
-        <location filename="../qml/Finish.qml" line="94"/>
+        <location filename="../qml/Finish.qml" line="85"/>
+        <source>Log out and back in for Dolphin to fully recognize your Proton Drive session (until then, browsing it may ask you to sign in again there).</source>
+        <translation>Dolphin が Proton Drive のセッションを完全に認識できるよう、一度ログアウトしてから再度ログインしてください(それまでは、閲覧時に再度サインインを求められることがあります)。</translation>
+    </message>
+    <message>
+        <location filename="../qml/Finish.qml" line="106"/>
         <source>Close</source>
         <translation>閉じる</translation>
     </message>
@@ -214,7 +219,7 @@
 <context>
     <name>InstallCli</name>
     <message>
-        <location filename="../qml/InstallCli.qml" line="13"/>
+        <location filename="../qml/InstallCli.qml" line="14"/>
         <source>Install the Proton Drive CLI</source>
         <translation>Proton Drive CLI をインストール</translation>
     </message>
@@ -224,37 +229,37 @@
         <translation>kio-protondrive には Proton Drive CLI のバージョン %1 以降が必要ですが、バージョン %2 がインストールされています。最新バージョンを自動的にダウンロードして ~/.local/bin にインストールできます。</translation>
     </message>
     <message>
-        <location filename="../qml/InstallCli.qml" line="27"/>
+        <location filename="../qml/InstallCli.qml" line="33"/>
         <source>kio-protondrive needs the official Proton Drive CLI, which isn&apos;t installed yet. It can be downloaded and installed to ~/.local/bin automatically.</source>
         <translation>kio-protondrive には公式の Proton Drive CLI が必要ですが、まだインストールされていません。~/.local/bin に自動的にダウンロードしてインストールできます。</translation>
     </message>
     <message>
-        <location filename="../qml/InstallCli.qml" line="34"/>
+        <location filename="../qml/InstallCli.qml" line="40"/>
         <source>Downloading and verifying the Proton Drive CLI…</source>
         <translation>Proton Drive CLI をダウンロードして検証しています…</translation>
     </message>
     <message>
-        <location filename="../qml/InstallCli.qml" line="49"/>
+        <location filename="../qml/InstallCli.qml" line="55"/>
         <source>Proton Drive CLI installed.</source>
         <translation>Proton Drive CLI をインストールしました。</translation>
     </message>
     <message>
-        <location filename="../qml/InstallCli.qml" line="55"/>
+        <location filename="../qml/InstallCli.qml" line="61"/>
         <source>Install now</source>
         <translation>今すぐインストール</translation>
     </message>
     <message>
-        <location filename="../qml/InstallCli.qml" line="64"/>
+        <location filename="../qml/InstallCli.qml" line="70"/>
         <source>Installation failed.</source>
         <translation>インストールに失敗しました。</translation>
     </message>
     <message>
-        <location filename="../qml/InstallCli.qml" line="79"/>
+        <location filename="../qml/InstallCli.qml" line="85"/>
         <source>You can also download it yourself from proton.me/drive/download and run this wizard again.</source>
         <translation>proton.me/drive/download から自分でダウンロードして、このウィザードを再度実行することもできます。</translation>
     </message>
     <message>
-        <location filename="../qml/InstallCli.qml" line="90"/>
+        <location filename="../qml/InstallCli.qml" line="96"/>
         <source>Next</source>
         <translation>次へ</translation>
     </message>
