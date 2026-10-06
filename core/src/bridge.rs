@@ -377,6 +377,9 @@ fn rename_or_move(old_path: &str, new_path: &str) -> Result<(), String> {
         // Whole subtrees (#128): a renamed folder's children move with it.
         let _ = cache.invalidate_tree(old_path);
         let _ = cache.invalidate_tree(new_path);
+        // Pins move too (#135), or the old path keeps answering from the
+        // pin cache while the new one silently loses its pin.
+        let _ = cache.rename_tree(old_path, new_path);
         for path in [old_path, new_path] {
             if let Some((parent, _)) = path.rsplit_once('/') {
                 let parent = if parent.is_empty() { "/" } else { parent };
