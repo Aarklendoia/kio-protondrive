@@ -49,7 +49,7 @@
 //! (`daemon/src/cache_eviction.rs`) against a user-configurable retention
 //! window (`daemon/src/config.rs`'s `cache_retention_days`).
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -257,8 +257,20 @@ impl Cache {
     /// cache (see `crate::bridge`'s `cache_target_dir`/`store_cached_file`)
     /// so a pinned and an opportunistically-cached file live under the same
     /// on-disk layout.
+    ///
+    /// Refuses any `remote_path` with a component other than a plain name
+    /// (`..`, `.`, or anything else that isn't [`Component::Normal`]): it
+    /// could resolve outside the cache root (#165).
     pub fn target_dir_for(&self, remote_path: &str) -> Result<PathBuf, DriveError> {
         let rel = remote_path.trim_start_matches('/');
+        if !Path::new(rel)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
+        {
+            return Err(DriveError::Cli(format!(
+                "{remote_path} isn't a plain path — refusing to map it into the local cache"
+            )));
+        }
         let target_dir = match Path::new(rel).parent() {
             Some(parent) if !parent.as_os_str().is_empty() => self.root.join(parent),
             _ => self.root.clone(),
@@ -969,6 +981,27 @@ mod tests {
         let cache =
             Cache::open(&dir.path().join("index.sqlite3"), &dir.path().join("files")).unwrap();
         (dir, cache)
+    }
+
+    #[test]
+    fn target_dir_for_stays_inside_the_cache_root() {
+        let (dir, cache) = cache();
+        for escaping in [
+            "/my-files/../../../outside/a.txt",
+            "/../a.txt",
+            "/my-files/sub/../../../a.txt",
+            "/./my-files/a.txt",
+        ] {
+            assert!(
+                cache.target_dir_for(escaping).is_err(),
+                "{escaping} must be refused"
+            );
+        }
+        assert!(!dir.path().join("outside").exists());
+        assert_eq!(
+            cache.target_dir_for("/my-files/sub/a.txt").unwrap(),
+            cache.root().join("my-files/sub")
+        );
     }
 
     #[test]
