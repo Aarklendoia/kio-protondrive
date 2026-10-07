@@ -28,6 +28,12 @@ use kio_protondrive_daemon::{
 /// convenience nudge, not something latency-sensitive.
 const VERSION_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// How soon to retry a version check that couldn't get an answer (#137) —
+/// most often the one at startup, run as soon as the session opens and
+/// before the network is up. Waiting the full `VERSION_CHECK_INTERVAL`
+/// after such a failure would skip the whole day.
+const VERSION_CHECK_RETRY_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
 /// How often to refresh `core::cache`'s permanent filesystem stat/listing
 /// cache (see [`fs_refresh`]) — a tradeoff between staying reasonably fresh
 /// and not hammering the CLI: each cached path costs its own ~1-4s CLI call,
@@ -66,6 +72,16 @@ fn report_authentication_failure(auth_notified: &mut bool) {
         log::debug!("could not launch the setup wizard (not installed?): {err}");
     }
     *auth_notified = true;
+}
+
+/// The wait before the next version check: the full daily interval after
+/// one that got an answer, a short retry delay after one that didn't.
+fn next_version_check_interval(completed: bool) -> Duration {
+    if completed {
+        VERSION_CHECK_INTERVAL
+    } else {
+        VERSION_CHECK_RETRY_INTERVAL
+    }
 }
 
 fn main() {
@@ -130,20 +146,21 @@ fn main() {
 
     log::info!("watching {} for changes", cache.root().display());
     // Checked once immediately here (same shape as the reconcile() call
-    // above), then every VERSION_CHECK_INTERVAL from inside the loop below.
+    // above), then every VERSION_CHECK_INTERVAL from inside the loop below —
+    // or every VERSION_CHECK_RETRY_INTERVAL while checks keep failing.
     // Note this must NOT be `Instant::now()` followed by relying on the
     // loop's own elapsed() >= INTERVAL check to fire it "right away": a
     // freshly-started Instant has elapsed() ~0, which makes the *wait*
     // computed below ~INTERVAL (not ~0) — that would silently delay the
     // first check by a full day instead of running it at startup.
     let mut cli_update_notified: Option<String> = None;
-    version_check::check(
+    let mut version_check_interval = next_version_check_interval(version_check::check(
         &runner,
         &notifier,
         &protondrive_core::cli_update::fetch_latest_stable,
         &version_check::offer_wizard_update,
         &mut cli_update_notified,
-    );
+    ));
     let mut last_version_check = Instant::now();
     // Same "must not be Instant::now() relied on for an immediate first
     // run" reasoning as `last_version_check` above — but the fs cache sweep
@@ -157,7 +174,7 @@ fn main() {
     // first sweep at startup, so this also starts as `Instant::now()`.
     let mut last_cache_eviction = Instant::now();
     loop {
-        let wait = VERSION_CHECK_INTERVAL
+        let wait = version_check_interval
             .saturating_sub(last_version_check.elapsed())
             .min(FS_CACHE_REFRESH_INTERVAL.saturating_sub(last_fs_refresh.elapsed()))
             .min(CACHE_EVICTION_INTERVAL.saturating_sub(last_cache_eviction.elapsed()));
@@ -198,14 +215,14 @@ fn main() {
             Err(RecvTimeoutError::Disconnected) => break,
         }
 
-        if last_version_check.elapsed() >= VERSION_CHECK_INTERVAL {
-            version_check::check(
+        if last_version_check.elapsed() >= version_check_interval {
+            version_check_interval = next_version_check_interval(version_check::check(
                 &runner,
                 &notifier,
                 &protondrive_core::cli_update::fetch_latest_stable,
                 &version_check::offer_wizard_update,
                 &mut cli_update_notified,
-            );
+            ));
             last_version_check = Instant::now();
         }
 
