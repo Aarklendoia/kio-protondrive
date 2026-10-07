@@ -227,7 +227,8 @@ pub fn create_folder(
     name: &str,
 ) -> Result<NodeEntry, DriveError> {
     let out = runner.run(
-        &["filesystem", "create-folder", "-j", parent_path, name],
+        // `--` so a name starting with `-` isn't parsed as an option (#161).
+        &["filesystem", "create-folder", "-j", "--", parent_path, name],
         METADATA_TIMEOUT,
     )?;
     ensure_success(parent_path, &out)?;
@@ -503,7 +504,7 @@ pub fn rename_path(
     new_name: &str,
 ) -> Result<NodeEntry, DriveError> {
     let out = runner.run(
-        &["filesystem", "rename", "-j", path, new_name],
+        &["filesystem", "rename", "-j", "--", path, new_name],
         METADATA_TIMEOUT,
     )?;
     ensure_success(path, &out)?;
@@ -547,8 +548,8 @@ pub fn copy_path(
             "filesystem",
             "copy",
             "-j",
-            "-n",
-            new_name,
+            &format!("--name={new_name}"),
+            "--",
             source_path,
             target_parent_path,
         ],
@@ -645,12 +646,21 @@ pub fn sharing_invite(
     role: &str,
     message: &str,
 ) -> Result<(), DriveError> {
-    let mut args = vec!["sharing", "invite", "-j", "-u", email, "-r", role];
+    // `--opt=value` and `--` throughout, so a value starting with `-` isn't
+    // parsed as an option (#161).
+    let mut args = vec![
+        "sharing".to_string(),
+        "invite".to_string(),
+        "-j".to_string(),
+        format!("--user={email}"),
+        format!("--role={role}"),
+    ];
     if !message.is_empty() {
-        args.push("-m");
-        args.push(message);
+        args.push(format!("--message={message}"));
     }
-    args.push(path);
+    args.push("--".to_string());
+    args.push(path.to_string());
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let out = runner.run(&args, METADATA_TIMEOUT)?;
     ensure_success(path, &out)
 }
@@ -662,7 +672,14 @@ pub fn sharing_remove_member(
     email: &str,
 ) -> Result<(), DriveError> {
     let out = runner.run(
-        &["sharing", "remove", "-j", "-e", email, path],
+        &[
+            "sharing",
+            "remove",
+            "-j",
+            &format!("--email={email}"),
+            "--",
+            path,
+        ],
         METADATA_TIMEOUT,
     )?;
     ensure_success(path, &out)
@@ -686,16 +703,23 @@ pub fn sharing_set_link(
     password: &str,
     expiration: &str,
 ) -> Result<PublicLink, DriveError> {
-    let mut args = vec!["sharing", "set-url", "-j", "--role", role];
+    // `--opt=value`, not `--opt value`: a password starting with `-` was
+    // parsed as an option and the CLI just printed its usage (#161).
+    let mut args = vec![
+        "sharing".to_string(),
+        "set-url".to_string(),
+        "-j".to_string(),
+        format!("--role={role}"),
+    ];
     if !password.is_empty() {
-        args.push("--password");
-        args.push(password);
+        args.push(format!("--password={password}"));
     }
     if !expiration.is_empty() {
-        args.push("--expiration");
-        args.push(expiration);
+        args.push(format!("--expiration={expiration}"));
     }
-    args.push(path);
+    args.push("--".to_string());
+    args.push(path.to_string());
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let out = runner.run(&args, METADATA_TIMEOUT)?;
     ensure_success(path, &out)?;
     // set-url returns the whole sharing-status object, not a flat link —
@@ -1141,6 +1165,7 @@ mod tests {
                 "filesystem",
                 "rename",
                 "-j",
+                "--",
                 "/my-files/old-name.txt",
                 "new-name.txt",
             ]
@@ -1180,8 +1205,8 @@ mod tests {
                 "filesystem",
                 "copy",
                 "-j",
-                "-n",
-                "b.txt",
+                "--name=b.txt",
+                "--",
                 "/my-files/a.txt",
                 "/my-files/Sub"
             ]
@@ -1241,6 +1266,7 @@ mod tests {
                 "filesystem",
                 "rename",
                 "-j",
+                "--",
                 "/my-files/old-name.txt",
                 "new-name.txt",
             ]
@@ -1285,7 +1311,14 @@ mod tests {
                     "/my-files/a.txt",
                     "/my-files/Sub"
                 ],
-                vec!["filesystem", "rename", "-j", "/my-files/Sub/a.txt", "b.txt"],
+                vec![
+                    "filesystem",
+                    "rename",
+                    "-j",
+                    "--",
+                    "/my-files/Sub/a.txt",
+                    "b.txt"
+                ],
             ]
         );
     }
@@ -1368,7 +1401,14 @@ mod tests {
         );
         assert_eq!(
             calls[1],
-            vec!["filesystem", "create-folder", "-j", "/my-files", "Backups"]
+            vec![
+                "filesystem",
+                "create-folder",
+                "-j",
+                "--",
+                "/my-files",
+                "Backups"
+            ]
         );
     }
 
@@ -1433,6 +1473,62 @@ mod tests {
             Some("2026-09-01T00:00:00.000Z")
         );
         assert_eq!(link.number_of_initialized_downloads, 3);
+    }
+
+    #[test]
+    fn values_starting_with_a_dash_are_never_passed_as_bare_arguments() {
+        // A bare "-x" is parsed as an option by the CLI (confirmed live,
+        // #161): every user-supplied value goes after `--` or as `--opt=value`.
+        let runner = MockRunner::success(r#"{"url":"x"}"#);
+        let _ = sharing_set_link(&runner, "/my-files/a", "viewer", "-secret", "");
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "sharing",
+                "set-url",
+                "-j",
+                "--role=viewer",
+                "--password=-secret",
+                "--",
+                "/my-files/a"
+            ]
+        );
+
+        let runner = MockRunner::success("");
+        let _ = sharing_invite(
+            &runner,
+            "/my-files/a",
+            "a@example.org",
+            "viewer",
+            "- see you",
+        );
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "sharing",
+                "invite",
+                "-j",
+                "--user=a@example.org",
+                "--role=viewer",
+                "--message=- see you",
+                "--",
+                "/my-files/a"
+            ]
+        );
+
+        let runner = MockRunner::success("");
+        let _ = sharing_remove_member(&runner, "/my-files/a", "a@example.org");
+        assert_eq!(
+            *runner.last_args.borrow(),
+            vec![
+                "sharing",
+                "remove",
+                "-j",
+                "--email=a@example.org",
+                "--",
+                "/my-files/a"
+            ]
+        );
     }
 
     #[test]

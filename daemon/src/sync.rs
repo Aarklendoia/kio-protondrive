@@ -416,6 +416,7 @@ mod tests {
                 "filesystem",
                 "rename",
                 "-j",
+                "--",
                 "/my-files/old-name.pdf",
                 "new-name.pdf",
             ]

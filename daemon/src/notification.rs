@@ -51,6 +51,7 @@ pub fn auth_required() {
     let result = Command::new("notify-send")
         .arg("--app-name=Proton Drive")
         .arg("--urgency=critical")
+        .arg("--")
         .arg(gettext("Proton Drive: authentication required"))
         .arg(gettext(
             "Run \"proton-drive auth login\" in a terminal, then Proton Drive sync will resume automatically.",
@@ -75,6 +76,7 @@ pub fn cli_update_available(latest: &str, installed: &str) {
     let result = Command::new("notify-send")
         .arg("--app-name=Proton Drive")
         .arg("--urgency=normal")
+        .arg("--")
         .arg(gettext("Proton Drive: CLI update available"))
         .arg(body)
         .status();
@@ -96,6 +98,7 @@ pub fn cli_unsupported(installed: &str, minimum: &str) {
     let result = Command::new("notify-send")
         .arg("--app-name=Proton Drive")
         .arg("--urgency=critical")
+        .arg("--")
         .arg(gettext("Proton Drive: CLI update required"))
         .arg(body)
         .status();
@@ -133,6 +136,9 @@ pub fn pin_started(remote_path: &str) -> Option<String> {
         .arg("--urgency=low")
         .arg("--expire-time=0")
         .arg("--print-id")
+        // `--`: the summary is the file name, which may start with `-`
+        // (#161).
+        .arg("--")
         .arg(display_name(remote_path))
         .arg(gettext("Downloading to keep available offline…"))
         .output();
@@ -171,7 +177,7 @@ pub fn pin_finished(id: Option<&str>, remote_path: &str, error: Option<&str>) {
             format!("{} {error}", gettext("Could not keep available offline:"))
         }
     };
-    cmd.arg(display_name(remote_path)).arg(body);
+    cmd.arg("--").arg(display_name(remote_path)).arg(body);
     if let Err(err) = cmd.status() {
         log::debug!("could not send a desktop notification (notify-send missing?): {err}");
     }
