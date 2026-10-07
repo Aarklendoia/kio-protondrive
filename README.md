@@ -318,6 +318,30 @@ sudo apt install ./kio-protondrive_*.deb ./kio-protondrive-sync-daemon_*.deb \
   ./kio-protondrive-wizard_*.deb ./kio-protondrive-full_*.deb
 ```
 
+**Arch Linux**: the package isn't on the AUR yet — AUR account
+registration is closed for now, it'll be published there once it
+reopens. In the meantime, each release from 0.11.1 on carries prebuilt
+packages: download the `.pkg.tar.zst` files from the
+[Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
+and install them together:
+
+```bash
+sudo pacman -U kio-protondrive-*.pkg.tar.zst
+```
+
+Or build them yourself from the repository's own `PKGBUILD` (the same one
+the AUR will get):
+
+```bash
+git clone https://github.com/Aarklendoia/kio-protondrive.git
+cd kio-protondrive/packaging/aur
+makepkg -si
+```
+
+Unlike the Debian package, nothing enables the sync daemon for you on Arch
+— run `systemctl --user enable --now kio-protondrive-sync-daemon.service`
+once (see "Local caching and pinning" above).
+
 Then open `protondrive:/` in Dolphin's location bar (or
 `kioclient ls protondrive:/` from a terminal) to browse your Drive.
 
