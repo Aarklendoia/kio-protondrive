@@ -57,7 +57,6 @@ CORROSION_TAG="${CORROSION_TAG:-v0.6.1}"
 SKIP_CARGO_VENDOR="${SKIP_CARGO_VENDOR:-0}"
 
 cd "$(dirname "$0")/../.."
-REPO_ROOT="$(pwd)"
 
 echo "==> Removing build/ (must not exist when dpkg-source tars up the tree)"
 rm -rf build

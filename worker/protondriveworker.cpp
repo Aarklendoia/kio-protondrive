@@ -482,7 +482,7 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
         return getPhoto(splitPhotoPath(path.mid(photosPrefix.length())).name, path);
     }
 
-    // Pinned files (kept local via the Dolphin "Garder en local" ServiceMenu
+    // Pinned files (kept local via the Dolphin "Keep Available Offline" context-menu
     // action — see issue #30) are served straight from their cached copy:
     // no CLI call at all, instant instead of a network round-trip every
     // time this path is opened. Same fall-through-on-error reasoning as
