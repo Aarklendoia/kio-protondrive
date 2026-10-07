@@ -32,6 +32,12 @@ use thiserror::Error;
 /// silently absent on anything older (the actual bug #65 was filed for).
 const MANIFEST_URL: &str = "https://proton.me/download/drive/cli/version.json";
 
+/// Passed to every `curl` here: HTTPS only, redirects included (#162). The
+/// manifest supplies both the binary's URL and its checksum, so a single
+/// redirect to plain HTTP anywhere would let a network attacker serve a
+/// malicious binary along with a checksum that matches it.
+const CURL_HTTPS_ONLY: [&str; 4] = ["--proto", "=https", "--proto-redir", "=https"];
+
 /// The oldest `proton-drive` CLI release this project is tested against
 /// (#127). The worker relies on its JSON output shapes (`filesystem copy`'s
 /// per-item `ok`/`error`, the virtual sections' behavior), which older
@@ -143,7 +149,8 @@ pub fn is_supported(installed: &str) -> bool {
 /// `curl -fsSL <MANIFEST_URL>`, parsed via [`parse_manifest`].
 pub fn fetch_latest_stable() -> Result<Release, CliUpdateError> {
     let output = Command::new("curl")
-        .args(["-fsSL", MANIFEST_URL])
+        .args(CURL_HTTPS_ONLY)
+        .args(["-fsSL", "--", MANIFEST_URL])
         .output()
         .map_err(|e| CliUpdateError::Fetch(MANIFEST_URL.to_string(), e.to_string()))?;
     if !output.status.success() {
@@ -187,8 +194,10 @@ fn download_and_install_inner(
     tmp_path: &Path,
 ) -> Result<(), CliUpdateError> {
     let status = Command::new("curl")
+        .args(CURL_HTTPS_ONLY)
         .args(["-fsSL", "-o"])
         .arg(tmp_path)
+        .arg("--")
         .arg(&file.url)
         .status()
         .map_err(|e| CliUpdateError::Fetch(file.url.clone(), e.to_string()))?;
