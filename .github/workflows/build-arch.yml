@@ -4,8 +4,8 @@ name: Build Arch Packages
 # by its own pkgver=) and attaches the resulting packages to the GitHub
 # release on tags — the stand-in for the AUR while its account
 # registration is closed (#154). On PRs it only runs when the PKGBUILD or
-# this workflow changes: it builds the *released* tarball, not the PR's
-# code, so it validates packaging changes, nothing else.
+# this workflow changes — release-please's PR included, since it bumps
+# pkgver= — and builds the PR's own tree (see "Build packages").
 on:
   push:
     tags: [ 'v*' ]
@@ -40,10 +40,21 @@ jobs:
         # makepkg refuses to run as root, which is what the container runs
         # as. Runs check() too (cargo test, ctest, and the plugins' symbol
         # resolution — see the PKGBUILD).
+        #
+        # Builds the checked-out tree, not the vX.Y.Z tarball the PKGBUILD
+        # names: an archive of it is put where makepkg looks first, under
+        # that tarball's name, so it's used instead of downloaded (#179).
+        # On release-please's PR the tag doesn't exist yet (404), and on
+        # other PRs this tests the PR's own code. On a tag push it's the
+        # same tree the tarball is made from.
         run: |
           useradd -m builder
           echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
           cp -r packaging/aur /home/builder/work
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          pkgver="$(bash -c 'source packaging/aur/PKGBUILD && echo "$pkgver"')"
+          git archive --format=tar.gz --prefix="kio-protondrive-$pkgver/" \
+            -o "/home/builder/work/kio-protondrive-$pkgver.tar.gz" HEAD
           chown -R builder:builder /home/builder/work
           su builder -c 'cd /home/builder/work && makepkg -s --noconfirm'
           cp /home/builder/work/*.pkg.tar.zst .
