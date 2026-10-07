@@ -541,14 +541,20 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
     // directory itself can't be determined/created (e.g. an unwritable
     // XDG_CACHE_HOME), in which case this open just behaves like it always
     // did before #60.
+    //
+    // Also falls back when the stat above didn't give a modification time:
+    // store_cached() below needs it to record the file, and a file left in
+    // the cache directory without a record is never evicted (#166).
     QString downloadDir = tmpDir.path();
     bool cachingEnabled = false;
-    try {
-        const rust::String dir = cache_target_dir(path.toStdString());
-        downloadDir = QString::fromUtf8(dir.data(), static_cast<int>(dir.size()));
-        cachingEnabled = true;
-    } catch (const rust::Error &error) {
-        qWarning() << "cache directory lookup failed for" << path << "(falling back to a temporary download):" << error.what();
+    if (!modificationTime.isEmpty()) {
+        try {
+            const rust::String dir = cache_target_dir(path.toStdString());
+            downloadDir = QString::fromUtf8(dir.data(), static_cast<int>(dir.size()));
+            cachingEnabled = true;
+        } catch (const rust::Error &error) {
+            qWarning() << "cache directory lookup failed for" << path << "(falling back to a temporary download):" << error.what();
+        }
     }
 
     try {
@@ -582,7 +588,7 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
 
     const QString downloadedPath = QDir(downloadDir).filePath(fileName);
 
-    if (cachingEnabled && !modificationTime.isEmpty()) {
+    if (cachingEnabled) {
         try {
             store_cached(path.toStdString(), downloadedPath.toStdString(), modificationTime.toStdString());
             notifyOverlayChanged(path);
