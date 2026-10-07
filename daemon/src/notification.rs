@@ -27,7 +27,7 @@ const LOCALEDIR: &str = "/usr/share/locale";
 pub fn init() {
     // Safety: `setlocale` non-atomically mutates process-global state with
     // no synchronization, which is only sound called this early — this is
-    // the very first thing `main` does (right after `env_logger::init()`),
+    // the very first thing `main` does (right after initializing `env_logger`),
     // before any thread or POSIX signal handling starts, matching the
     // crate's own documented safety requirement for this function.
     unsafe {

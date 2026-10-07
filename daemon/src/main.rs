@@ -102,7 +102,10 @@ fn main() {
         return;
     }
 
-    env_logger::init();
+    // Without RUST_LOG, env_logger only lets errors through, and the systemd
+    // units don't set it — so default to `info` (#140), or every warning
+    // (failed syncs, failed version checks…) would never reach the journal.
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     notification::init();
 
     let config_path = Config::default_path();
