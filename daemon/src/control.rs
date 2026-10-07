@@ -21,7 +21,7 @@ use protondrive_core::cache::Cache;
 use protondrive_core::cli::RealCommandRunner;
 use protondrive_core::local_ctrl::{
     self, constant_time_eq, extract_header, extract_query_param, generate_ctrl_token, json_escape,
-    percent_encode, request_path, write_owner_only_file,
+    percent_encode, read_request, request_path, write_owner_only_file,
 };
 
 use crate::notification;
@@ -68,9 +68,7 @@ pub fn start() {
 }
 
 fn handle_connection(mut stream: TcpStream, expected_token: &str) {
-    let mut buf = [0u8; 4096];
-    let n = stream.read(&mut buf).unwrap_or(0);
-    let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+    let req = read_request(&mut stream);
 
     let token_ok = extract_header(&req, TOKEN_HEADER)
         .map(|t| constant_time_eq(t, expected_token))

@@ -102,16 +102,20 @@ pub fn percent_decode(s: &str) -> String {
                 out.push(b' ');
                 i += 1;
             }
-            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                Ok(byte) => {
-                    out.push(byte);
-                    i += 3;
+            // On bytes, not `&s[..]`: a multi-byte character right after
+            // the `%` would otherwise cut a char boundary and panic (#164).
+            b'%' if i + 2 < bytes.len() => {
+                match (hex_value(bytes[i + 1]), hex_value(bytes[i + 2])) {
+                    (Some(high), Some(low)) => {
+                        out.push(high << 4 | low);
+                        i += 3;
+                    }
+                    _ => {
+                        out.push(bytes[i]);
+                        i += 1;
+                    }
                 }
-                Err(_) => {
-                    out.push(bytes[i]);
-                    i += 1;
-                }
-            },
+            }
             b => {
                 out.push(b);
                 i += 1;
@@ -119,6 +123,38 @@ pub fn percent_decode(s: &str) -> String {
         }
     }
     String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_value(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// How long a control-server connection may take to send its request.
+/// Without a limit, any local user (no token needed just to connect) could
+/// open connections that never send anything, each one holding a thread
+/// forever (#164). The real clients send their whole request at once.
+pub const REQUEST_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Reads one request (up to 4 KiB, all either server ever needs) from a
+/// freshly accepted connection, giving up after [`REQUEST_READ_TIMEOUT`].
+/// A timeout or read error yields an empty request, which then fails the
+/// token check like any other unauthenticated one.
+pub fn read_request(stream: &mut std::net::TcpStream) -> String {
+    read_request_within(stream, REQUEST_READ_TIMEOUT)
+}
+
+fn read_request_within(stream: &mut std::net::TcpStream, timeout: std::time::Duration) -> String {
+    let mut buf = [0u8; 4096];
+    let n = stream
+        .set_read_timeout(Some(timeout))
+        .and_then(|()| stream.read(&mut buf))
+        .unwrap_or(0);
+    String::from_utf8_lossy(&buf[..n]).into_owned()
 }
 
 /// Percent-encodes a string for use as a URL query value — the inverse of
@@ -222,6 +258,27 @@ fn is_executable(metadata: &std::fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn percent_decode_never_panics_on_non_ascii_after_a_percent() {
+        assert_eq!(percent_decode("%aé"), "%aé");
+        assert_eq!(percent_decode("%éa"), "%éa");
+        assert_eq!(percent_decode("%2Fmy-files%2F%C3%A9"), "/my-files/é");
+        // Not a hex escape (from_str_radix used to accept the sign).
+        assert_eq!(percent_decode("%+1"), "% 1");
+    }
+
+    #[test]
+    fn read_request_gives_up_on_a_silent_connection() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let _client = std::net::TcpStream::connect(addr).unwrap();
+        let (mut server_side, _) = listener.accept().unwrap();
+        let timeout = std::time::Duration::from_millis(100);
+        let started = std::time::Instant::now();
+        assert_eq!(read_request_within(&mut server_side, timeout), "");
+        assert!(started.elapsed() < timeout * 10);
+    }
 
     #[test]
     fn generate_ctrl_token_is_64_lowercase_hex_chars_and_varies() {
