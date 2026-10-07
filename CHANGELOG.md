@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.11.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.10.1...v0.11.0) (2026-10-06)
+
+
+### Features
+
+* require proton-drive CLI 0.9.0 or newer ([#129](https://github.com/Aarklendoia/kio-protondrive/issues/129)) ([036490b](https://github.com/Aarklendoia/kio-protondrive/commit/036490b7f0ff81bdae4e5e49d372b2151e63d874)), closes [#127](https://github.com/Aarklendoia/kio-protondrive/issues/127)
+* **wizard:** add AppStream MetaInfo for kio-protondrive-wizard ([#101](https://github.com/Aarklendoia/kio-protondrive/issues/101)) ([1ff0f4d](https://github.com/Aarklendoia/kio-protondrive/commit/1ff0f4dc583d7da126abddb36cc49f86903e210f))
+* **worker:** copy server-side within protondrive:/ ([#124](https://github.com/Aarklendoia/kio-protondrive/issues/124)) ([82ba956](https://github.com/Aarklendoia/kio-protondrive/commit/82ba956cbf946e6c6a3b334013c30fffe64fce26)), closes [#109](https://github.com/Aarklendoia/kio-protondrive/issues/109)
+
+
+### Bug Fixes
+
+* **aur:** add qt6-tools to makedepends ([#115](https://github.com/Aarklendoia/kio-protondrive/issues/115)) ([902d9ec](https://github.com/Aarklendoia/kio-protondrive/commit/902d9ec167e0062326ba181496fb8338d6318b17)), closes [#112](https://github.com/Aarklendoia/kio-protondrive/issues/112)
+* **aur:** build without LTO so the KIO plugins actually load ([#114](https://github.com/Aarklendoia/kio-protondrive/issues/114)) ([df89d5c](https://github.com/Aarklendoia/kio-protondrive/commit/df89d5c50197d484bca5b5152c40c7e444ec051e)), closes [#111](https://github.com/Aarklendoia/kio-protondrive/issues/111)
+* **core:** invalidate a renamed or trashed folder's whole cached subtree ([#132](https://github.com/Aarklendoia/kio-protondrive/issues/132)) ([a8f098c](https://github.com/Aarklendoia/kio-protondrive/commit/a8f098ceb25d898de13790daf12ada621e75f65a)), closes [#128](https://github.com/Aarklendoia/kio-protondrive/issues/128)
+* **core:** move a pinned file's pin along when it's renamed through KIO ([#136](https://github.com/Aarklendoia/kio-protondrive/issues/136)) ([e0a0064](https://github.com/Aarklendoia/kio-protondrive/commit/e0a006419a7b46fb90e202887a70c0c92330f866)), closes [#135](https://github.com/Aarklendoia/kio-protondrive/issues/135)
+* **core:** show the file's real size, not its encrypted storage size ([#126](https://github.com/Aarklendoia/kio-protondrive/issues/126)) ([12ef940](https://github.com/Aarklendoia/kio-protondrive/commit/12ef940e8178239f683303cc12bddc1d9f96e157)), closes [#125](https://github.com/Aarklendoia/kio-protondrive/issues/125)
+* **wizard:** translate the Finish page's log-out hint ([#134](https://github.com/Aarklendoia/kio-protondrive/issues/134)) ([d0e8680](https://github.com/Aarklendoia/kio-protondrive/commit/d0e86803b8de147751bf9d2d0c7228ea6f91b1a9)), closes [#130](https://github.com/Aarklendoia/kio-protondrive/issues/130)
+* **worker:** name stat() entries after the item, not "." ([#123](https://github.com/Aarklendoia/kio-protondrive/issues/123)) ([188ea63](https://github.com/Aarklendoia/kio-protondrive/commit/188ea63a7eddb92ae900ff12151c70e33b2308da))
+* **worker:** synthesize the entry for the virtual root and its sections ([#120](https://github.com/Aarklendoia/kio-protondrive/issues/120)) ([d1494a2](https://github.com/Aarklendoia/kio-protondrive/commit/d1494a2a2c570da186443544a04b68f9b162e1e5)), closes [#108](https://github.com/Aarklendoia/kio-protondrive/issues/108)
+* **worker:** trash a deleted folder whole instead of child by child ([#133](https://github.com/Aarklendoia/kio-protondrive/issues/133)) ([5a2bb42](https://github.com/Aarklendoia/kio-protondrive/commit/5a2bb428aaefbb1e92ae23b106e0abade65b9082)), closes [#131](https://github.com/Aarklendoia/kio-protondrive/issues/131)
+
 ## [0.10.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.10.0...v0.10.1) (2026-08-25)
 
 
