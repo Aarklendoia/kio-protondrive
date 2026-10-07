@@ -26,7 +26,7 @@ use protondrive_core::cli::{self, CommandRunner, DriveError, RealCommandRunner};
 use protondrive_core::cli_update;
 use protondrive_core::local_ctrl::{
     self, constant_time_eq, extract_header, extract_query_param, generate_ctrl_token, json_escape,
-    request_path, which, write_owner_only_file,
+    read_request, request_path, which, write_owner_only_file,
 };
 
 const APP_NAME: &str = "kio-protondrive-wizard";
@@ -236,10 +236,8 @@ fn start_control_server(token: String) -> u16 {
 }
 
 fn handle_ctrl_connection(mut stream: std::net::TcpStream, expected_token: &str) {
-    use std::io::{Read, Write};
-    let mut buf = [0u8; 4096];
-    let n = stream.read(&mut buf).unwrap_or(0);
-    let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+    use std::io::Write;
+    let req = read_request(&mut stream);
 
     let token_ok = extract_header(&req, TOKEN_HEADER)
         .map(|t| constant_time_eq(t, expected_token))
