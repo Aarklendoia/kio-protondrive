@@ -1,7 +1,9 @@
 [Unit]
 Description=Proton Drive background upload sync daemon
-After=network-online.target
-Wants=network-online.target
+# No After=/Wants=network-online.target: that target only exists in the
+# system manager, so in a user unit it orders nothing (#139). The daemon
+# starts with the session, network or not, and copes with it being down
+# (e.g. the version check retries after a failure).
 # Without a limit, a persistent startup failure (e.g. no
 # ~/.config/kio-protondrive/daemon.toml yet — there's no first-run wizard
 # yet, see issue #25) makes systemd retry every RestartSec forever: seen
