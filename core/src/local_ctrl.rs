@@ -164,13 +164,6 @@ pub fn extract_header<'a>(req: &'a str, header_name: &str) -> Option<&'a str> {
     })
 }
 
-pub fn request_method(req: &str) -> &str {
-    req.lines()
-        .next()
-        .and_then(|line| line.split_whitespace().next())
-        .unwrap_or("")
-}
-
 pub fn request_path(req: &str) -> &str {
     req.lines()
         .next()
@@ -291,11 +284,6 @@ mod tests {
     #[test]
     fn request_path_strips_the_query_string() {
         assert_eq!(request_path("GET /route?a=1&b=2 HTTP/1.1\r\n"), "/route");
-    }
-
-    #[test]
-    fn request_method_reads_the_verb() {
-        assert_eq!(request_method("OPTIONS /route HTTP/1.1\r\n"), "OPTIONS");
     }
 
     #[test]
