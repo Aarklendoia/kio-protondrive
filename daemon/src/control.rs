@@ -209,16 +209,44 @@ pub(crate) fn notify_overlay_changed(remote_path: &str) {
     }
 }
 
-/// `dbus-send`'s syntax for a `QStringList` argument — shared by this
-/// module's own batched broadcast below and `fs_refresh`'s `FilesChanged`.
-pub(crate) fn dbus_string_array(values: &[String]) -> String {
-    let quoted: Vec<String> = values.iter().map(|v| format!("string:\"{v}\"")).collect();
-    format!("array:{}", quoted.join(","))
+/// `busctl --user emit` arguments for a session-bus signal on `/` whose one
+/// argument is a `QStringList` (`as`) — shared by this module's own batched
+/// broadcast below and `fs_refresh`'s `FilesChanged`. Not `dbus-send`: its
+/// `array:string:` syntax has no quoting at all, so any quote ended up
+/// inside the value and a comma split it in two (#160); busctl takes each
+/// string as its own argv item, untouched.
+pub(crate) fn emit_string_list_args(
+    interface: &str,
+    member: &str,
+    values: &[String],
+) -> Vec<String> {
+    let mut args = vec![
+        "--user".to_string(),
+        "emit".to_string(),
+        "/".to_string(),
+        interface.to_string(),
+        member.to_string(),
+        "as".to_string(),
+        values.len().to_string(),
+    ];
+    args.extend(values.iter().cloned());
+    args
+}
+
+/// Runs `busctl` with [`emit_string_list_args`]. Best-effort, like every
+/// other broadcast here.
+pub(crate) fn emit_string_list(interface: &str, member: &str, values: &[String]) {
+    let result = Command::new("busctl")
+        .args(emit_string_list_args(interface, member, values))
+        .status();
+    if let Err(err) = result {
+        log::debug!("could not emit {interface}.{member} (busctl missing?): {err}");
+    }
 }
 
 /// Batched counterpart to [`notify_overlay_changed`], for callers that need
 /// to broadcast many paths at once (currently only `fs_refresh`'s periodic
-/// sweep) — one `dbus-send` process for the whole batch instead of one per
+/// sweep) — one `busctl` process for the whole batch instead of one per
 /// path, the same reasoning `notify_files_changed` already applies to
 /// `FilesChanged`. A *separate* signal (`PathsChanged`, not an overload of
 /// `OverlayChanged`) rather than changing `OverlayChanged`'s own argument
@@ -229,16 +257,11 @@ pub(crate) fn notify_paths_changed(remote_paths: &[String]) {
     if remote_paths.is_empty() {
         return;
     }
-    let result = Command::new("dbus-send")
-        .arg("--session")
-        .arg("--type=signal")
-        .arg("/")
-        .arg("org.kde.protondrive.OverlayIcon.PathsChanged")
-        .arg(dbus_string_array(remote_paths))
-        .status();
-    if let Err(err) = result {
-        log::debug!("could not notify the overlay icon plugin (dbus-send missing?): {err}");
-    }
+    emit_string_list(
+        "org.kde.protondrive.OverlayIcon",
+        "PathsChanged",
+        remote_paths,
+    );
 }
 
 /// `kio-protondrive-daemon pin <url>` / `unpin <url>` client mode — what
@@ -293,6 +316,30 @@ pub fn run_client(action: &str, url: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emit_string_list_args_passes_each_value_untouched() {
+        let values = vec![
+            "/my-files/a b".to_string(),
+            "/my-files/c,d".to_string(),
+            "/my-files/\"q\"".to_string(),
+        ];
+        assert_eq!(
+            emit_string_list_args("org.example.Iface", "Changed", &values),
+            [
+                "--user",
+                "emit",
+                "/",
+                "org.example.Iface",
+                "Changed",
+                "as",
+                "3",
+                "/my-files/a b",
+                "/my-files/c,d",
+                "/my-files/\"q\"",
+            ]
+        );
+    }
 
     #[test]
     fn force_param_reads_1_or_true() {
