@@ -26,7 +26,7 @@ use protondrive_core::cli::{self, CommandRunner, DriveError, RealCommandRunner};
 use protondrive_core::cli_update;
 use protondrive_core::local_ctrl::{
     self, constant_time_eq, extract_header, extract_query_param, generate_ctrl_token, json_escape,
-    request_method, request_path, which, write_owner_only_file,
+    request_path, which, write_owner_only_file,
 };
 
 const APP_NAME: &str = "kio-protondrive-wizard";
@@ -241,21 +241,22 @@ fn handle_ctrl_connection(mut stream: std::net::TcpStream, expected_token: &str)
     let n = stream.read(&mut buf).unwrap_or(0);
     let req = String::from_utf8_lossy(&buf[..n]).into_owned();
 
-    let is_options = request_method(&req) == "OPTIONS";
     let token_ok = extract_header(&req, TOKEN_HEADER)
         .map(|t| constant_time_eq(t, expected_token))
         .unwrap_or(false);
 
-    let (status, body): (&str, String) = if !is_options && !token_ok {
+    let (status, body): (&str, String) = if !token_ok {
         ("403 Forbidden", String::new())
-    } else if is_options {
-        ("200 OK", String::new())
     } else {
         route(&req)
     };
 
+    // No CORS headers and no OPTIONS preflight answer (#163): the only
+    // client is this wizard's own QML, whose XMLHttpRequest neither sends a
+    // preflight nor enforces CORS. Allowing any origin only let a web page
+    // in the user's browser probe for this port.
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: *\r\n\r\n{body}",
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     );
     let _ = stream.write_all(response.as_bytes());
