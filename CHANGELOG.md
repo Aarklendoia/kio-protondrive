@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.11.0...v0.11.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **daemon:** count suspended time toward the daily version check and cache eviction ([#142](https://github.com/Aarklendoia/kio-protondrive/issues/142)) ([9f137d6](https://github.com/Aarklendoia/kio-protondrive/commit/9f137d6b24f241edb950217293ef40d3f3691f39))
+* **daemon:** drop the no-op network-online.target ordering from the user units ([#143](https://github.com/Aarklendoia/kio-protondrive/issues/143)) ([8a516f2](https://github.com/Aarklendoia/kio-protondrive/commit/8a516f2ae6b1ce50d16fc8321085561d6e1354e7))
+* **daemon:** log at info level by default when RUST_LOG isn't set ([#144](https://github.com/Aarklendoia/kio-protondrive/issues/144)) ([eb435a4](https://github.com/Aarklendoia/kio-protondrive/commit/eb435a455962e8dfdf6673427f1e197c0fb1c188))
+* **daemon:** retry a failed CLI version check after 15 minutes instead of a day ([#141](https://github.com/Aarklendoia/kio-protondrive/issues/141)) ([6580185](https://github.com/Aarklendoia/kio-protondrive/commit/6580185459be95adf034a9e93bb80543ce17a31f))
+* **packaging:** add the wizard's and plugins' runtime deps to the PKGBUILD's makedepends ([#153](https://github.com/Aarklendoia/kio-protondrive/issues/153)) ([40f3073](https://github.com/Aarklendoia/kio-protondrive/commit/40f30730946e328cd5d85351e3de05a19e84bcb1))
+* **packaging:** let release-please bump the PKGBUILD's pkgver ([#151](https://github.com/Aarklendoia/kio-protondrive/issues/151)) ([cdd687b](https://github.com/Aarklendoia/kio-protondrive/commit/cdd687bb4773f3a30b29f0fc6ca7ba30ca5f8a58))
+* **wizard:** name protondrive:/, not /my-files, on the Places page ([#150](https://github.com/Aarklendoia/kio-protondrive/issues/150)) ([7a0f91d](https://github.com/Aarklendoia/kio-protondrive/commit/7a0f91dbcc3b6c53efbe74997799205907ec3def))
+
 ## [0.11.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.10.1...v0.11.0) (2026-10-06)
 
 
