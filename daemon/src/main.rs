@@ -12,7 +12,7 @@
 //! same binary over its local control server, started by the branch below).
 
 use std::sync::mpsc::RecvTimeoutError;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use protondrive_core::cache::Cache;
 use protondrive_core::cli::RealCommandRunner;
@@ -84,6 +84,17 @@ fn next_version_check_interval(completed: bool) -> Duration {
     }
 }
 
+/// Wall-clock time elapsed since `since`, for the daily timers (#138):
+/// unlike `Instant` (`CLOCK_MONOTONIC`), it keeps counting while the machine
+/// is suspended, so a laptop suspended every evening still gets its daily
+/// checks once a day rather than once per 24 h of awake time. A clock that
+/// went backwards counts as "due" rather than waiting for it to catch up.
+fn wall_clock_elapsed(since: SystemTime) -> Duration {
+    SystemTime::now()
+        .duration_since(since)
+        .unwrap_or(Duration::MAX)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 3 && (args[1] == "pin" || args[1] == "unpin") {
@@ -148,11 +159,12 @@ fn main() {
     // Checked once immediately here (same shape as the reconcile() call
     // above), then every VERSION_CHECK_INTERVAL from inside the loop below —
     // or every VERSION_CHECK_RETRY_INTERVAL while checks keep failing.
-    // Note this must NOT be `Instant::now()` followed by relying on the
-    // loop's own elapsed() >= INTERVAL check to fire it "right away": a
-    // freshly-started Instant has elapsed() ~0, which makes the *wait*
+    // Note this must NOT be a fresh timestamp followed by relying on the
+    // loop's own elapsed >= INTERVAL check to fire it "right away": a
+    // freshly-taken timestamp has elapsed ~0, which makes the *wait*
     // computed below ~INTERVAL (not ~0) — that would silently delay the
-    // first check by a full day instead of running it at startup.
+    // first check by a full day instead of running it at startup. Measured
+    // in wall-clock time (see `wall_clock_elapsed`) so suspended time counts.
     let mut cli_update_notified: Option<String> = None;
     let mut version_check_interval = next_version_check_interval(version_check::check(
         &runner,
@@ -161,8 +173,8 @@ fn main() {
         &version_check::offer_wizard_update,
         &mut cli_update_notified,
     ));
-    let mut last_version_check = Instant::now();
-    // Same "must not be Instant::now() relied on for an immediate first
+    let mut last_version_check = SystemTime::now();
+    // Same "must not be a fresh timestamp relied on for an immediate first
     // run" reasoning as `last_version_check` above — but the fs cache sweep
     // doesn't need one right at startup the way the version check does (a
     // freshly-started daemon's cache is whatever `bridge.rs` already wrote
@@ -171,13 +183,14 @@ fn main() {
     // `FS_CACHE_REFRESH_INTERVAL` instead.
     let mut last_fs_refresh = Instant::now();
     // Same reasoning as `last_fs_refresh` — no urgency for an immediate
-    // first sweep at startup, so this also starts as `Instant::now()`.
-    let mut last_cache_eviction = Instant::now();
+    // first sweep at startup, so this also starts now — in wall-clock time,
+    // like `last_version_check`, since its interval is a daily one too.
+    let mut last_cache_eviction = SystemTime::now();
     loop {
         let wait = version_check_interval
-            .saturating_sub(last_version_check.elapsed())
+            .saturating_sub(wall_clock_elapsed(last_version_check))
             .min(FS_CACHE_REFRESH_INTERVAL.saturating_sub(last_fs_refresh.elapsed()))
-            .min(CACHE_EVICTION_INTERVAL.saturating_sub(last_cache_eviction.elapsed()));
+            .min(CACHE_EVICTION_INTERVAL.saturating_sub(wall_clock_elapsed(last_cache_eviction)));
         match events.recv_timeout(wait) {
             Ok(batch) => {
                 for event in batch {
@@ -215,7 +228,7 @@ fn main() {
             Err(RecvTimeoutError::Disconnected) => break,
         }
 
-        if last_version_check.elapsed() >= version_check_interval {
+        if wall_clock_elapsed(last_version_check) >= version_check_interval {
             version_check_interval = next_version_check_interval(version_check::check(
                 &runner,
                 &notifier,
@@ -223,7 +236,7 @@ fn main() {
                 &version_check::offer_wizard_update,
                 &mut cli_update_notified,
             ));
-            last_version_check = Instant::now();
+            last_version_check = SystemTime::now();
         }
 
         if last_fs_refresh.elapsed() >= FS_CACHE_REFRESH_INTERVAL {
@@ -231,9 +244,9 @@ fn main() {
             last_fs_refresh = Instant::now();
         }
 
-        if last_cache_eviction.elapsed() >= CACHE_EVICTION_INTERVAL {
+        if wall_clock_elapsed(last_cache_eviction) >= CACHE_EVICTION_INTERVAL {
             cache_eviction::evict_stale(&cache, config.cache_retention());
-            last_cache_eviction = Instant::now();
+            last_cache_eviction = SystemTime::now();
         }
     }
 }
@@ -245,5 +258,25 @@ fn run_pin_client(action: &str, url: &str) {
             eprintln!("{err}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wall_clock_elapsed_measures_time_since_a_past_instant() {
+        let since = SystemTime::now() - Duration::from_secs(3600);
+        let elapsed = wall_clock_elapsed(since);
+        assert!(elapsed >= Duration::from_secs(3600));
+        assert!(elapsed < Duration::from_secs(3660));
+    }
+
+    #[test]
+    fn wall_clock_elapsed_treats_a_clock_gone_backwards_as_due() {
+        let since = SystemTime::now() + Duration::from_secs(3600);
+        assert!(wall_clock_elapsed(since) >= VERSION_CHECK_INTERVAL);
+        assert!(wall_clock_elapsed(since) >= CACHE_EVICTION_INTERVAL);
     }
 }
