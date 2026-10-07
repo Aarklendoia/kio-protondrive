@@ -29,13 +29,12 @@
 //! until the next natural refresh, not a failure worth surfacing.
 
 use std::collections::BTreeSet;
-use std::process::Command;
 
 use protondrive_core::cache::Cache;
 use protondrive_core::cli::{self, CommandRunner, DriveError};
 use protondrive_core::entry::ListItem;
 
-use crate::control::{dbus_string_array, notify_paths_changed};
+use crate::control::{emit_string_list, notify_paths_changed};
 
 fn drive_url(path: &str) -> String {
     format!("protondrive:{path}")
@@ -45,16 +44,7 @@ fn notify_files_changed(urls: &[String]) {
     if urls.is_empty() {
         return;
     }
-    let result = Command::new("dbus-send")
-        .arg("--session")
-        .arg("--type=signal")
-        .arg("/")
-        .arg("org.kde.KDirNotify.FilesChanged")
-        .arg(dbus_string_array(urls))
-        .status();
-    if let Err(err) = result {
-        log::debug!("could not send FilesChanged for {urls:?} (dbus-send missing?): {err}");
-    }
+    emit_string_list("org.kde.KDirNotify", "FilesChanged", urls);
 }
 
 /// Re-fetches every cached stat path and listing, replacing what's cached
@@ -70,7 +60,7 @@ fn notify_files_changed(urls: &[String]) {
 /// a listing (see its own doc comment), so most children of a cached
 /// folder show up in *both* loops on the same sweep, and a large cache
 /// (hundreds of paths) would otherwise mean hundreds of individual
-/// `dbus-send` subprocess spawns per sweep on this daemon's single main
+/// broadcast subprocess spawns per sweep on this daemon's single main
 /// loop.
 pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
     let mut changed_paths: BTreeSet<String> = BTreeSet::new();
