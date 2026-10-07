@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.2](https://github.com/Aarklendoia/kio-protondrive/compare/v0.11.1...v0.11.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **core:** fetch the CLI manifest and binary over HTTPS only, redirects included ([#172](https://github.com/Aarklendoia/kio-protondrive/issues/172)) ([6a61781](https://github.com/Aarklendoia/kio-protondrive/commit/6a617811fb16a87f27ea37a1e19b4e2c754aeb27))
+* **core:** refuse remote paths that would map outside the local cache root ([#175](https://github.com/Aarklendoia/kio-protondrive/issues/175)) ([31f84f0](https://github.com/Aarklendoia/kio-protondrive/commit/31f84f05bc69c853d210a053ddc1ff05c708b816))
+* **core:** time out silent control-server connections and decode %-escapes byte-wise ([#174](https://github.com/Aarklendoia/kio-protondrive/issues/174)) ([670ab87](https://github.com/Aarklendoia/kio-protondrive/commit/670ab87c1a7742d23fe7355e28d7fe071ed4ef98))
+* **daemon:** emit batched D-Bus signals with busctl so paths arrive intact ([#170](https://github.com/Aarklendoia/kio-protondrive/issues/170)) ([22b020d](https://github.com/Aarklendoia/kio-protondrive/commit/22b020dcaacf578db711a76f627cce4b4ad31206))
+* never pass a user-supplied value starting with - as a bare command-line argument ([#171](https://github.com/Aarklendoia/kio-protondrive/issues/171)) ([8982f87](https://github.com/Aarklendoia/kio-protondrive/commit/8982f87e1ebe2f07d970ea5ed953ccfc41395f99))
+* **wizard:** drop the control server's CORS headers and OPTIONS answer ([#173](https://github.com/Aarklendoia/kio-protondrive/issues/173)) ([9dd89ee](https://github.com/Aarklendoia/kio-protondrive/commit/9dd89ee127a2e6db8c7d0367d0a70684d88b7df4))
+* **wizard:** feed the gpg key batch on stdin and reject control characters in it ([#169](https://github.com/Aarklendoia/kio-protondrive/issues/169)) ([70c2f47](https://github.com/Aarklendoia/kio-protondrive/commit/70c2f478c0c8d7c57f1077cb98f1bd37f1d69597))
+* **wizard:** only accept known credentials stores, and quote the one written to the login script ([#168](https://github.com/Aarklendoia/kio-protondrive/issues/168)) ([722f6c8](https://github.com/Aarklendoia/kio-protondrive/commit/722f6c8fc06194dad2dbb00fe24b1eee317e98d4))
+* **worker:** only download into the cache directory when the file can be recorded ([#176](https://github.com/Aarklendoia/kio-protondrive/issues/176)) ([9c02015](https://github.com/Aarklendoia/kio-protondrive/commit/9c020157e52adcaa58fcd0e2c067d4c5ba6f231c))
+
 ## [0.11.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.11.0...v0.11.1) (2026-10-07)
 
 
