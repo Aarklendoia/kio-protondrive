@@ -452,10 +452,13 @@ fn route_setup_pass(req: &str) -> String {
     if !which("pass") || !which("gpg") {
         return r#"{"ok":false,"error":"pass or gpg is not installed"}"#.to_string();
     }
-    let Some(email) = extract_query_param(req, "email").filter(|e| e.contains('@')) else {
+    let Some(email) = extract_query_param(req, "email").filter(|e| is_valid_key_email(e)) else {
         return r#"{"ok":false,"error":"a valid email is required"}"#.to_string();
     };
-    let name = std::env::var("USER").unwrap_or_else(|_| "Proton Drive".to_string());
+    let name = std::env::var("USER")
+        .ok()
+        .filter(|n| is_batch_safe(n) && !n.trim().is_empty())
+        .unwrap_or_else(|| "Proton Drive".to_string());
 
     let key_id = match existing_secret_key_id() {
         Some(key_id) => key_id,
@@ -510,6 +513,21 @@ fn existing_secret_key_id() -> Option<String> {
     None
 }
 
+/// Whether `value` can go on one line of a gpg `--gen-key` batch: a control
+/// character (a newline above all) would start a new line and inject any
+/// batch directive it likes, e.g. `%no-protection` (#159).
+fn is_batch_safe(value: &str) -> bool {
+    !value.chars().any(char::is_control)
+}
+
+fn is_valid_key_email(email: &str) -> bool {
+    email.contains('@') && is_batch_safe(email)
+}
+
+/// The batch goes to gpg on stdin, never through a file: a predictable
+/// file under `/tmp` could be pre-planted by another local user as a
+/// symlink (making this write somewhere else) or as a file they can still
+/// rewrite before gpg reads it (#159).
 fn generate_gpg_key(name: &str, email: &str) -> std::io::Result<()> {
     let batch = format!(
         "%echo Generating a GPG key for kio-protondrive\n\
@@ -523,16 +541,17 @@ fn generate_gpg_key(name: &str, email: &str) -> std::io::Result<()> {
          %commit\n\
          %echo done\n"
     );
-    let batch_path = std::env::temp_dir().join(format!(
-        "kio-protondrive-wizard-gpg-batch-{}.tmp",
-        std::process::id()
-    ));
-    std::fs::write(&batch_path, batch)?;
-    let status = Command::new("gpg")
+    let mut child = Command::new("gpg")
         .args(["--batch", "--gen-key"])
-        .arg(&batch_path)
-        .status();
-    let _ = std::fs::remove_file(&batch_path);
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().expect("stdin is piped");
+        stdin.write_all(batch.as_bytes())?;
+        // Dropped here, closing stdin so gpg sees the end of the batch.
+    }
+    let status = child.wait();
     match status {
         Ok(status) if status.success() => Ok(()),
         Ok(status) => Err(std::io::Error::other(format!(
@@ -792,6 +811,20 @@ mod tests {
         assert!(saved.contains("cache_retention_days = 7"));
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn gpg_batch_values_with_control_characters_are_rejected() {
+        assert!(is_valid_key_email("me@example.org"));
+        assert!(!is_valid_key_email("no-at-sign"));
+        assert!(!is_valid_key_email("me@example.org\n%no-protection"));
+        assert!(!is_valid_key_email("me@example.org\r"));
+        assert!(is_batch_safe("Édouard"));
+        assert!(!is_batch_safe("name\nPassphrase: x"));
+
+        let result =
+            route_setup_pass("GET /setup-pass?email=me%40example.org%0A%25no-protection HTTP/1.1");
+        assert!(result.contains("\"ok\":false"));
     }
 
     // One test, sequential scenarios — same reasoning as
