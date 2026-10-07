@@ -44,25 +44,30 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 /// notifications/offers for the same remote version across check cycles,
 /// reset once the installed version catches up — same falling-edge pattern
 /// as `main::report_authentication_failure`.
+///
+/// Returns whether the check actually got an answer — `false` when the CLI
+/// or the release manifest couldn't be reached, typically because the
+/// network wasn't up yet right after login (#137), so the caller can retry
+/// soon instead of waiting a full day.
 pub fn check(
     runner: &dyn CommandRunner,
     notifier: &dyn Notifier,
     fetch_latest: &dyn Fn() -> Result<Release, CliUpdateError>,
     offer_update: &dyn Fn(),
     already_notified: &mut Option<String>,
-) {
+) -> bool {
     let output = match runner.run(&["--version"], CHECK_TIMEOUT) {
         Ok(output) => output,
         Err(err) => {
-            log::debug!("could not check the proton-drive CLI version: {err}");
-            return;
+            log::warn!("could not check the proton-drive CLI version: {err}");
+            return false;
         }
     };
     let Some(installed) = cli_update::installed_version(&output.stdout) else {
-        log::debug!(
+        log::warn!(
             "could not parse the installed proton-drive CLI's version from --version's output"
         );
-        return;
+        return false;
     };
 
     // Below the minimum (#127), the worker's features fail in confusing
@@ -80,21 +85,21 @@ pub fn check(
             *already_notified = Some(key);
             offer_update();
         }
-        return;
+        return true;
     }
 
     let release = match fetch_latest() {
         Ok(release) => release,
         Err(err) => {
-            log::debug!("could not check for a newer proton-drive CLI release: {err}");
-            return;
+            log::warn!("could not check for a newer proton-drive CLI release: {err}");
+            return false;
         }
     };
 
     if !cli_update::is_newer(&release.version, installed) {
         log::debug!("proton-drive CLI {installed} is up to date");
         *already_notified = None;
-        return;
+        return true;
     }
 
     log::warn!(
@@ -102,11 +107,12 @@ pub fn check(
         release.version
     );
     if already_notified.as_deref() == Some(release.version.as_str()) {
-        return;
+        return true;
     }
     notifier.cli_update_available(&release.version, installed);
     *already_notified = Some(release.version.clone());
     offer_update();
+    true
 }
 
 /// Real `offer_update`: best-effort spawns the setup wizard in
@@ -211,7 +217,13 @@ mod tests {
         let offers = RefCell::new(0u32);
         let offer_update = || *offers.borrow_mut() += 1;
 
-        check(&runner, &notifier, &fetch, &offer_update, &mut notified);
+        assert!(check(
+            &runner,
+            &notifier,
+            &fetch,
+            &offer_update,
+            &mut notified
+        ));
         assert_eq!(notified.as_deref(), Some("0.10.0"));
         assert_eq!(
             notifier.0.borrow().as_slice(),
@@ -235,7 +247,7 @@ mod tests {
         let mut notified = None;
         let fetch = || Ok(release("0.10.0"));
 
-        check(&runner, &notifier, &fetch, &no_op, &mut notified);
+        assert!(check(&runner, &notifier, &fetch, &no_op, &mut notified));
         assert_eq!(notified, None);
         assert!(notifier.0.borrow().is_empty());
     }
@@ -255,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn does_nothing_when_the_manifest_fetch_fails() {
+    fn reports_failure_without_notifying_when_the_manifest_fetch_fails() {
         let runner = ScriptedRunner(version_output(
             "Proton Drive CLI cli-drive@0.9.0+5174900c\n",
         ));
@@ -263,19 +275,19 @@ mod tests {
         let mut notified = None;
         let fetch = || Err(CliUpdateError::ChecksumMismatch);
 
-        check(&runner, &notifier, &fetch, &no_op, &mut notified);
+        assert!(!check(&runner, &notifier, &fetch, &no_op, &mut notified));
         assert_eq!(notified, None);
         assert!(notifier.0.borrow().is_empty());
     }
 
     #[test]
-    fn does_nothing_when_the_installed_version_cannot_be_parsed() {
+    fn reports_failure_without_notifying_when_the_installed_version_cannot_be_parsed() {
         let runner = ScriptedRunner(version_output("garbage output\n"));
         let notifier = RecordingNotifier::default();
         let mut notified = None;
         let fetch = || Ok(release("0.8.0"));
 
-        check(&runner, &notifier, &fetch, &no_op, &mut notified);
+        assert!(!check(&runner, &notifier, &fetch, &no_op, &mut notified));
         assert_eq!(notified, None);
         assert!(notifier.0.borrow().is_empty());
     }
@@ -291,7 +303,15 @@ mod tests {
         let offers = RefCell::new(0u32);
         let offer_update = || *offers.borrow_mut() += 1;
 
-        check(&runner, &notifier, &fetch, &offer_update, &mut notified);
+        // Answered from the installed version alone, so this counts as a
+        // completed check even though the manifest is unreachable.
+        assert!(check(
+            &runner,
+            &notifier,
+            &fetch,
+            &offer_update,
+            &mut notified
+        ));
         assert_eq!(
             notifier.0.borrow().as_slice(),
             [(
