@@ -102,6 +102,10 @@ against the actual release tarball before pushing:
 curl -sL "https://github.com/Aarklendoia/kio-protondrive/archive/refs/tags/vX.Y.Z.tar.gz" | sha256sum
 ```
 
+The repo's own `packaging/aur/PKGBUILD` already carries the new `pkgver`:
+release-please bumps it in each release PR (the `x-release-please-version`
+marker on that line), so copying it over gives the right version.
+
 A `pkgrel` bump alone (no `pkgver` change) is for a packaging-only fix
 (e.g. a `PKGBUILD` correction) that doesn't correspond to a new upstream
 release — reset it to `1` whenever `pkgver` changes, increment it
