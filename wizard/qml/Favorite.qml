@@ -17,7 +17,7 @@ Kirigami.Page {
         spacing: Kirigami.Units.largeSpacing
 
         Label {
-            text: qsTr("Add Proton Drive to Dolphin's Places panel, for quick access to protondrive:/my-files.")
+            text: qsTr("Add Proton Drive to Dolphin's Places panel, for quick access to protondrive:/.")
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }
