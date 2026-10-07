@@ -26,6 +26,11 @@ makedepends=(
   kcoreaddons
   kwidgetsaddons
   gettext
+  # A split PKGBUILD must be able to install every sub-package's depends
+  # at build time (namcap); these are the ones nothing above pulls in.
+  ki18n
+  qt6-declarative
+  kirigami
 )
 source=("$pkgbase-$pkgver.tar.gz::https://github.com/Aarklendoia/kio-protondrive/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
