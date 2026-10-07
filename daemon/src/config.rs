@@ -14,6 +14,12 @@ use crate::error::DaemonError;
 /// Used when `cache_retention_days` is unset — see [`Config::cache_retention`].
 pub const DEFAULT_CACHE_RETENTION_DAYS: u32 = 30;
 
+/// Every `PROTON_DRIVE_CREDENTIALS_STORE` value the `proton-drive` CLI
+/// accepts (its own error for anything else: "Expected one of: keychain,
+/// unsafe_file, pass"). The wizard rejects anything outside this list
+/// (#158): the value ends up in a shell script Plasma runs at every login.
+pub const CREDENTIALS_STORES: &[&str] = &["keychain", "unsafe_file", "pass"];
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     /// Overrides the `proton-drive` CLI's `PROTON_DRIVE_CREDENTIALS_STORE`
