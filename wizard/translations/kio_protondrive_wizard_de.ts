@@ -159,8 +159,8 @@
     </message>
     <message>
         <location filename="../qml/Favorite.qml" line="20"/>
-        <source>Add Proton Drive to Dolphin&apos;s Places panel, for quick access to protondrive:/my-files.</source>
-        <translation>Proton Drive zur Orte-Leiste von Dolphin hinzufügen, für schnellen Zugriff auf protondrive:/my-files.</translation>
+        <source>Add Proton Drive to Dolphin&apos;s Places panel, for quick access to protondrive:/.</source>
+        <translation>Proton Drive zur Orte-Leiste von Dolphin hinzufügen, für schnellen Zugriff auf protondrive:/.</translation>
     </message>
     <message>
         <location filename="../qml/Favorite.qml" line="26"/>
