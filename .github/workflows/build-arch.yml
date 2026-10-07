@@ -1,0 +1,78 @@
+name: Build Arch Packages
+
+# Builds packaging/aur/PKGBUILD as-is (it fetches the vX.Y.Z tarball named
+# by its own pkgver=) and attaches the resulting packages to the GitHub
+# release on tags — the stand-in for the AUR while its account
+# registration is closed (#154). On PRs it only runs when the PKGBUILD or
+# this workflow changes: it builds the *released* tarball, not the PR's
+# code, so it validates packaging changes, nothing else.
+on:
+  push:
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'packaging/aur/**'
+      - '.github/workflows/build-arch.yml'
+  workflow_dispatch:
+
+# Same reason as build-debian.yml: the release step needs to create/update
+# the GitHub release.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install base tooling
+        # git for actions/checkout and the PKGBUILD's prepare(); sudo so
+        # `makepkg -s` can install the makedepends as the unprivileged
+        # builder below.
+        run: pacman -Syu --noconfirm --needed base-devel git namcap sudo
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build packages
+        # makepkg refuses to run as root, which is what the container runs
+        # as. Runs check() too (cargo test, ctest, and the plugins' symbol
+        # resolution — see the PKGBUILD).
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          cp -r packaging/aur /home/builder/work
+          chown -R builder:builder /home/builder/work
+          su builder -c 'cd /home/builder/work && makepkg -s --noconfirm'
+          cp /home/builder/work/*.pkg.tar.zst .
+
+      - name: Run namcap checks
+        # Informational, like build-debian.yml's lintian step: the -debug
+        # package's dangling build-id symlinks and the "may not be needed"
+        # warnings for runtime-only deps are expected.
+        run: |
+          namcap packaging/aur/PKGBUILD
+          namcap *.pkg.tar.zst || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: arch-packages
+          path: '*.pkg.tar.zst'
+          retention-days: 30
+
+      - name: Attach to release (on tag)
+        # The -debug package (~20 MB of symbols) is left out on purpose.
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            kio-protondrive-[0-9]*.pkg.tar.zst
+            kio-protondrive-sync-daemon-*.pkg.tar.zst
+            kio-protondrive-wizard-*.pkg.tar.zst
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
