@@ -39,7 +39,8 @@ Dolphin  ──KIO protocol──▶  kio_protondrive (KF6::KIOCore plugin, C++)
   access or live Proton Drive session needed to run `cargo test`.
 - **`worker/`** — a thin C++ shim (there's no Rust binding for
   `KIO::WorkerBase`) implementing the KIO protocol methods
-  (`listDir`/`stat`/`get`/`put`/`mkdir`/`del`/`rename`) and calling into
+  (`listDir`/`stat`/`mimetype`/`get`/`put`/`mkdir`/`del`/`rename`/`copy`)
+  and calling into
   `core/` through a [`cxx`](https://cxx.rs) bridge.
 - Built with [Corrosion](https://github.com/corrosion-rs/corrosion), which
   drives the Rust build from CMake and links the resulting static library
@@ -63,10 +64,9 @@ just-uploaded copy also stays available locally.
 
 If you want a file or folder to stay available **indefinitely** instead —
 including offline, and never auto-evicted — right-click it in Dolphin and
-choose **Garder en local** ("Keep it local"). This downloads a local copy
-that the KIO worker then serves straight from disk for `get`/`stat`, no CLI
-round-trip. **Supprimer la copie locale** ("Remove the local copy") un-pins
-it again — the local copy is deleted immediately, the file on Drive is
+choose **Keep Available Offline**. This downloads a local copy that the
+KIO worker then serves straight from disk for `get`/`stat`, no CLI
+round-trip. **Remove Local Copy** un-pins it again — the local copy is deleted immediately, the file on Drive is
 untouched.
 
 Dolphin marks each item with up to two small status badges, similar to
@@ -168,7 +168,7 @@ environment yourself (or re-run the wizard) to keep the KIO worker in sync.
 
 ## Scope
 
-**Supported (v1):**
+**Supported:**
 
 - Browsing folders, including Proton Drive's virtual top-level sections
   (`/my-files`, `/devices`, `/shared-with-me`, `/trash`, ...)
@@ -194,7 +194,10 @@ environment yourself (or re-run the wizard) to keep the KIO worker in sync.
 - Browsing `/photos`, read-only: `filesystem list`/`info` genuinely don't
   support Photos (see "Blocked upstream" below), but CLI 0.7.0+ exposes it
   through a separate, non-path-based `photo` command family instead, which
-  this worker wraps into a flat, real-filename listing. No upload (the CLI's
+  this worker wraps into a flat, real-filename listing. A **Filter Photos**
+  context-menu action narrows it to one category (favorites, screenshots,
+  videos, live photos, selfies, portraits, bursts, panoramas, RAW) — see
+  [#68](https://github.com/Aarklendoia/kio-protondrive/issues/68). No upload (the CLI's
   own `photo upload` always lands in "My Photos", flat, regardless of
   destination) and no albums. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
 - A persistent listing/stat cache, so repeat browsing (and Dolphin's
@@ -213,7 +216,7 @@ environment yourself (or re-run the wizard) to keep the KIO worker in sync.
   available locally afterward instead of being deleted immediately, so
   reopening it is instant — until it's evicted after a configurable number
   of days since last use (30 by default, set during setup). Pinned files
-  ("Garder en local") are never evicted this way. Dolphin shows up to two
+  ("Keep Available Offline") are never evicted this way. Dolphin shows up to two
   status badges per item — a checkmark for "available locally" (pinned or
   cached) and a star on top specifically for pinned files, OneDrive-style
   (Breeze has no dedicated pin emblem, so a star stands in). See
@@ -320,9 +323,9 @@ Then open `protondrive:/` in Dolphin's location bar (or
 
 ### Pinning it to Dolphin's sidebar
 
-Browse to `protondrive:/`, then right-click the breadcrumb (or drag it into
-the **Places** panel) and choose **Add to Places**. This is standard
-Dolphin/KIO behavior, not something this package sets up for you — but once
+The [setup wizard](#setup-wizard) offers to do this for you. To do it by
+hand instead, browse to `protondrive:/`, then right-click the breadcrumb
+(or drag it into the **Places** panel) and choose **Add to Places**. Once
 bookmarked, Dolphin shows it as **Proton Drive** (with a cloud icon) under
 the *Remote* section of the sidebar, and uses that name in the breadcrumb
 and window title instead of the raw `protondrive:/` URL — the same way it
