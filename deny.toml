@@ -1,0 +1,28 @@
+# cargo-deny configuration (#167). Run `cargo deny check`.
+
+[graph]
+# Only what the packaged builds actually compile; skips the Windows/macOS/
+# wasm-only crates pulled in by cross-platform dependencies.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+
+[advisories]
+# Same RustSec database `cargo audit` uses.
+
+[licenses]
+# Everything here is compatible with this project's GPL-3.0-or-later.
+allow = [
+    "Apache-2.0",
+    "CC0-1.0",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
