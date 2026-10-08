@@ -391,7 +391,7 @@ those same sections instead — the closest equivalent Dolphin supports.
 ```bash
 sudo apt-get install build-essential cmake extra-cmake-modules pkg-config \
   cargo rustc qt6-base-dev qt6-base-dev-tools qt6-l10n-tools libkf6kio-dev \
-  libkf6coreaddons-dev libkf6widgetsaddons-dev
+  libkf6coreaddons-dev libkf6widgetsaddons-dev libsqlite3-dev
 cargo build --manifest-path core/Cargo.toml   # Rust core only, for quick iteration
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build

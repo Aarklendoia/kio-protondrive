@@ -39,6 +39,7 @@ jobs:
             cmake \
             extra-cmake-modules \
             pkg-config \
+            libsqlite3-dev \
             qt6-base-dev \
             libkf6kio-dev \
             libkf6coreaddons-dev

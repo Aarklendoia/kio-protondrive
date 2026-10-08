@@ -143,11 +143,11 @@ future edit doesn't reintroduce them:
   doesn't itself carry `protondrive_core`'s own transitive requirements —
   its native link libraries (rusqlite's bundled sqlite3) in particular.
   Fixed upstream, in `worker/CMakeLists.txt`, by also linking
-  `protondrive_core` directly, plus `SQLite::SQLite3` when
-  `find_package(SQLite3 QUIET)` finds one (Arch has it; Debian's current
-  build environment doesn't, and keeps working without it — see that
-  file's own comments for why doing this unconditionally isn't safe
-  there). The plugins keep ECM's `-Wl,--no-undefined`: an earlier
+  `protondrive_core` directly, plus `SQLite::SQLite3`. That one was
+  conditional at first (Debian's build environment had no
+  `libsqlite3-dev`); since #192, rusqlite links the system SQLite instead
+  of its bundled copy, so it's required everywhere, and attached to the
+  `protondrive_core` target itself so `--as-needed` can't drop it. The plugins keep ECM's `-Wl,--no-undefined`: an earlier
   `-Wl,-z,undefs` relaxation, meant for supposedly dead cxx `CxxVector<T>`
   symbols, turned out to be hiding the LTO problem below and was removed.
 - **`makepkg.conf`'s default `CFLAGS`/`CXXFLAGS` (`-flto=auto`) break

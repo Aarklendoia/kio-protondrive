@@ -71,9 +71,9 @@ src_unpack() {
 }
 
 src_configure() {
-	# The cc crate honors CFLAGS, so with -flto the C/C++ parts of core/
-	# (bundled sqlite3, cxx's runtime) become LTO bytecode that neither the
-	# Rust link nor the CMake link of the plugins resolves (upstream #111).
+	# The cc crate honors CFLAGS, so with -flto the C++ part of core/ (cxx's
+	# runtime) becomes LTO bytecode that neither the Rust link nor the CMake
+	# link of the plugins resolves (upstream #111).
 	# cargo_env filters it for its own calls, not for Corrosion's.
 	filter-lto
 

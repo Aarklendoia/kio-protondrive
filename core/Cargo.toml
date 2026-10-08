@@ -33,7 +33,11 @@ libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-rusqlite = { version = "0.40", features = ["bundled"] }
+# Links the system SQLite (libsqlite3-dev / sqlite / dev-db/sqlite) rather
+# than rusqlite's "bundled" copy: compiling that 9 MB amalgamation was most
+# of the Rust build time, twice per package build, and the plugins linked
+# the system library anyway (#192).
+rusqlite = "0.40"
 
 [build-dependencies]
 cxx-build = "=1.0.202"

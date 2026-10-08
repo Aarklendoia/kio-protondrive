@@ -26,6 +26,7 @@ makedepends=(
   kcoreaddons
   kwidgetsaddons
   gettext
+  sqlite
   # A split PKGBUILD must be able to install every sub-package's depends
   # at build time (namcap); these are the ones nothing above pulls in.
   ki18n
@@ -38,11 +39,11 @@ sha256sums=('SKIP')
 
 # makepkg.conf's default -flto=auto breaks this build twice over, because
 # the `cc` crate honors the ambient CFLAGS/CXXFLAGS and so compiles the C
-# and C++ parts of the Rust side (rusqlite's bundled sqlite3, cxx's own
-# runtime) to GCC LTO bytecode instead of real object code:
+# and C++ parts of the Rust side (cxx's own runtime; rusqlite's bundled
+# sqlite3 too, until #192) to GCC LTO bytecode instead of real object code:
 #   - plain `cargo build`/`cargo test` link through rustc, which never
-#     passes -flto to the final link, so every sqlite3_* symbol comes up
-#     undefined;
+#     passes -flto to the final link, so those symbols (sqlite3_*, at the
+#     time) come up undefined;
 #   - inside libprotondrive_core.a, rustc's archive index doesn't list
 #     the symbols of those LTO-only objects, so the CMake link of the KIO
 #     plugins never pulls them in, leaving 300+ cxxbridge1$... symbols
@@ -139,9 +140,8 @@ _stage() {
 package_kio-protondrive() {
   pkgdesc="KIO worker for Proton Drive — browse, download and upload files from Dolphin"
   # ki18n, sqlite: confirmed via `namcap` against the actual built .so
-  # files — protondrive.so links KF6I18n directly, and (see
-  # worker/CMakeLists.txt's SQLite::SQLite3 comment) the system sqlite3
-  # both plugins here link against core/'s bundled-rusqlite code.
+  # files — protondrive.so links KF6I18n directly, and core/ (rusqlite)
+  # links the system sqlite3 (#192).
   depends=(qt6-base kio kcoreaddons ki18n sqlite)
   optdepends=(
     'kio-protondrive-sync-daemon: pin files for offline access and local-cache eviction'

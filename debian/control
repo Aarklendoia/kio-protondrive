@@ -9,6 +9,7 @@ Build-Depends:
   cargo,
   rustc,
   pkg-config,
+  libsqlite3-dev,
   qt6-base-dev,
   qt6-base-dev-tools,
   qt6-l10n-tools,
