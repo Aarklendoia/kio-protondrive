@@ -342,6 +342,28 @@ Unlike the Debian package, nothing enables the sync daemon for you on Arch
 — run `systemctl --user enable --now kio-protondrive-sync-daemon.service`
 once (see "Local caching and pinning" above).
 
+**Gentoo**: each release after 0.11.2 carries a small overlay with the
+`kde-misc/kio-protondrive` ebuild. Download
+`kio-protondrive-gentoo-overlay-*.tar.gz` from the
+[Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest),
+then:
+
+```bash
+sudo tar -xzf kio-protondrive-gentoo-overlay-*.tar.gz -C /var/db/repos
+sudo tee /etc/portage/repos.conf/kio-protondrive.conf <<'EOF'
+[kio-protondrive]
+location = /var/db/repos/kio-protondrive
+EOF
+echo 'kde-misc/kio-protondrive ~amd64' | sudo tee /etc/portage/package.accept_keywords/kio-protondrive
+echo 'dev-build/corrosion ~amd64' | sudo tee -a /etc/portage/package.accept_keywords/kio-protondrive
+sudo emerge --ask kde-misc/kio-protondrive
+```
+
+The `daemon` and `wizard` USE flags (both on by default) match the Debian
+`kio-protondrive-sync-daemon` and `kio-protondrive-wizard` packages. As on
+Arch, enable the sync daemon yourself with the `systemctl --user` command
+above. To update, extract the next release's overlay over the old one.
+
 Then open `protondrive:/` in Dolphin's location bar (or
 `kioclient ls protondrive:/` from a terminal) to browse your Drive.
 
