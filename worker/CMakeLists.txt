@@ -1,23 +1,14 @@
 # protondrive-core-cxxbridge alone pulls in libprotondrive_core.a itself
 # but not that crate's OWN transitive dependencies:
-#   - protondrive_core: its native link requirements (e.g. rusqlite's
-#     bundled sqlite3 static lib) — corrosion_add_cxxbridge's linkage to the
-#     crate isn't as complete as corrosion_import_crate's own imported
-#     target, so link that directly too to pull in what it's missing.
-#   - SQLite::SQLite3: confirmed live (Arch, strict-by-default linker) that
-#     even the above isn't enough — Corrosion doesn't propagate a Rust
-#     crate's own native-library requirements to CMake at all (a documented
-#     Corrosion limitation, not a bug), so link the system sqlite3
-#     ourselves, when available (see the top-level CMakeLists.txt's
-#     find_package(SQLite3 QUIET) for why this is conditional rather than
-#     required).
+#   - protondrive_core: its native link requirements —
+#     corrosion_add_cxxbridge's linkage to the crate isn't as complete as
+#     corrosion_import_crate's own imported target, so link that directly
+#     too to pull in what it's missing. That includes the system sqlite3
+#     rusqlite uses, which the top-level CMakeLists.txt attaches to it.
 # Applies to all three plugins below, since all three link
 # protondrive-core-cxxbridge and pull in the same core/ code path
 # (core::cache's rusqlite usage) transitively either way.
 set(_protondrive_core_link_libs protondrive-core-cxxbridge protondrive_core)
-if(TARGET SQLite::SQLite3)
-    list(APPEND _protondrive_core_link_libs SQLite::SQLite3)
-endif()
 
 # Keep ECM's -Wl,--no-undefined in force here: these plugins used to relax
 # it with -Wl,-z,undefs over supposedly dead cxx CxxVector<T> symbols, but

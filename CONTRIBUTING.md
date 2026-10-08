@@ -6,8 +6,9 @@ Thank you for contributing! Here's how to proceed.
 
 ### Prerequisites
 
-- Rust (stable) — for `core/`, no system dependencies beyond a C++17
-  compiler (already needed by `build-essential`).
+- Rust (stable) — for `core/`, the only system dependencies are a C++17
+  compiler (already needed by `build-essential`) and the SQLite
+  development files (`libsqlite3-dev`).
 - To also build the actual KIO worker plugin (`worker/`), additionally:
   `cmake extra-cmake-modules qt6-base-dev libkf6kio-dev libkf6coreaddons-dev
   pkg-config build-essential`.
@@ -18,12 +19,12 @@ Thank you for contributing! Here's how to proceed.
 git clone https://github.com/Aarklendoia/kio-protondrive.git
 cd kio-protondrive
 
-# Rust-only: run the core/ unit tests, no KF6/Qt6 needed.
+# Rust-only: run the core/ unit tests, no KF6/Qt6 needed (libsqlite3-dev is).
 cargo test --manifest-path core/Cargo.toml
 
 # Full build, including the KIO worker plugin:
 sudo apt-get install cmake extra-cmake-modules qt6-base-dev \
-  libkf6kio-dev libkf6coreaddons-dev pkg-config build-essential
+  libkf6kio-dev libkf6coreaddons-dev libsqlite3-dev pkg-config build-essential
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure  # includes worker/tests/'s QTest suite
@@ -100,7 +101,7 @@ To build locally:
 
 ```bash
 sudo apt-get install debhelper cmake extra-cmake-modules qt6-base-dev \
-  libkf6kio-dev libkf6coreaddons-dev
+  libkf6kio-dev libkf6coreaddons-dev libsqlite3-dev
 dpkg-buildpackage -us -uc -b -d
 ```
 

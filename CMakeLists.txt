@@ -14,21 +14,11 @@ include(ECMSetupVersion)
 include(ECMAddTests)
 include(FeatureSummary)
 
-# Optional, not REQUIRED: core/'s bundled-sqlite3 (see core/Cargo.toml's
-# rusqlite "bundled" feature) doesn't need a system sqlite3 to build the
-# Rust side, and Corrosion doesn't propagate that native static-lib
-# dependency to CMake automatically (a documented Corrosion limitation, not
-# a bug) — worker/CMakeLists.txt links SQLite::SQLite3 into the plugins
-# that need it, but only when this is actually available, so a system
-# without libsqlite3-dev (the Debian/Ubuntu build environments today) keeps
-# building exactly as before. Confirmed live that skipping this on Arch
-# (where the dev package is present, `sqlite`) fails at link time with
-# sqlite3_* undefined in protondrive.so's strict-by-default linker; Debian's
-# looser default apparently tolerates the same gap and resolves those
-# symbols at dlopen time instead, against whatever already-loaded process
-# happens to have libsqlite3 linked in — fragile, but out of scope to
-# harden here versus just fixing the newly-broken case.
-find_package(SQLite3 QUIET)
+# core/ links the system sqlite3 (rusqlite without its "bundled" feature,
+# #192). Corrosion doesn't propagate a crate's native-library requirements
+# to CMake (a documented Corrosion limitation, not a bug): see the
+# target_link_libraries() right after corrosion_import_crate() below.
+find_package(SQLite3 REQUIRED)
 
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core DBus Test)
 find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS CoreAddons KIO I18n WidgetsAddons)
@@ -73,6 +63,12 @@ endif()
 # symbol undefined — narrowing the import to just what the cxx bridge needs
 # sidesteps it rather than chasing the link-line ordering bug itself.
 corrosion_import_crate(MANIFEST_PATH core/Cargo.toml CRATES protondrive-core)
+# Attached to the crate's own target rather than listed next to it in
+# worker/: the archive shows up several times on the plugins' link line,
+# and with -Wl,--as-needed (Arch's default LDFLAGS) a libsqlite3.so placed
+# before its last occurrence is dropped as unneeded, leaving sqlite3_*
+# undefined. As an interface dependency, CMake puts it after every one.
+target_link_libraries(protondrive_core INTERFACE SQLite::SQLite3)
 
 corrosion_add_cxxbridge(protondrive-core-cxxbridge
     CRATE protondrive_core

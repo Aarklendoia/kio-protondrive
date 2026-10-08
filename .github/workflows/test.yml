@@ -19,10 +19,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # No KF6/Qt6 dev packages needed here: core/'s only native dependency is
-      # a C++17 compiler for the cxx bridge (build.rs), and daemon/'s only
-      # native dependency is a C compiler for rusqlite's bundled SQLite —
-      # ubuntu-latest ships both by default. Compiling the actual KIO worker
+      # No KF6/Qt6 dev packages needed here: core/'s native dependencies are
+      # a C++17 compiler for the cxx bridge (build.rs) and libsqlite3-dev
+      # for rusqlite (#192) — ubuntu-latest ships both by default. Compiling the actual KIO worker
       # plugin against KF6::KIOCore is covered separately by build-cmake.yml.
       - name: Cache cargo registry
         uses: actions/cache@v6
