@@ -76,7 +76,9 @@ jobs:
       - name: Generate overlay
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          packaging/gentoo/make-overlay.sh /var/db/repos/kio-protondrive
+          # Keeps the crates it downloads where the Manifest step looks (#190).
+          CRATE_DISTDIR="$(portageq distdir)" \
+            packaging/gentoo/make-overlay.sh /var/db/repos/kio-protondrive
           cat > /etc/portage/repos.conf/kio-protondrive.conf <<EOF
           [kio-protondrive]
           location = /var/db/repos/kio-protondrive
