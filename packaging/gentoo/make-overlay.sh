@@ -8,6 +8,8 @@
 # cargo, curl, app-portage/pycargoebuild and ::gentoo's license mapping. It
 # doesn't write the Manifest, which needs the distfiles: run
 # `ebuild OUTDIR/kde-misc/kio-protondrive/*.ebuild manifest` afterwards.
+# Set CRATE_DISTDIR to Portage's DISTDIR (`portageq distdir`) to keep the
+# crates this downloads there, so that step doesn't fetch them again.
 #
 # Cargo.lock isn't committed, so this resolves one from the committed tree
 # (`git archive HEAD`, so untracked files and a local Cargo.lock are left
@@ -67,9 +69,10 @@ cp "$ROOT/packaging/gentoo/metadata.xml" "$PKGDIR/"
 sed "s/@CXXBRIDGE_PV@/$CXX_VERSION/" "$ROOT/packaging/gentoo/kio-protondrive.ebuild" > "$EBUILD"
 
 echo "==> Filling CRATES and the crate licenses"
-mkdir "$WORK/distdir"
+CRATE_DISTDIR="${CRATE_DISTDIR:-$WORK/distdir}"
+mkdir -p "$CRATE_DISTDIR"
 pycargoebuild --no-config --inplace "$EBUILD" \
-  --distdir "$WORK/distdir" \
+  --distdir "$CRATE_DISTDIR" \
   "$WORK/src/core" "$WORK/src/daemon" "$WORK/src/wizard" \
   "$WORK/cxxbridge-cmd-$CXX_VERSION"
 

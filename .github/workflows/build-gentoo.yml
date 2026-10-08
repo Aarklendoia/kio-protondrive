@@ -37,7 +37,8 @@ jobs:
     steps:
       - name: Set up Portage
         # The official binhost provides KF6/Qt6/Rust prebuilt for this
-        # profile, which keeps the job in minutes instead of hours.
+        # profile, which keeps the job in minutes instead of hours. Merging
+        # them one at a time was most of the job's time: --jobs (#190).
         #
         # GitHub's runners have no IPv6, but Portage's wget sometimes only
         # tries distfiles.gentoo.org's IPv6 addresses and the whole emerge
@@ -50,6 +51,7 @@ jobs:
           cat >> /etc/portage/make.conf <<EOF
           FEATURES="\${FEATURES} getbinpkg binpkg-request-signature"
           MAKEOPTS="-j$(nproc)"
+          EMERGE_DEFAULT_OPTS="--jobs=$(nproc)"
           EOF
           mkdir -p /etc/portage/package.accept_keywords /etc/portage/repos.conf
           # pkgcheck only reads /etc/portage/repos.conf, not Portage's
@@ -76,7 +78,9 @@ jobs:
       - name: Generate overlay
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          packaging/gentoo/make-overlay.sh /var/db/repos/kio-protondrive
+          # Keeps the crates it downloads where the Manifest step looks (#190).
+          CRATE_DISTDIR="$(portageq distdir)" \
+            packaging/gentoo/make-overlay.sh /var/db/repos/kio-protondrive
           cat > /etc/portage/repos.conf/kio-protondrive.conf <<EOF
           [kio-protondrive]
           location = /var/db/repos/kio-protondrive
