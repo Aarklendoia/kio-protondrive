@@ -1,0 +1,132 @@
+name: Build Gentoo Overlay
+
+# Generates the Gentoo overlay (packaging/gentoo/make-overlay.sh), builds
+# its ebuild with emerge, and attaches the overlay to the GitHub release on
+# tags (#182). On PRs it only runs when the packaging, the Cargo manifests
+# (they decide the ebuild's CRATES) or the top-level CMake setup change —
+# release-please's PR included, since it bumps the workspace version.
+on:
+  push:
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'packaging/gentoo/**'
+      - '.github/workflows/build-gentoo.yml'
+      - 'Cargo.toml'
+      - '*/Cargo.toml'
+      - 'CMakeLists.txt'
+  workflow_dispatch:
+
+# Same reason as build-arch.yml: the release step needs to create/update
+# the GitHub release.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: gentoo/stage3:systemd
+      # Lets Portage's network-sandbox (a network namespace) work, so the
+      # build really runs offline: nothing else stops Corrosion's
+      # FetchContent or `cargo install cxxbridge-cmd` from silently
+      # reaching the network.
+      options: --privileged
+
+    steps:
+      - name: Set up Portage
+        # The official binhost provides KF6/Qt6/Rust prebuilt for this
+        # profile, which keeps the job in minutes instead of hours.
+        run: |
+          emerge-webrsync --quiet
+          eselect profile set default/linux/amd64/23.0/desktop/plasma/systemd
+          getuto
+          cat >> /etc/portage/make.conf <<EOF
+          FEATURES="\${FEATURES} getbinpkg binpkg-request-signature"
+          MAKEOPTS="-j$(nproc)"
+          EOF
+          mkdir -p /etc/portage/package.accept_keywords /etc/portage/repos.conf
+          # pkgcheck only reads /etc/portage/repos.conf, not Portage's
+          # built-in default for ::gentoo.
+          cp /usr/share/portage/config/repos.conf /etc/portage/repos.conf/gentoo.conf
+          echo 'kde-misc/kio-protondrive ~amd64' > /etc/portage/package.accept_keywords/kio-protondrive
+          echo 'dev-build/corrosion ~amd64' > /etc/portage/package.accept_keywords/corrosion
+          # Tests (src_test: cargo test, ctest) for this package only: a
+          # global FEATURES=test turns USE=test on for every dependency,
+          # which no longer matches the binhost's packages.
+          mkdir -p /etc/portage/env
+          echo 'FEATURES="test"' > /etc/portage/env/test.conf
+          echo 'kde-misc/kio-protondrive test.conf' > /etc/portage/package.env
+
+      - name: Install tooling
+        run: >
+          emerge --quiet-build --getbinpkg --usepkg --noreplace
+          dev-vcs/git dev-lang/rust-bin app-portage/pycargoebuild dev-util/pkgcheck
+          app-portage/portage-utils
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Generate overlay
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          packaging/gentoo/make-overlay.sh /var/db/repos/kio-protondrive
+          cat > /etc/portage/repos.conf/kio-protondrive.conf <<EOF
+          [kio-protondrive]
+          location = /var/db/repos/kio-protondrive
+          EOF
+
+      - name: Generate Manifest
+        # Off a tag, the vX.Y.Z tarball the ebuild names doesn't exist yet
+        # (release-please's PR) or isn't this code: put an archive of the
+        # checked-out tree in DISTDIR under that name instead, the same way
+        # build-arch.yml does (#179). Only the tag's Manifest is published.
+        run: |
+          ebuild_file="$(echo /var/db/repos/kio-protondrive/kde-misc/kio-protondrive/*.ebuild)"
+          p="$(basename "$ebuild_file" .ebuild)"
+          if [ "${GITHUB_REF#refs/tags/}" = "$GITHUB_REF" ]; then
+            distdir="$(portageq distdir)"
+            mkdir -p "$distdir"
+            git archive --format=tar.gz --prefix="$p/" -o "$distdir/$p.tar.gz" HEAD
+          fi
+          ebuild "$ebuild_file" manifest
+
+      - name: Run pkgcheck
+        run: pkgcheck scan --exit error /var/db/repos/kio-protondrive
+
+      - name: Build and test
+        # package.env (set above) runs src_test too.
+        run: emerge --quiet-build --getbinpkg --usepkg --verbose kde-misc/kio-protondrive
+
+      - name: Check the plugins load
+        # They link with -z,undefs, so a successful link proves nothing:
+        # resolve every symbol now, like kioworker would when loading them.
+        run: |
+          for so in $(qlist kde-misc/kio-protondrive | grep '\.so$'); do
+            python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1], mode=2)' "$so"
+            echo "OK $so"
+          done
+
+      - name: Pack overlay
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          tar -czf "kio-protondrive-gentoo-overlay-$version.tar.gz" \
+            -C /var/db/repos kio-protondrive
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: gentoo-overlay
+          path: 'kio-protondrive-gentoo-overlay-*.tar.gz'
+          retention-days: 30
+
+      - name: Attach to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: kio-protondrive-gentoo-overlay-*.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

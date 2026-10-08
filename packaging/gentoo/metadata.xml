@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>aarklendoia@proton.me</email>
+		<name>Aarklendoia</name>
+	</maintainer>
+	<use>
+		<flag name="daemon">Install the background sync daemon (offline pinning, local-cache eviction) and the pin/unpin Dolphin menu</flag>
+		<flag name="wizard">Install the guided first-run sign-in wizard</flag>
+	</use>
+	<upstream>
+		<remote-id type="github">Aarklendoia/kio-protondrive</remote-id>
+		<bugs-to>https://github.com/Aarklendoia/kio-protondrive/issues</bugs-to>
+	</upstream>
+</pkgmetadata>
