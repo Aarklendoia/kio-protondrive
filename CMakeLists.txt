@@ -37,16 +37,22 @@ find_package(Gettext REQUIRED)
 enable_testing()
 
 # Corrosion drives the actual `cargo build` of the core/ Rust crate and
-# generates the cxx bridge glue consumed by worker/. Two ways to obtain it:
+# generates the cxx bridge glue consumed by worker/. Three ways to obtain it,
+# in this order:
 #   - vendored, at third_party/corrosion/ (see debian/scripts/
 #     prepare-offline-build.sh): required for Launchpad PPA builds, whose
 #     builders have no general internet access to reach GitHub at configure
 #     time.
+#   - installed system-wide: what distributions that package Corrosion and
+#     build offline use, e.g. Gentoo's dev-build/corrosion (#181).
 #   - fetched on the fly via FetchContent: what local dev builds and GitHub
 #     Actions CI use, since they do have network access.
 if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/corrosion/CMakeLists.txt")
     add_subdirectory(third_party/corrosion)
 else()
+    find_package(Corrosion 0.6 QUIET)
+endif()
+if(NOT COMMAND corrosion_import_crate)
     include(FetchContent)
     FetchContent_Declare(
         Corrosion
