@@ -31,6 +31,7 @@ makedepends=(
   ki18n
   qt6-declarative
   kirigami
+  qqc2-desktop-style
 )
 source=("$pkgbase-$pkgver.tar.gz::https://github.com/Aarklendoia/kio-protondrive/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
@@ -197,10 +198,13 @@ package_kio-protondrive-sync-daemon() {
 
 package_kio-protondrive-wizard() {
   pkgdesc="First-run setup wizard for the Proton Drive sync daemon"
+  # qqc2-desktop-style: the wizard forces the org.kde.desktop Qt Quick
+  # Controls style, and qml6 refuses to load without it (#186).
   depends=(
     qt6-base
     qt6-declarative
     kirigami
+    qqc2-desktop-style
     curl
   )
   optdepends=(
