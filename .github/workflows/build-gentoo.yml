@@ -18,16 +18,57 @@ on:
       - 'CMakeLists.txt'
   workflow_dispatch:
 
-# Same reason as build-arch.yml: the release step needs to create/update
-# the GitHub release.
+# contents: write for the same reason as build-arch.yml (the release step
+# creates/updates the GitHub release), packages for the CI image (#194).
 permissions:
   contents: write
+  packages: write
 
 jobs:
+  image:
+    # The build job runs in an image with the dependencies and tooling
+    # preinstalled (packaging/gentoo/ci/Dockerfile): installing ~230 binary
+    # packages from scratch was ~12 minutes of every run. Its tag is the
+    # ISO week plus the Dockerfile's hash, so it's built and pushed here by
+    # the first run of each week or after the Dockerfile changes, and
+    # pulled by every other run.
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Name the image
+        id: image
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          tag="$(date -u +%G-W%V)-$(sha256sum packaging/gentoo/ci/Dockerfile | cut -c1-12)"
+          echo "ref=ghcr.io/$owner/kio-protondrive-gentoo-ci:$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the image if missing
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$REF" > /dev/null 2>&1; then
+            echo "$REF already exists"
+          else
+            docker build -t "$REF" \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              packaging/gentoo/ci
+            docker push "$REF"
+          fi
+
   build:
+    needs: image
     runs-on: ubuntu-latest
     container:
-      image: gentoo/stage3:systemd
+      image: ${{ needs.image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
       # Lets Portage's network-sandbox (a network namespace) work, so the
       # build really runs offline: nothing else stops Corrosion's
       # FetchContent or `cargo install cxxbridge-cmd` from silently
@@ -36,39 +77,9 @@ jobs:
 
     steps:
       - name: Set up Portage
-        # The official binhost provides KF6/Qt6/Rust prebuilt for this
-        # profile, which keeps the job in minutes instead of hours.
-        #
-        # GitHub's runners have no IPv6, but Portage's wget sometimes only
-        # tries distfiles.gentoo.org's IPv6 addresses and the whole emerge
-        # fails (#188): stick to IPv4 from the first download on.
-        run: |
-          echo 'inet4_only = on' >> /etc/wgetrc
-          emerge-webrsync --quiet
-          eselect profile set default/linux/amd64/23.0/desktop/plasma/systemd
-          getuto
-          cat >> /etc/portage/make.conf <<EOF
-          FEATURES="\${FEATURES} getbinpkg binpkg-request-signature"
-          MAKEOPTS="-j$(nproc)"
-          EOF
-          mkdir -p /etc/portage/package.accept_keywords /etc/portage/repos.conf
-          # pkgcheck only reads /etc/portage/repos.conf, not Portage's
-          # built-in default for ::gentoo.
-          cp /usr/share/portage/config/repos.conf /etc/portage/repos.conf/gentoo.conf
-          echo 'kde-misc/kio-protondrive ~amd64' > /etc/portage/package.accept_keywords/kio-protondrive
-          echo 'dev-build/corrosion ~amd64' > /etc/portage/package.accept_keywords/corrosion
-          # Tests (src_test: cargo test, ctest) for this package only: a
-          # global FEATURES=test turns USE=test on for every dependency,
-          # which no longer matches the binhost's packages.
-          mkdir -p /etc/portage/env
-          echo 'FEATURES="test"' > /etc/portage/env/test.conf
-          echo 'kde-misc/kio-protondrive test.conf' > /etc/portage/package.env
-
-      - name: Install tooling
-        run: >
-          emerge --quiet-build --getbinpkg --usepkg --noreplace
-          dev-vcs/git dev-lang/rust-bin app-portage/pycargoebuild dev-util/pkgcheck
-          app-portage/portage-utils
+        # Everything else is in the image. MAKEOPTS depends on this
+        # runner: without it, Portage builds (cargo included) on one core.
+        run: echo "MAKEOPTS=\"-j$(nproc)\"" >> /etc/portage/make.conf
 
       - name: Checkout code
         uses: actions/checkout@v7
