@@ -38,7 +38,12 @@ jobs:
       - name: Set up Portage
         # The official binhost provides KF6/Qt6/Rust prebuilt for this
         # profile, which keeps the job in minutes instead of hours.
+        #
+        # GitHub's runners have no IPv6, but Portage's wget sometimes only
+        # tries distfiles.gentoo.org's IPv6 addresses and the whole emerge
+        # fails (#188): stick to IPv4 from the first download on.
         run: |
+          echo 'inet4_only = on' >> /etc/wgetrc
           emerge-webrsync --quiet
           eselect profile set default/linux/amd64/23.0/desktop/plasma/systemd
           getuto
