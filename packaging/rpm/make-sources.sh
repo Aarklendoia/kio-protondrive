@@ -1,8 +1,10 @@
 #!/bin/sh
 # Writes the two sources packaging/rpm/kio-protondrive.spec builds from
-# into OUTDIR (#201):
-#   - kio-protondrive-<version>.tar.gz: `git archive HEAD`;
-#   - kio-protondrive-<version>-vendor.tar.xz: vendor/, .cargo/config.toml,
+# into OUTDIR (#201), under fixed names since the OBS package fetches them
+# from the latest GitHub release (packaging/rpm/_service):
+#   - kio-protondrive-source.tar.gz: `git archive HEAD`, with a
+#     kio-protondrive-<version>/ prefix;
+#   - kio-protondrive-vendor.tar.xz: vendor/, .cargo/config.toml,
 #     Cargo.lock and third_party/corrosion/ from
 #     debian/scripts/prepare-offline-build.sh, i.e. the workspace's crates
 #     plus cxxbridge-cmd's (Corrosion builds it at configure time) and
@@ -31,13 +33,13 @@ P="kio-protondrive-$VERSION"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "==> $P.tar.gz"
-git -C "$ROOT" archive --format=tar.gz --prefix="$P/" -o "$OUTDIR/$P.tar.gz" HEAD
+echo "==> kio-protondrive-source.tar.gz ($P)"
+git -C "$ROOT" archive --format=tar.gz --prefix="$P/" -o "$OUTDIR/kio-protondrive-source.tar.gz" HEAD
 
-echo "==> $P-vendor.tar.xz"
+echo "==> kio-protondrive-vendor.tar.xz"
 mkdir "$WORK/$P"
 git -C "$ROOT" archive HEAD | tar -x -C "$WORK/$P"
 (cd "$WORK/$P" && RUST_TOOLCHAIN="${RUST_TOOLCHAIN:-stable}" ./debian/scripts/prepare-offline-build.sh > /dev/null)
-tar -C "$WORK/$P" -cJf "$OUTDIR/$P-vendor.tar.xz" vendor .cargo Cargo.lock third_party/corrosion
+tar -C "$WORK/$P" -cJf "$OUTDIR/kio-protondrive-vendor.tar.xz" vendor .cargo Cargo.lock third_party/corrosion
 
-ls -l "$OUTDIR/$P.tar.gz" "$OUTDIR/$P-vendor.tar.xz"
+ls -l "$OUTDIR/kio-protondrive-source.tar.gz" "$OUTDIR/kio-protondrive-vendor.tar.xz"

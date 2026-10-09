@@ -1,0 +1,142 @@
+name: Build RPM Packages
+
+# Builds packaging/rpm/kio-protondrive.spec for openSUSE Tumbleweed and
+# Fedora, and on tags publishes it through the Open Build Service (#201):
+# the spec and its two sources (packaging/rpm/make-sources.sh) are attached
+# to the GitHub release, then OBS is told to run the package's _service
+# (packaging/rpm/_service), which fetches them from the latest release and
+# rebuilds. On PRs it only runs when the RPM packaging, the Cargo manifests
+# or the top-level CMake setup change — release-please's PR included, since
+# it bumps the spec's Version.
+on:
+  push:
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'packaging/rpm/**'
+      - '.github/workflows/publish-obs.yml'
+      - 'Cargo.toml'
+      - '*/Cargo.toml'
+      - 'CMakeLists.txt'
+  workflow_dispatch:
+
+# Same reason as build-arch.yml: the release step needs to create/update
+# the GitHub release.
+permissions:
+  contents: write
+
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Write the sources
+        run: |
+          packaging/rpm/make-sources.sh obs
+          cp packaging/rpm/kio-protondrive.spec obs/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: rpm-sources
+          path: obs/
+          retention-days: 30
+
+  rpm:
+    needs: sources
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ 'opensuse/tumbleweed', 'fedora:44' ]
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+
+    steps:
+      - name: Download sources
+        uses: actions/download-artifact@v7
+        with:
+          name: rpm-sources
+          path: obs
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          if command -v zypper > /dev/null; then
+            zypper -n ref
+            zypper -n in rpm-build python3
+            mapfile -t deps < <(rpmspec -q --buildrequires obs/kio-protondrive.spec | sed 's/ .*//' | sort -u)
+            zypper -n in "${deps[@]}"
+          else
+            dnf -y install rpm-build python3 'dnf-command(builddep)'
+            dnf -y builddep obs/kio-protondrive.spec
+          fi
+
+      - name: Build and test
+        # %check runs cargo test and ctest.
+        run: |
+          top="$PWD/rpmbuild"
+          mkdir -p "$top/SOURCES"
+          cp obs/*.tar.* "$top/SOURCES/"
+          rpmbuild --define "_topdir $top" -ba obs/kio-protondrive.spec
+
+      - name: Install and check the plugins load
+        # Resolve every symbol now, like kioworker would when loading them.
+        shell: bash
+        run: |
+          mapfile -t rpms < <(find rpmbuild/RPMS -name 'kio-protondrive*.rpm' ! -name '*debug*')
+          if command -v zypper > /dev/null; then
+            zypper -n --no-gpg-checks in "${rpms[@]}"
+          else
+            dnf -y install "${rpms[@]}"
+          fi
+          for so in $(rpm -ql kio-protondrive kio-protondrive-sync-daemon | grep '\.so$'); do
+            python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1], mode=2)' "$so"
+            echo "OK $so"
+          done
+
+  publish:
+    # Only for tags, and only once both RPM builds passed.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: rpm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download sources
+        uses: actions/download-artifact@v7
+        with:
+          name: rpm-sources
+          path: obs
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            obs/kio-protondrive.spec
+            obs/kio-protondrive-source.tar.gz
+            obs/kio-protondrive-vendor.tar.xz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger the OBS build
+        # OBS_TOKEN: an OBS token for the kio-protondrive package with the
+        # "Run services" operation only. OBS_PROJECT: the OBS project holding
+        # that package (a repository variable, e.g. home:<user>:kio-protondrive).
+        env:
+          OBS_TOKEN: ${{ secrets.OBS_TOKEN }}
+          OBS_PROJECT: ${{ vars.OBS_PROJECT }}
+        run: |
+          if [ -z "$OBS_TOKEN" ] || [ -z "$OBS_PROJECT" ]; then
+            echo "::warning::OBS_TOKEN or OBS_PROJECT isn't set: OBS wasn't triggered"
+            exit 0
+          fi
+          curl -fsS -X POST -G -H "Authorization: Token $OBS_TOKEN" \
+            --data-urlencode "project=$OBS_PROJECT" \
+            --data-urlencode "package=kio-protondrive" \
+            https://api.opensuse.org/trigger/runservice

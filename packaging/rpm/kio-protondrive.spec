@@ -6,7 +6,9 @@
 # included, which Corrosion builds at configure time), the cargo config
 # pointing at them and Corrosion itself (Fedora 44 only has 0.5), produced
 # by packaging/rpm/make-sources.sh, the same way
-# debian/scripts/prepare-offline-build.sh does it for the PPA.
+# debian/scripts/prepare-offline-build.sh does it for the PPA. Both have
+# fixed names: the OBS package's _service fetches them from the latest
+# GitHub release.
 #
 
 # Both distributions build with -flto=auto by default, and the cc crate
@@ -23,8 +25,8 @@ Release:        0
 Summary:        KIO worker for Proton Drive
 License:        GPL-3.0-or-later
 URL:            https://github.com/Aarklendoia/kio-protondrive
-Source0:        %{name}-%{version}.tar.gz
-Source1:        %{name}-%{version}-vendor.tar.xz
+Source0:        %{name}-source.tar.gz
+Source1:        %{name}-vendor.tar.xz
 
 BuildRequires:  cargo
 BuildRequires:  cmake >= 3.22
@@ -85,7 +87,7 @@ Signs you in to Proton Drive, installs or updates the proton-drive CLI,
 and chooses how the sync daemon stores its session.
 
 %prep
-%autosetup -p1 -a1
+%autosetup -p1 -a1 -n %{name}-%{version}
 
 %build
 # Source1's .cargo/config.toml points crates-io at vendor/, but the
