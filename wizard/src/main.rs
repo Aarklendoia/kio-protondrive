@@ -106,7 +106,8 @@ fn main() {
     // `runtime_dir` must stay the *last* argument (QML reads it by
     // position); `mode` is always sent right before it so main.qml can read
     // both positionally without ambiguity between the two call shapes.
-    let mut cmd = Command::new("qml6");
+    let qml_runtime = find_qml_runtime().unwrap_or_else(|| PathBuf::from("qml6"));
+    let mut cmd = Command::new(&qml_runtime);
     if let Some(qm_path) = resolve_locale().and_then(find_qml_translation_path) {
         cmd.arg("--translation").arg(qm_path);
     }
@@ -129,13 +130,34 @@ fn main() {
             let _ = child.wait();
         }
         Err(e) => {
-            eprintln!("Could not launch qml6: {e}");
+            eprintln!("Could not launch {}: {e}", qml_runtime.display());
         }
     }
 
     let _ = std::fs::remove_file(&lock_path);
     let _ = std::fs::remove_file(&ctrl_port_path);
     let _ = std::fs::remove_file(&ctrl_token_path);
+}
+
+/// Qt's QML runtime: `qml6` on most distributions, `qml-qt6` on Fedora,
+/// else `qml` in Qt's own bin directory (#202).
+fn find_qml_runtime() -> Option<PathBuf> {
+    choose_qml_runtime(local_ctrl::which_path, || qt_query("QT_INSTALL_BINS"))
+}
+
+/// [`find_qml_runtime`]'s lookup order, with `$PATH` and `qtpaths6` passed
+/// in so tests don't have to touch the process-wide environment.
+fn choose_qml_runtime(
+    on_path: impl Fn(&str) -> Option<PathBuf>,
+    qt_bins: impl FnOnce() -> Option<String>,
+) -> Option<PathBuf> {
+    ["qml6", "qml-qt6"]
+        .into_iter()
+        .find_map(on_path)
+        .or_else(|| {
+            let qml = PathBuf::from(qt_bins()?).join("qml");
+            qml.is_file().then_some(qml)
+        })
 }
 
 /// Asks Qt's own `qtpaths6 --query <var>` for a canonical install
@@ -715,6 +737,38 @@ fn route_cli_install() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn qml_runtime_prefers_qml6_then_qml_qt6() {
+        let both = |bin: &str| Some(PathBuf::from("/usr/bin").join(bin));
+        assert_eq!(
+            choose_qml_runtime(both, || None),
+            Some(PathBuf::from("/usr/bin/qml6"))
+        );
+
+        let fedora = |bin: &str| (bin == "qml-qt6").then(|| PathBuf::from("/usr/bin/qml-qt6"));
+        assert_eq!(
+            choose_qml_runtime(fedora, || panic!("qtpaths6 shouldn't be needed")),
+            Some(PathBuf::from("/usr/bin/qml-qt6"))
+        );
+    }
+
+    #[test]
+    fn qml_runtime_falls_back_to_qts_bin_directory() {
+        let dir = std::env::temp_dir().join(format!(
+            "kio-protondrive-wizard-qml-runtime-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bins = || Some(dir.to_string_lossy().into_owned());
+
+        assert_eq!(choose_qml_runtime(|_| None, bins), None);
+        std::fs::write(dir.join("qml"), "").unwrap();
+        assert_eq!(choose_qml_runtime(|_| None, bins), Some(dir.join("qml")));
+        assert_eq!(choose_qml_runtime(|_| None, || None), None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn route_add_favorite_inserts_a_bookmark_before_the_closing_tag() {
