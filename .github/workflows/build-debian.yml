@@ -92,7 +92,6 @@ jobs:
           DEBFULLNAME: Aarklendoia
           DEBEMAIL: aarklendoia@proton.me
         run: |
-          cd $GITHUB_WORKSPACE
           VERSION="${GITHUB_REF_NAME#v}"
           # No "-1" Debian revision suffix: "3.0 (native)" format (see
           # debian/source/format) uses the upstream version alone.
@@ -101,7 +100,6 @@ jobs:
 
       - name: Build Debian packages
         run: |
-          cd $GITHUB_WORKSPACE
           # -d: ignore missing build-deps since rustc/cargo come from rustup, not apt.
           dpkg-buildpackage -us -uc -b -d
           cp ../*.deb . 2>/dev/null || true
@@ -110,8 +108,7 @@ jobs:
 
       - name: Run lintian checks
         run: |
-          cd $GITHUB_WORKSPACE
-          lintian *.deb || true
+          lintian ./*.deb || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

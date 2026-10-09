@@ -65,7 +65,7 @@ jobs:
         # warnings for runtime-only deps are expected.
         run: |
           namcap packaging/aur/PKGBUILD
-          namcap *.pkg.tar.zst || true
+          namcap ./*.pkg.tar.zst || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
