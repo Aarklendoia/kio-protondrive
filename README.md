@@ -375,14 +375,33 @@ release also carries the same overlay as
 `kio-protondrive-gentoo-overlay-*.tar.gz`, for systems that can't sync
 from git.
 
+### openSUSE Tumbleweed and Fedora
+
+Each release from 0.13.0 on carries prebuilt RPMs: download the three
+`.rpm` files for your distribution from the
+[Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
+(`.tumbleweed` for openSUSE Tumbleweed, `.fc44` for Fedora 44) and install
+them together:
+
+```bash
+# openSUSE Tumbleweed (the RPMs aren't signed yet)
+sudo zypper install --allow-unsigned-rpm ./kio-protondrive-*.tumbleweed.x86_64.rpm
+# Fedora 44
+sudo dnf install ./kio-protondrive-*.fc44.x86_64.rpm
+```
+
+`kio-protondrive-sync-daemon` and `kio-protondrive-wizard` match the
+Debian packages of the same names. Updates are manual for now: install the
+next release's RPMs the same way.
+
 ### Other distributions
 
 Build from source, see [Building from source](#building-from-source).
 
 ### After installing
 
-On Arch and Gentoo (and when building from source), nothing enables the
-sync daemon for you, unlike the Debian packages: run
+On Arch, Gentoo, openSUSE and Fedora (and when building from source),
+nothing enables the sync daemon for you, unlike the Debian packages: run
 `systemctl --user enable --now kio-protondrive-sync-daemon.service` once
 (see "Local caching and pinning" above).
 
