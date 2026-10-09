@@ -298,7 +298,14 @@ home directory), it falls back to a plain notification. You can always grab
 a version yourself from the [download page](https://proton.me/drive/download)
 too.
 
-**Ubuntu 26.04 LTS (resolute)**, via the Launchpad PPA:
+The packages come in three parts, the same on every distribution: the KIO
+worker itself, the sync daemon (offline pinning, local-cache eviction, the
+pin/unpin menu in Dolphin) and the setup wizard. Installing all three is
+recommended.
+
+### Ubuntu 26.04 LTS (resolute)
+
+From the Launchpad PPA, which also brings updates through `apt upgrade`:
 
 ```bash
 sudo add-apt-repository ppa:aarklendoia-edtech/kio-protondrive
@@ -306,7 +313,11 @@ sudo apt update
 sudo apt install kio-protondrive-full
 ```
 
-**Other Debian/Ubuntu versions**: download the `.deb` files from the
+`kio-protondrive-full` pulls in all three packages.
+
+### Other Debian and Ubuntu versions
+
+Download the `.deb` files from the
 [Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
 and install them together (not one at a time — `apt` resolves each
 package's dependency on the others from whatever repositories are
@@ -318,10 +329,14 @@ sudo apt install ./kio-protondrive_*.deb ./kio-protondrive-sync-daemon_*.deb \
   ./kio-protondrive-wizard_*.deb ./kio-protondrive-full_*.deb
 ```
 
-**Arch Linux**: the package isn't on the AUR yet — AUR account
-registration is closed for now, it'll be published there once it
-reopens. In the meantime, each release from 0.11.1 on carries prebuilt
-packages: download the `.pkg.tar.zst` files from the
+Updates are manual: install the next release's `.deb` files the same way.
+
+### Arch Linux
+
+The package isn't on the AUR yet — AUR account registration is closed for
+now, it'll be published there once it reopens. In the meantime, each
+release from 0.11.1 on carries prebuilt packages: download the
+`.pkg.tar.zst` files from the
 [Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
 and install them together:
 
@@ -338,31 +353,38 @@ cd kio-protondrive/packaging/aur
 makepkg -si
 ```
 
-Unlike the Debian package, nothing enables the sync daemon for you on Arch
-— run `systemctl --user enable --now kio-protondrive-sync-daemon.service`
-once (see "Local caching and pinning" above).
+Updates are manual until the AUR: repeat either with the next release.
 
-**Gentoo**: each release after 0.11.2 carries a small overlay with the
-`kde-misc/kio-protondrive` ebuild. Download
-`kio-protondrive-gentoo-overlay-*.tar.gz` from the
-[Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest),
-then:
+### Gentoo
+
+From the [Aarklendoia/gentoo-overlay](https://github.com/Aarklendoia/gentoo-overlay)
+overlay, which each release updates and `emaint sync` (or `emerge --sync`)
+then brings in:
 
 ```bash
-sudo tar -xzf kio-protondrive-gentoo-overlay-*.tar.gz -C /var/db/repos
-sudo tee /etc/portage/repos.conf/kio-protondrive.conf <<'EOF'
-[kio-protondrive]
-location = /var/db/repos/kio-protondrive
-EOF
-echo 'kde-misc/kio-protondrive ~amd64' | sudo tee /etc/portage/package.accept_keywords/kio-protondrive
-echo 'dev-build/corrosion ~amd64' | sudo tee -a /etc/portage/package.accept_keywords/kio-protondrive
+sudo eselect repository add aarklendoia git https://github.com/Aarklendoia/gentoo-overlay.git
+sudo emaint sync -r aarklendoia
+printf '%s\n' 'kde-misc/kio-protondrive ~amd64' 'dev-build/corrosion ~amd64' \
+  | sudo tee /etc/portage/package.accept_keywords/kio-protondrive
 sudo emerge --ask kde-misc/kio-protondrive
 ```
 
 The `daemon` and `wizard` USE flags (both on by default) match the Debian
-`kio-protondrive-sync-daemon` and `kio-protondrive-wizard` packages. As on
-Arch, enable the sync daemon yourself with the `systemctl --user` command
-above. To update, extract the next release's overlay over the old one.
+`kio-protondrive-sync-daemon` and `kio-protondrive-wizard` packages. Each
+release also carries the same overlay as
+`kio-protondrive-gentoo-overlay-*.tar.gz`, for systems that can't sync
+from git.
+
+### Other distributions
+
+Build from source, see [Building from source](#building-from-source).
+
+### After installing
+
+On Arch and Gentoo (and when building from source), nothing enables the
+sync daemon for you, unlike the Debian packages: run
+`systemctl --user enable --now kio-protondrive-sync-daemon.service` once
+(see "Local caching and pinning" above).
 
 Then open `protondrive:/` in Dolphin's location bar (or
 `kioclient ls protondrive:/` from a terminal) to browse your Drive.
