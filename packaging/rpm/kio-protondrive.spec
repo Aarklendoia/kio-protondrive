@@ -21,7 +21,7 @@ Name:           kio-protondrive
 # x-release-please-start-version
 Version:        0.12.0
 # x-release-please-end
-Release:        0
+Release:        0%{?dist}
 Summary:        KIO worker for Proton Drive
 License:        GPL-3.0-or-later
 URL:            https://github.com/Aarklendoia/kio-protondrive

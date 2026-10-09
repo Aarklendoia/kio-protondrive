@@ -1,8 +1,8 @@
 name: Build RPM Packages
 
 # Builds packaging/rpm/kio-protondrive.spec for openSUSE Tumbleweed and
-# Fedora, and on tags publishes it through the Open Build Service (#201):
-# the spec and its two sources (packaging/rpm/make-sources.sh) are attached
+# Fedora. On tags the RPMs are attached to the GitHub release, and the spec
+# is published through the Open Build Service (#201): the spec and its two sources (packaging/rpm/make-sources.sh) are attached
 # to the GitHub release, then OBS is told to run the package's _service
 # (packaging/rpm/_service), which fetches them from the latest release and
 # rebuilds. On PRs it only runs when the RPM packaging, the Cargo manifests
@@ -53,7 +53,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [ 'opensuse/tumbleweed', 'fedora:44' ]
+        include:
+          # Tumbleweed has no %dist: give its RPMs one, so the release can
+          # hold both distributions' files side by side.
+          - { name: tumbleweed, image: 'opensuse/tumbleweed', dist: '.tumbleweed' }
+          - { name: fedora44, image: 'fedora:44', dist: '' }
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
 
@@ -79,11 +83,16 @@ jobs:
 
       - name: Build and test
         # %check runs cargo test and ctest.
+        shell: bash
         run: |
           top="$PWD/rpmbuild"
           mkdir -p "$top/SOURCES"
           cp obs/*.tar.* "$top/SOURCES/"
-          rpmbuild --define "_topdir $top" -ba obs/kio-protondrive.spec
+          defines=(--define "_topdir $top")
+          if [ -n "${{ matrix.dist }}" ]; then
+            defines+=(--define "dist ${{ matrix.dist }}")
+          fi
+          rpmbuild "${defines[@]}" -ba obs/kio-protondrive.spec
 
       - name: Install and check the plugins load
         # Resolve every symbol now, like kioworker would when loading them.
@@ -100,6 +109,15 @@ jobs:
             echo "OK $so"
           done
 
+      - name: Upload RPMs
+        uses: actions/upload-artifact@v7
+        with:
+          name: rpms-${{ matrix.name }}
+          path: |
+            rpmbuild/RPMS/*/kio-protondrive*.rpm
+            !rpmbuild/RPMS/*/*debug*.rpm
+          retention-days: 30
+
   publish:
     # Only for tags, and only once both RPM builds passed.
     if: startsWith(github.ref, 'refs/tags/v')
@@ -112,6 +130,13 @@ jobs:
           name: rpm-sources
           path: obs
 
+      - name: Download RPMs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: rpms-*
+          path: rpms
+          merge-multiple: true
+
       - name: Attach to release
         uses: softprops/action-gh-release@v3
         with:
@@ -119,6 +144,7 @@ jobs:
             obs/kio-protondrive.spec
             obs/kio-protondrive-source.tar.gz
             obs/kio-protondrive-vendor.tar.xz
+            rpms/*.rpm
           draft: false
           prerelease: false
         env:
