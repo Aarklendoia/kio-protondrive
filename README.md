@@ -316,7 +316,8 @@ sudo apt install kio-protondrive-full
 `kio-protondrive-full` pulls in all three packages.
 
 Each release also carries the same packages as `.deb` files, built on
-Ubuntu 26.04 too. To install them without the PPA, download them from the
+Ubuntu 26.04 too. To install them without the PPA, download the four files
+without `+deb13` in their name from the
 [Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
 and install them together (not one at a time — `apt` resolves each
 package's dependency on the others from whatever repositories are
@@ -331,12 +332,27 @@ sudo apt install ./kio-protondrive_*.deb ./kio-protondrive-sync-daemon_*.deb \
 Updates are then manual: install the next release's `.deb` files the same
 way.
 
+### Debian 13 (trixie)
+
+Each release from 0.14.0 on carries packages built on Debian 13, with
+`+deb13` in their version: download the four `*+deb13_*.deb` files from the
+[Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
+and install them together, as above:
+
+```bash
+sudo apt install ./kio-protondrive_*+deb13_amd64.deb \
+  ./kio-protondrive-sync-daemon_*+deb13_amd64.deb \
+  ./kio-protondrive-wizard_*+deb13_amd64.deb ./kio-protondrive-full_*+deb13_all.deb
+```
+
+Updates are manual: install the next release's files the same way.
+
 ### Other Debian and Ubuntu versions
 
-There's no package for them yet: the `.deb` files above need Ubuntu
-26.04's Qt (6.10.2 or newer), glibc (2.39) and libstdc++ (from GCC 14), so
-`apt` refuses them on Debian 13 or Ubuntu 25.10, for example. Build from
-source instead, see [Building from source](#building-from-source).
+There's no package for them: the Ubuntu files need Ubuntu 26.04's Qt,
+glibc and libstdc++, and Ubuntu releases before 25.10 have no KDE
+Frameworks 6 at all. Build from source instead, see
+[Building from source](#building-from-source).
 
 ### Arch Linux
 

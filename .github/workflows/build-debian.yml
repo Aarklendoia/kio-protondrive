@@ -18,13 +18,21 @@ permissions:
 
 jobs:
   build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 26.04, the PPA's series (publish-ppa.yml's default
+          # SERIES). The release .deb files link against its Qt, glibc and
+          # libstdc++, so they don't install on older releases.
+          - { name: ubuntu-26.04, image: 'ubuntu:26.04', suffix: '', distribution: unstable }
+          # Debian 13 gets its own build (#208), with a "+deb13" version
+          # suffix so its files don't clash with Ubuntu's in the release.
+          - { name: debian-13, image: 'debian:trixie', suffix: '+deb13', distribution: trixie }
     runs-on: ubuntu-latest
-    # libkf6kio-dev only exists from Ubuntu 25.10 (Questing) onward — see
-    # https://packages.ubuntu.com/search?keywords=libkf6kio-dev — but
-    # ubuntu-latest is still Noble (24.04). Build inside a newer container
-    # instead (26.04, matching this project's own target series, see
-    # publish-ppa.yml's default SERIES).
-    container: ubuntu:26.04
+    # libkf6kio-dev isn't in ubuntu-latest (Noble, 24.04): build inside the
+    # target distribution's own container instead.
+    container: ${{ matrix.image }}
 
     steps:
       - name: Install base tooling and build dependencies
@@ -49,7 +57,8 @@ jobs:
             libsqlite3-dev \
             qt6-base-dev \
             libkf6kio-dev \
-            libkf6coreaddons-dev
+            libkf6coreaddons-dev \
+            python3
 
       - name: Checkout code
         uses: actions/checkout@v7
@@ -64,9 +73,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.name }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ matrix.name }}-cargo-
 
       - name: Vendor Corrosion
         # dh_auto_configure (debhelper compat 13) always passes
@@ -92,10 +101,10 @@ jobs:
           DEBFULLNAME: Aarklendoia
           DEBEMAIL: aarklendoia@proton.me
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME#v}${{ matrix.suffix }}"
           # No "-1" Debian revision suffix: "3.0 (native)" format (see
           # debian/source/format) uses the upstream version alone.
-          dch --newversion "${VERSION}" --distribution unstable --urgency medium \
+          dch --newversion "${VERSION}" --distribution ${{ matrix.distribution }} --urgency medium \
             "Automated release ${VERSION}. See CHANGELOG.md for full details."
 
       - name: Build Debian packages
@@ -110,10 +119,21 @@ jobs:
         run: |
           lintian ./*.deb || true
 
+      - name: Install and check the plugins load
+        # Installs the packages into this same distribution, which checks
+        # their dependencies resolve there, then resolves every symbol of
+        # the plugins now, like kioworker would when loading them.
+        run: |
+          apt-get install -y ./*.deb
+          for so in $(dpkg -L kio-protondrive kio-protondrive-sync-daemon | grep '\.so$'); do
+            python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1], mode=2)' "$so"
+            echo "OK $so"
+          done
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: debian-packages
+          name: debian-packages-${{ matrix.name }}
           path: |
             *.deb
             *.buildinfo
