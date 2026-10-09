@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.11.2...v0.12.0) (2026-10-09)
+
+
+### Features
+
+* package for Gentoo ([#184](https://github.com/Aarklendoia/kio-protondrive/issues/184)) ([f9eb6f8](https://github.com/Aarklendoia/kio-protondrive/commit/f9eb6f8e866c11305cc92907eca9694f7bb664be))
+
+
+### Bug Fixes
+
+* **packaging:** make the wizard depend on the org.kde.desktop Controls style ([#187](https://github.com/Aarklendoia/kio-protondrive/issues/187)) ([397e2af](https://github.com/Aarklendoia/kio-protondrive/commit/397e2af2a874db33e966e5e5ece12756b001602b)), closes [#186](https://github.com/Aarklendoia/kio-protondrive/issues/186)
+
 ## [0.11.2](https://github.com/Aarklendoia/kio-protondrive/compare/v0.11.1...v0.11.2) (2026-10-07)
 
 
