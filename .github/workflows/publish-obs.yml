@@ -114,8 +114,8 @@ jobs:
         with:
           name: rpms-${{ matrix.name }}
           path: |
-            rpmbuild/RPMS/*/kio-protondrive*.rpm
-            !rpmbuild/RPMS/*/*debug*.rpm
+            rpmbuild/RPMS/x86_64/kio-protondrive*.rpm
+            !rpmbuild/RPMS/x86_64/*debug*.rpm
           retention-days: 30
 
   publish:
