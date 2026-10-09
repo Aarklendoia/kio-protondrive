@@ -315,9 +315,8 @@ sudo apt install kio-protondrive-full
 
 `kio-protondrive-full` pulls in all three packages.
 
-### Other Debian and Ubuntu versions
-
-Download the `.deb` files from the
+Each release also carries the same packages as `.deb` files, built on
+Ubuntu 26.04 too. To install them without the PPA, download them from the
 [Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
 and install them together (not one at a time — `apt` resolves each
 package's dependency on the others from whatever repositories are
@@ -329,7 +328,15 @@ sudo apt install ./kio-protondrive_*.deb ./kio-protondrive-sync-daemon_*.deb \
   ./kio-protondrive-wizard_*.deb ./kio-protondrive-full_*.deb
 ```
 
-Updates are manual: install the next release's `.deb` files the same way.
+Updates are then manual: install the next release's `.deb` files the same
+way.
+
+### Other Debian and Ubuntu versions
+
+There's no package for them yet: the `.deb` files above need Ubuntu
+26.04's Qt (6.10.2 or newer), glibc (2.39) and libstdc++ (from GCC 14), so
+`apt` refuses them on Debian 13 or Ubuntu 25.10, for example. Build from
+source instead, see [Building from source](#building-from-source).
 
 ### Arch Linux
 
