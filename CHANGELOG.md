@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.12.0...v0.13.0) (2026-10-09)
+
+
+### Features
+
+* **packaging:** add an RPM spec for openSUSE and Fedora ([#204](https://github.com/Aarklendoia/kio-protondrive/issues/204)) ([6acc763](https://github.com/Aarklendoia/kio-protondrive/commit/6acc7635fafe9fd7b3b3a2d7c5b060e33a6780fd))
+
+
+### Bug Fixes
+
+* **wizard:** find Qt's QML runtime on Fedora too ([#203](https://github.com/Aarklendoia/kio-protondrive/issues/203)) ([0e9487b](https://github.com/Aarklendoia/kio-protondrive/commit/0e9487bbb86d153641d7e9f80a6a150218261065)), closes [#202](https://github.com/Aarklendoia/kio-protondrive/issues/202)
+
 ## [0.12.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.11.2...v0.12.0) (2026-10-09)
 
 
