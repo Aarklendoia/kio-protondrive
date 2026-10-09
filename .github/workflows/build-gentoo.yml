@@ -1,8 +1,8 @@
 name: Build Gentoo Overlay
 
 # Generates the Gentoo overlay (packaging/gentoo/make-overlay.sh), builds
-# its ebuild with emerge, and attaches the overlay to the GitHub release on
-# tags (#182). On PRs it only runs when the packaging, the Cargo manifests
+# its ebuild with emerge, and on tags attaches the overlay to the GitHub
+# release (#182) and pushes the ebuild to Aarklendoia/gentoo-overlay (#196). On PRs it only runs when the packaging, the Cargo manifests
 # (they decide the ebuild's CRATES) or the top-level CMake setup change —
 # release-please's PR included, since it bumps the workspace version.
 on:
@@ -148,3 +148,41 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to the git overlay (on tag)
+        # Aarklendoia/gentoo-overlay is what Gentoo users sync from (#196).
+        # GENTOO_OVERLAY_DEPLOY_KEY is a deploy key with write access to that
+        # repository only; GitHub's SSH host keys come from its meta API over
+        # HTTPS. The package directory is replaced as a whole, so the overlay
+        # carries the latest release only.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DEPLOY_KEY: ${{ secrets.GENTOO_OVERLAY_DEPLOY_KEY }}
+        run: |
+          key="$RUNNER_TEMP/overlay_key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          curl -fsSL https://api.github.com/meta \
+            | python3 -c 'import json, sys; print("\n".join("github.com " + k for k in json.load(sys.stdin)["ssh_keys"]))' \
+            > "$RUNNER_TEMP/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+
+          overlay="$RUNNER_TEMP/gentoo-overlay"
+          git clone --depth 1 git@github.com:Aarklendoia/gentoo-overlay.git "$overlay"
+          dst="$overlay/kde-misc/kio-protondrive"
+          rm -rf "$dst"
+          mkdir -p "$dst"
+          src=/var/db/repos/kio-protondrive/kde-misc/kio-protondrive
+          cp "$src"/*.ebuild "$src/metadata.xml" "$src/Manifest" "$dst/"
+
+          cd "$overlay"
+          git add -A kde-misc/kio-protondrive
+          if git diff --cached --quiet; then
+            echo "Overlay already up to date"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "kde-misc/kio-protondrive: ${GITHUB_REF_NAME#v}" \
+            -m "From $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME"
+          git push origin HEAD:main
