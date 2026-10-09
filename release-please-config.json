@@ -13,6 +13,10 @@
         {
           "type": "generic",
           "path": "packaging/aur/PKGBUILD"
+        },
+        {
+          "type": "generic",
+          "path": "packaging/rpm/kio-protondrive.spec"
         }
       ]
     }
