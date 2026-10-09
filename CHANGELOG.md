@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.13.0...v0.14.0) (2026-10-09)
+
+
+### Features
+
+* **packaging:** build .deb packages for Debian 13 ([#210](https://github.com/Aarklendoia/kio-protondrive/issues/210)) ([baea720](https://github.com/Aarklendoia/kio-protondrive/commit/baea72079de15c14df353a076732d637febf0937)), closes [#208](https://github.com/Aarklendoia/kio-protondrive/issues/208)
+
 ## [0.13.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.12.0...v0.13.0) (2026-10-09)
 
 
