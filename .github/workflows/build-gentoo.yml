@@ -127,9 +127,12 @@ jobs:
           done
 
       - name: Pack overlay
+        # metadata/md5-cache is emerge's cache from the build above, not
+        # part of the overlay (#197).
         run: |
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
           tar -czf "kio-protondrive-gentoo-overlay-$version.tar.gz" \
+            --exclude=kio-protondrive/metadata/md5-cache \
             -C /var/db/repos kio-protondrive
 
       - name: Upload artifacts
