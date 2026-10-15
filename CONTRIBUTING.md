@@ -115,7 +115,7 @@ keep these in mind:
 
 - **Minimum Rust: 1.93** (`rust-version` in the workspace `Cargo.toml`).
   The Launchpad PPA builds offline with the target Ubuntu series' own
-  packaged rustc/cargo (resolute: 1.93.1, check with
+  packaged rustc/cargo (resolute: 1.93.1, stonking: 1.97.1, check with
   `rmadison -u ubuntu cargo`). Raise `rust-version` only when every
   packaged target ships the newer version.
 - **`Cargo.lock` isn't committed**: every packaging build regenerates it,
@@ -140,8 +140,10 @@ Before merging a dependency bump, run the offline PPA flow locally:
 scratch copy of the tree, then `dpkg-buildpackage -b -us -uc` in an
 `ubuntu:resolute` container started with `--network none`. Check that each
 plugin loads (`ldd -r` on the `.so` files must report no undefined
-symbol), not only that it links. For the AUR, `makepkg -s` in an
-`archlinux:latest` container (see [docs/AUR.md](docs/AUR.md)).
+symbol), not only that it links. The oldest series (resolute) is the one
+most likely to break; repeat with `RUST_TOOLCHAIN=1.97.1` in
+`ubuntu:stonking` when a change could depend on the newer one. For the
+AUR, `makepkg -s` in an `archlinux:latest` container (see [docs/AUR.md](docs/AUR.md)).
 
 ## Releases
 

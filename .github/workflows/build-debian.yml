@@ -22,8 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Ubuntu 26.04, the PPA's series (publish-ppa.yml's default
-          # SERIES). The release .deb files link against its Qt, glibc and
+          # Ubuntu 26.04, the PPA's oldest series (publish-ppa.yml's
+          # matrix). The release .deb files link against its Qt, glibc and
           # libstdc++, so they don't install on older releases.
           - { name: ubuntu-26.04, image: 'ubuntu:26.04', suffix: '', distribution: unstable }
           # Debian 13 gets its own build (#208), with a "+deb13" version

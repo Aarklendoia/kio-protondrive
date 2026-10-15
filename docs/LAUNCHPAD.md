@@ -104,7 +104,8 @@ moment, `.gitignore` notwithstanding.
 
 ## 3. Building and uploading a release
 
-One **source-only** upload per target Ubuntu series:
+One **source-only** upload per target Ubuntu series (currently resolute
+and stonking), each vendored with that series' own cargo:
 
 ```bash
 dch --newversion "0.1.0~ppa1~resolute1" --distribution resolute --urgency medium \
@@ -122,8 +123,11 @@ Track build status at
 
 [.github/workflows/publish-ppa.yml](../.github/workflows/publish-ppa.yml)
 automates the cycle above on every `vX.Y.Z` release tag (same trigger as
-`build-debian.yml`), or manually via `workflow_dispatch`. It won't work
-until [step 1](#1-one-time-setup-manual-on-launchpadnet) above is done (the
+`build-debian.yml`), for every series in its matrix, or manually via
+`workflow_dispatch` for one series: that's how to publish an existing tag
+for a newly released series. To support a new series, add it with its
+packaged cargo version (`rmadison -u ubuntu cargo`) to the matrix. It
+won't work until [step 1](#1-one-time-setup-manual-on-launchpadnet) above is done (the
 PPA must exist, and the placeholder `GPG_KEY_ID` / `PPA_GPG_PRIVATE_KEY`
 secret must be filled in).
 
