@@ -5,6 +5,11 @@ name: Publish to Launchpad PPA
 # Release build). See docs/LAUNCHPAD.md for the full manual process this
 # automates, and for how the ~ppa1~<series>1 versioning scheme works.
 #
+# A release tag uploads one source package per supported Ubuntu series
+# (the matrix below), each vendored with that series' own packaged cargo.
+# workflow_dispatch uploads for the one series given as input instead, e.g.
+# to publish an existing tag for a newly released series.
+#
 # Signs with a CI-only GPG key, registered as an additional OpenPGP key on
 # the aarklendoia-edtech Launchpad account — deliberately separate from the
 # maintainer's personal key (and from linux-hello's own CI key), so a
@@ -25,22 +30,34 @@ on:
       series:
         description: 'Target Ubuntu series codename'
         required: true
-        default: 'resolute'
+        default: 'stonking'
       rust_toolchain:
         description: "That series' packaged cargo/rustc version (rmadison -u ubuntu cargo)"
         required: true
-        default: '1.93.1'
+        default: '1.97.1'
 
 env:
   PPA: 'ppa:aarklendoia-edtech/kio-protondrive'
   GPG_KEY_ID: 'D61B393270CB976FBF38147EE8A85F33C5CF96B1'
   DEBFULLNAME: 'kio-protondrive CI'
   DEBEMAIL: 'aarklendoia+ci@proton.me'
-  SERIES: ${{ github.event.inputs.series || 'resolute' }}
-  RUST_TOOLCHAIN: ${{ github.event.inputs.rust_toolchain || '1.93.1' }}
 
 jobs:
   publish-ppa:
+    name: publish-ppa (${{ matrix.series }})
+    strategy:
+      fail-fast: false
+      # Supported series and their packaged cargo/rustc
+      # (rmadison -u ubuntu cargo). The "~ppa1~<series>1" versions sort by
+      # codename, which Ubuntu assigns alphabetically, so a release upgrade
+      # (resolute -> stonking) also upgrades this package.
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch'
+          && format('[{{"series":"{0}","rust_toolchain":"{1}"}}]', inputs.series, inputs.rust_toolchain)
+          || '[{"series":"resolute","rust_toolchain":"1.93.1"},{"series":"stonking","rust_toolchain":"1.97.1"}]') }}
+    env:
+      SERIES: ${{ matrix.series }}
+      RUST_TOOLCHAIN: ${{ matrix.rust_toolchain }}
     runs-on: ubuntu-latest
     # Confirmed live: the v0.8.0 release's run of this workflow hung on the
     # "Install packaging tools" step below for the full 6h GitHub Actions

@@ -303,7 +303,7 @@ worker itself, the sync daemon (offline pinning, local-cache eviction, the
 pin/unpin menu in Dolphin) and the setup wizard. Installing all three is
 recommended.
 
-### Ubuntu 26.04 LTS (resolute)
+### Ubuntu 26.04 LTS (resolute) and 26.10 (stonking)
 
 From the Launchpad PPA, which also brings updates through `apt upgrade`:
 
@@ -316,7 +316,8 @@ sudo apt install kio-protondrive-full
 `kio-protondrive-full` pulls in all three packages.
 
 Each release also carries the same packages as `.deb` files, built on
-Ubuntu 26.04 too. To install them without the PPA, download the four files
+Ubuntu 26.04 (on 26.10, prefer the PPA, whose packages are built there).
+To install them without the PPA, download the four files
 without `+deb13` in their name from the
 [Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
 and install them together (not one at a time — `apt` resolves each
@@ -349,8 +350,8 @@ Updates are manual: install the next release's files the same way.
 
 ### Other Debian and Ubuntu versions
 
-There's no package for them: the Ubuntu files need Ubuntu 26.04's Qt,
-glibc and libstdc++, and Ubuntu releases before 25.10 have no KDE
+There's no package for them: the Ubuntu packages need Qt, glibc and
+libstdc++ from 26.04 or 26.10, and Ubuntu releases before 25.10 have no KDE
 Frameworks 6 at all. Build from source instead, see
 [Building from source](#building-from-source).
 
