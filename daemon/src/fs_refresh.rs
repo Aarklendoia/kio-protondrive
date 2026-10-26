@@ -107,7 +107,10 @@ fn claim_revalidation(parent: &str) -> bool {
 /// Nothing is emitted when the listing didn't change, so the re-list it
 /// triggers ends the cycle (along with [`REVALIDATE_COOLDOWN`]).
 pub fn revalidate_listing(runner: &dyn CommandRunner, cache: &Cache, parent: &str) -> bool {
-    if !claim_revalidation(parent) {
+    // The root lists sections, not nodes, and is never cached (see
+    // core/src/bridge.rs's list_dir): storing its filtered, empty listing
+    // would only give the sweep something useless to refresh.
+    if parent == "/" || parent.is_empty() || !claim_revalidation(parent) {
         return false;
     }
     let previous = cache.cached_listing(parent).ok().flatten();
@@ -362,6 +365,16 @@ mod tests {
 
         let runner = list_runner("/reval-same", &["a.txt"]);
         assert!(!revalidate_listing(&runner, &cache, "/reval-same"));
+    }
+
+    #[test]
+    fn revalidate_never_touches_the_root() {
+        let (_dir, cache) = cache();
+        // Unscripted: any CLI call would panic.
+        let runner = ScriptedRunner::new(vec![]);
+
+        assert!(!revalidate_listing(&runner, &cache, "/"));
+        assert!(cache.cached_listing("/").unwrap().is_none());
     }
 
     #[test]
