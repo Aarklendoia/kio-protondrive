@@ -19,6 +19,8 @@ kio-protondrive builds on that CLI, so Proton Drive shows up in Dolphin's
 location bar and sidebar like any other network location: no separate sync
 app, no full local mirror of your Drive.
 
+![Dolphin showing the Proton Drive root, with its sections (My files, Computers, Shared, Shared with me, Photos, Trash...) and a Proton Drive entry in the Places panel](docs/images/dolphin-proton-drive.png)
+
 > [!NOTE]
 > This is an independent community project, **not affiliated with or
 > endorsed by Proton AG**. It drives Proton's official `proton-drive` CLI and
