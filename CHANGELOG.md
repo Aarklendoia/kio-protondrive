@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.14.0...v0.14.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* find the proton-drive CLI in ~/.local/bin when it isn't on PATH ([#228](https://github.com/Aarklendoia/kio-protondrive/issues/228)) ([24fe0bf](https://github.com/Aarklendoia/kio-protondrive/commit/24fe0bff56f004da5f26256d9d536289fc50ccab))
+* pick up changes made elsewhere when browsing and opening files ([#221](https://github.com/Aarklendoia/kio-protondrive/issues/221)) ([ce580e5](https://github.com/Aarklendoia/kio-protondrive/commit/ce580e5fa212ff156383f64798a1b2b2f02a3dd6))
+* revalidate the parent folder when a stat is served from the cache ([#227](https://github.com/Aarklendoia/kio-protondrive/issues/227)) ([3dad3a7](https://github.com/Aarklendoia/kio-protondrive/commit/3dad3a755512a906f2e7517fabe7638b41635828))
+
 ## [0.14.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.13.0...v0.14.0) (2026-10-09)
 
 
