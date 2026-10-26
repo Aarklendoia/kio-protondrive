@@ -20,9 +20,8 @@
 
 use std::time::Duration;
 
-use protondrive_core::cli::CommandRunner;
+use protondrive_core::cli::{self, CommandRunner};
 use protondrive_core::cli_update::{self, CliUpdateError, Release};
-use protondrive_core::local_ctrl;
 
 use crate::notification::Notifier;
 
@@ -121,7 +120,7 @@ pub fn check(
 /// "never escalate privileges" rule as `wizard::route_setup_pass`'s "never
 /// runs `apt install`".
 pub fn offer_wizard_update() {
-    let Some(cli_path) = local_ctrl::which_path("proton-drive") else {
+    let Some(cli_path) = cli::find_binary() else {
         return;
     };
     if !cli_update::is_writable(&cli_path) {

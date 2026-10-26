@@ -315,9 +315,7 @@ fn route_session_status() -> String {
 /// display; this connection's own thread is already isolated from the rest
 /// of the server, so blocking here doesn't stall other requests.
 fn route_auth_login() -> String {
-    let status = Command::new("proton-drive")
-        .args(["auth", "login"])
-        .status();
+    let status = Command::new(cli::binary()).args(["auth", "login"]).status();
     match status {
         Ok(status) if status.success() => route_session_status(),
         Ok(status) => format!(
@@ -659,7 +657,8 @@ fn route_restart_daemon() -> String {
     }
 }
 
-/// Whether `proton-drive` is on `$PATH` at all and, if so, which version —
+/// Whether `proton-drive` is installed at all (on `$PATH` or in
+/// `~/.local/bin`, see `cli::find_binary`) and, if so, which version —
 /// `Welcome.qml` calls this before proceeding, to route to `InstallCli.qml`
 /// instead of `Credentials.qml` when it's missing (`Auth.qml` right after
 /// needs the real CLI present to run `proton-drive auth login`).
@@ -667,7 +666,7 @@ fn route_restart_daemon() -> String {
 /// exists (that's why the daemon spawned this process in `--update-cli`
 /// mode in the first place).
 fn route_cli_status() -> String {
-    if !which("proton-drive") {
+    if cli::find_binary().is_none() {
         return format!(
             r#"{{"installed":false,"version":null,"supported":false,"minimum":"{}"}}"#,
             cli_update::MIN_CLI_VERSION
