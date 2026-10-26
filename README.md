@@ -72,6 +72,8 @@ Dolphin's Places panel. Once that's done, open `protondrive:/` in Dolphin.
 - **CLI updates**: you're notified when a new Proton Drive CLI is out, and
   can install it in one click, checksum-verified.
 
+![A Proton Drive folder in Dolphin: badges mark files available locally (checkmark) and shared files, and the context menu offers Keep Available Offline and Share via Proton Drive](docs/images/dolphin-context-menu.png)
+
 ## Installing
 
 Requires the official [Proton Drive CLI](https://proton.me/drive/download),
