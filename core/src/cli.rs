@@ -6,7 +6,8 @@
 //! needs a live, authenticated Proton Drive session, which unit tests (and CI)
 //! don't have.
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -16,6 +17,7 @@ use thiserror::Error;
 use crate::entry::{
     CopyOutcome, ListItem, NodeEntry, PublicLink, SharingStatus, TransferSummary, TrashOutcome,
 };
+use crate::local_ctrl;
 
 /// `filesystem list`/`info`/`create-folder`/`trash` are plain metadata API
 /// calls — a healthy CLI answers in well under this. Deliberately short so a
@@ -102,9 +104,37 @@ pub(crate) fn is_transient_lock_contention(out: &CommandOutput) -> bool {
             || out.stderr.contains("SQLITE_BUSY"))
 }
 
+/// Where `kio-protondrive-wizard` installs the CLI, relative to `$HOME`.
+pub const USER_INSTALL_PATH: &str = ".local/bin/proton-drive";
+
+/// The `proton-drive` binary to run: the first one on `$PATH`, else the
+/// wizard's own install under `~/.local/bin` (#223). That directory is
+/// usually on a login shell's `PATH`, but not necessarily on the systemd
+/// user manager's when the daemon starts: seen live, it started with a PATH
+/// lacking it and every CLI call failed for the whole session.
+pub fn find_binary() -> Option<PathBuf> {
+    resolve_binary(local_ctrl::which_path, std::env::var_os("HOME"))
+}
+
+fn resolve_binary(
+    which_path: impl Fn(&str) -> Option<PathBuf>,
+    home: Option<OsString>,
+) -> Option<PathBuf> {
+    which_path("proton-drive").or_else(|| {
+        let candidate = PathBuf::from(home?).join(USER_INSTALL_PATH);
+        candidate.is_file().then_some(candidate)
+    })
+}
+
+/// [`find_binary`], or the bare name when there's none, so spawning it still
+/// fails with the usual "not found" error.
+pub fn binary() -> PathBuf {
+    find_binary().unwrap_or_else(|| PathBuf::from("proton-drive"))
+}
+
 impl RealCommandRunner {
     fn run_once(&self, args: &[&str], timeout: Duration) -> Result<CommandOutput, DriveError> {
-        let child = std::process::Command::new("proton-drive")
+        let child = std::process::Command::new(binary())
             .args(args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -744,6 +774,38 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
+
+    #[test]
+    fn resolve_binary_prefers_the_one_on_path() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".local/bin")).unwrap();
+        std::fs::write(home.path().join(USER_INSTALL_PATH), "").unwrap();
+
+        let found = resolve_binary(
+            |_| Some(PathBuf::from("/usr/bin/proton-drive")),
+            Some(home.path().into()),
+        );
+
+        assert_eq!(found, Some(PathBuf::from("/usr/bin/proton-drive")));
+    }
+
+    #[test]
+    fn resolve_binary_falls_back_to_the_wizard_install() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".local/bin")).unwrap();
+        std::fs::write(home.path().join(USER_INSTALL_PATH), "").unwrap();
+
+        let found = resolve_binary(|_| None, Some(home.path().into()));
+
+        assert_eq!(found, Some(home.path().join(USER_INSTALL_PATH)));
+    }
+
+    #[test]
+    fn resolve_binary_is_none_when_neither_exists() {
+        let home = tempfile::tempdir().unwrap();
+        assert_eq!(resolve_binary(|_| None, Some(home.path().into())), None);
+        assert_eq!(resolve_binary(|_| None, None), None);
+    }
 
     #[test]
     fn is_transient_lock_contention_matches_the_cli_own_sqlite_cache_lock_error() {

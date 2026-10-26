@@ -160,7 +160,12 @@ impl TransferHandle {
         args: Vec<String>,
         total_bytes: u64,
     ) -> Result<Self, DriveError> {
-        Self::start_program("proton-drive".to_string(), direction, args, total_bytes)
+        Self::start_program(
+            crate::cli::binary().to_string_lossy().into_owned(),
+            direction,
+            args,
+            total_bytes,
+        )
     }
 
     /// Same as [`start`](Self::start) but with the spawned program
