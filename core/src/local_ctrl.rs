@@ -71,6 +71,49 @@ pub fn write_owner_only_file(path: &std::path::Path, contents: &str) -> std::io:
     f.write_all(contents.as_bytes())
 }
 
+/// The sync daemon's control server: its name, which prefixes its port/token
+/// files, and the header carrying its token. Here rather than in `daemon/`
+/// because the KIO worker (through `crate::bridge`) is a client too, not
+/// only `kio-protondrive-daemon pin/unpin`.
+pub const DAEMON_APP_NAME: &str = "kio-protondrive-daemon";
+pub const DAEMON_TOKEN_HEADER: &str = "x-kio-protondrive-daemon-token";
+
+/// `<runtime dir>/kio-protondrive-daemon-ctrl.<kind>` (`kind` is `port` or
+/// `token`). Only shells out to `id -u` when `$XDG_RUNTIME_DIR` is unset,
+/// since the worker computes this on every cached listing, not once at
+/// startup like [`current_uid`]'s other callers.
+pub fn daemon_ctrl_path(kind: &str) -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| runtime_dir(current_uid()))
+        .join(format!("{DAEMON_APP_NAME}-ctrl.{kind}"))
+}
+
+/// Sends `GET <route>?path=<remote_path>` to the daemon's control server and
+/// returns the open connection, for a caller that wants the response to read
+/// it from. Dropping it right away makes the request fire-and-forget: the
+/// whole request is already written, and the daemon handles it either way.
+pub fn daemon_request(route: &str, remote_path: &str) -> Result<std::net::TcpStream, String> {
+    let port = std::fs::read_to_string(daemon_ctrl_path("port"))
+        .map_err(|e| format!("is the daemon running? ({e})"))?;
+    let token = std::fs::read_to_string(daemon_ctrl_path("token")).map_err(|e| e.to_string())?;
+    let addr = format!("127.0.0.1:{}", port.trim())
+        .parse()
+        .map_err(|e: std::net::AddrParseError| e.to_string())?;
+    let mut stream =
+        std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500))
+            .map_err(|e| e.to_string())?;
+    let request = format!(
+        "GET {route}?path={} HTTP/1.1\r\nHost: 127.0.0.1\r\n{DAEMON_TOKEN_HEADER}: {}\r\nConnection: close\r\n\r\n",
+        percent_encode(remote_path),
+        token.trim(),
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
+    Ok(stream)
+}
+
 /// Escapes a string for embedding in a JSON string literal.
 pub fn json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 16);

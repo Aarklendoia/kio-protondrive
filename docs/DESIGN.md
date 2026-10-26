@@ -131,19 +131,32 @@ worth spelling out explicitly, same as those two were.
     `org.kde.KDirNotify.FilesChanged` for whatever it refreshed, so an open
     Dolphin window re-renders instead of silently drifting from what's
     actually on Drive.
-- **The accepted tradeoff.** A change made to a cached path from *outside*
-  this app (the web UI, another device) can lag behind by up to the sweep
-  interval — this is the real cost being traded for instant repeat browsing
-  and an instantly-labeled breadcrumb, and the reason this needed its own
-  writeup rather than just reusing the `/photos` cache's TTL pattern.
-- **Why no background thread from the worker itself.** A more "reactive"
-  design would re-verify a cache hit in the background the moment it's
-  served, so a folder actively being browsed stays maximally fresh. Rejected
-  deliberately: a `protondrive://` KIO worker process is short-lived and
-  poolable (`maxInstances` in `worker/protondrive.json`) — nothing guarantees
-  it outlives a thread it spawned, so "fire a background refresh from the
-  worker" is a best-effort measure that can silently vanish. All "keep this
-  fresh" work belongs to the daemon instead, which is already long-running.
+- **Revalidated when served.** A listing cache hit is still returned
+  instantly, but the worker also asks the daemon (fire-and-forget, over its
+  control server's `/revalidate` route) to re-fetch that folder. If Drive's
+  listing differs from what was served, the daemon stores it and emits
+  `org.kde.KDirNotify.FilesAdded(<folder>)`, which makes Dolphin list the
+  folder again — so a change made from *outside* this app (the web UI,
+  another device) shows up a few seconds after opening or refreshing (F5)
+  the folder, rather than up to the sweep interval later. Nothing is emitted
+  when nothing changed, and a folder revalidated in the last 10 seconds is
+  skipped, so Dolphin's own re-list doesn't start the cycle over.
+- **The remaining tradeoff.** The first view of a folder changed elsewhere is
+  still the stale one, for the ~1-4s the daemon's CLI call takes. Without a
+  running daemon, nothing revalidates and the cache is only as fresh as this
+  app's own writes leave it.
+- **Why the daemon, not a background thread in the worker.** A
+  `protondrive://` KIO worker process is short-lived and poolable
+  (`maxInstances` in `worker/protondrive.json`) — nothing guarantees it
+  outlives a thread it spawned, so "fire a background refresh from the
+  worker" is a best-effort measure that can silently vanish. The worker only
+  hands the request off; all "keep this fresh" work happens in the daemon,
+  which is already long-running.
+- **Opening a file always re-checks Drive.** The opportunistic local copy of
+  a file (see below) is only reused if a *live* `filesystem info` still
+  reports the modification time it was downloaded at — never the cached
+  stat, which would let a file changed elsewhere keep opening with its old
+  content.
 
 ## Cancellable transfers and approximate progress
 

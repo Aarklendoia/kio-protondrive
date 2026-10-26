@@ -21,20 +21,17 @@ use protondrive_core::cache::Cache;
 use protondrive_core::cli::RealCommandRunner;
 use protondrive_core::local_ctrl::{
     self, constant_time_eq, extract_header, extract_query_param, generate_ctrl_token, json_escape,
-    percent_encode, read_request, request_path, write_owner_only_file,
+    read_request, request_path, write_owner_only_file, DAEMON_TOKEN_HEADER,
 };
 
-use crate::notification;
-
-const APP_NAME: &str = "kio-protondrive-daemon";
-const TOKEN_HEADER: &str = "x-kio-protondrive-daemon-token";
+use crate::{fs_refresh, notification};
 
 fn ctrl_port_path() -> PathBuf {
-    local_ctrl::runtime_dir(local_ctrl::current_uid()).join(format!("{APP_NAME}-ctrl.port"))
+    local_ctrl::daemon_ctrl_path("port")
 }
 
 fn ctrl_token_path() -> PathBuf {
-    local_ctrl::runtime_dir(local_ctrl::current_uid()).join(format!("{APP_NAME}-ctrl.token"))
+    local_ctrl::daemon_ctrl_path("token")
 }
 
 /// Starts the control server on a background thread; writes its port/token
@@ -70,7 +67,7 @@ pub fn start() {
 fn handle_connection(mut stream: TcpStream, expected_token: &str) {
     let req = read_request(&mut stream);
 
-    let token_ok = extract_header(&req, TOKEN_HEADER)
+    let token_ok = extract_header(&req, DAEMON_TOKEN_HEADER)
         .map(|t| constant_time_eq(t, expected_token))
         .unwrap_or(false);
 
@@ -80,6 +77,7 @@ fn handle_connection(mut stream: TcpStream, expected_token: &str) {
         match request_path(&req) {
             "/pin" => ("200 OK", route_pin(&req)),
             "/unpin" => ("200 OK", route_unpin(&req)),
+            "/revalidate" => ("200 OK", route_revalidate(&req)),
             _ => ("404 Not Found", "{}".to_string()),
         }
     };
@@ -167,6 +165,26 @@ fn route_unpin(req: &str) -> String {
     }
 }
 
+/// Re-fetches a listing the worker just served from the fs cache (see
+/// `fs_refresh::revalidate_listing`). The worker doesn't wait for this
+/// response — it's already gone by the time the CLI call returns.
+fn route_revalidate(req: &str) -> String {
+    let Some(path) = extract_query_param(req, "path") else {
+        return r#"{"ok":false,"error":"missing path"}"#.to_string();
+    };
+    let cache = match Cache::open(&Cache::default_db_path(), &Cache::default_root()) {
+        Ok(c) => c,
+        Err(e) => {
+            return format!(
+                r#"{{"ok":false,"error":"{}"}}"#,
+                json_escape(&e.to_string())
+            )
+        }
+    };
+    fs_refresh::revalidate_listing(&RealCommandRunner, &cache, &path);
+    r#"{"ok":true}"#.to_string()
+}
+
 /// Tells `protondrive_overlayicon.so` (see `worker/overlayplugin.cpp`) that
 /// one of `remote_path`'s overlay-relevant fields changed, so it can
 /// repaint just that item's badge — without this, an icon only updates on
@@ -242,6 +260,17 @@ pub(crate) fn emit_string_list(interface: &str, member: &str, values: &[String])
     }
 }
 
+/// Single-string (`s`) counterpart to [`emit_string_list`], e.g. for
+/// `org.kde.KDirNotify.FilesAdded(directory)`.
+pub(crate) fn emit_string(interface: &str, member: &str, value: &str) {
+    let result = Command::new("busctl")
+        .args(["--user", "emit", "/", interface, member, "s", value])
+        .status();
+    if let Err(err) = result {
+        log::debug!("could not emit {interface}.{member} (busctl missing?): {err}");
+    }
+}
+
 /// Batched counterpart to [`notify_overlay_changed`], for callers that need
 /// to broadcast many paths at once (currently only `fs_refresh`'s periodic
 /// sweep) — one `busctl` process for the whole batch instead of one per
@@ -275,26 +304,12 @@ pub fn run_client(action: &str, url: &str) -> Result<(), String> {
         .trim_start_matches('/');
     let remote_path = format!("/{remote_path}");
 
-    let port = std::fs::read_to_string(ctrl_port_path())
-        .map_err(|e| format!("is the daemon running? ({e})"))?;
-    let token = std::fs::read_to_string(ctrl_token_path()).map_err(|e| e.to_string())?;
-
     let route = match action {
         "pin" => "/pin",
         "unpin" => "/unpin",
         other => return Err(format!("unknown action {other:?}")),
     };
-    let request = format!(
-        "GET {route}?path={} HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Kio-Protondrive-Daemon-Token: {}\r\nConnection: close\r\n\r\n",
-        percent_encode(&remote_path),
-        token.trim(),
-    );
-
-    let mut stream =
-        TcpStream::connect(format!("127.0.0.1:{}", port.trim())).map_err(|e| e.to_string())?;
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|e| e.to_string())?;
+    let mut stream = local_ctrl::daemon_request(route, &remote_path)?;
     let mut response = String::new();
     stream
         .read_to_string(&mut response)

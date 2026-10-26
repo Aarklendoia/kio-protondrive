@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// flows one way, parsed from the CLI's JSON) is needed so `crate::cache`
 /// can round-trip a `Vec<NodeEntry>` through its on-disk `/photos` timeline
 /// cache (see `crate::photos`'s doc comment for why that cache exists).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecryptedField {
     pub ok: bool,
     #[serde(default)]
@@ -24,7 +24,7 @@ pub struct DecryptedField {
 
 /// A file or folder node, as returned by `filesystem list`, `filesystem info`
 /// and `filesystem create-folder`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeEntry {
     pub uid: String,
@@ -69,7 +69,7 @@ pub struct NodeEntry {
 /// codes (0=Favorite, 1=Screenshot, 2=Video, 3=LivePhoto, 4=MotionPhoto,
 /// 5=Selfie, 6=Portrait, 7=Burst, 8=Panorama, 9=Raw), server-computed, a
 /// single photo can carry several at once.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct PhotoDetails {
     #[serde(default)]
     pub tags: Vec<u8>,
@@ -78,7 +78,7 @@ pub struct PhotoDetails {
 /// The `activeRevision` sub-object `filesystem list`/`info` and
 /// `photo timeline -d` nest on each file node (CLI 0.9.0). Only the field the
 /// worker needs is mapped.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveRevision {
     /// The plaintext size the uploading client declared (#125).
