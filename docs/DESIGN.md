@@ -138,7 +138,9 @@ worth spelling out explicitly, same as those two were.
   `org.kde.KDirNotify.FilesAdded(<folder>)`, which makes Dolphin list the
   folder again — so a change made from *outside* this app (the web UI,
   another device) shows up a few seconds after opening or refreshing (F5)
-  the folder, rather than up to the sweep interval later. Nothing is emitted
+  the folder, rather than up to the sweep interval later. A stat cache hit
+  (e.g. Dolphin's Properties dialog) revalidates its parent folder the same
+  way, which re-stores every child's stat. Nothing is emitted
   when nothing changed, and a folder revalidated in the last 10 seconds is
   skipped, so Dolphin's own re-list doesn't start the cycle over.
 - **The remaining tradeoff.** The first view of a folder changed elsewhere is

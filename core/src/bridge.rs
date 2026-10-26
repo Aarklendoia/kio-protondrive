@@ -220,6 +220,15 @@ fn stat_path(path: &str) -> Result<FfiEntry, String> {
     let runner = RealCommandRunner;
     if let Ok(cache) = open_cache() {
         if let Ok(Some(node)) = cache.cached_stat(path) {
+            // Same stale-while-revalidate as list_dir, through the parent
+            // folder's listing: revalidating it re-stores every child's stat,
+            // so the next stat (e.g. reopening Dolphin's Properties dialog)
+            // sees the change, and the folder's own view is re-listed if it
+            // differs. A top-level section's parent is the uncached root,
+            // nothing to revalidate there.
+            if let Some((parent, _)) = path.rsplit_once('/').filter(|(p, _)| !p.is_empty()) {
+                let _ = local_ctrl::daemon_request("/revalidate", parent);
+            }
             return Ok(node_to_ffi(&node));
         }
         let node = cli::stat_path(&runner, path).map_err(|e| e.to_string())?;
