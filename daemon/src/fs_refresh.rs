@@ -3,9 +3,10 @@
 //! read-through/write-through population on a genuine cache miss.
 //!
 //! That cache has no TTL: once a path is cached, `protondrive:/` browsing
-//! serves it instantly forever, however old, until either (a) this app's
-//! own writes invalidate what they touch, or (b) this module's periodic
-//! sweep re-fetches it. Sequential, not parallel — each `proton-drive` CLI
+//! serves it instantly, however old, until (a) this app's own writes
+//! invalidate what they touch, (b) the worker's request to revalidate a
+//! listing it just served comes back different ([`revalidate_listing`]),
+//! or (c) this module's periodic sweep re-fetches it. Sequential, not parallel — each `proton-drive` CLI
 //! call already costs ~1-4s on its own (measured live), so fanning many out
 //! at once would just contend with itself and with any concurrent KIO
 //! worker activity.
@@ -28,13 +29,26 @@
 //! no session bus (e.g. inside a container) just means the view goes stale
 //! until the next natural refresh, not a failure worth surfacing.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use protondrive_core::cache::Cache;
 use protondrive_core::cli::{self, CommandRunner, DriveError};
-use protondrive_core::entry::ListItem;
+use protondrive_core::entry::{ListItem, NodeEntry};
 
-use crate::control::{emit_string_list, notify_paths_changed};
+use crate::control::{emit_string, emit_string_list, notify_paths_changed};
+
+/// How long after revalidating a folder another request for it is ignored.
+/// Without it, the re-list Dolphin does after [`revalidate_listing`]'s own
+/// `FilesAdded` would be served from the cache again, ask for another
+/// revalidation, and so on for as long as the folder stays open.
+const REVALIDATE_COOLDOWN: Duration = Duration::from_secs(10);
+
+/// When each folder was last revalidated, for [`REVALIDATE_COOLDOWN`].
+/// Recorded *before* the CLI call, so a second request arriving while the
+/// first is still running is dropped too.
+static LAST_REVALIDATED: Mutex<BTreeMap<String, Instant>> = Mutex::new(BTreeMap::new());
 
 fn drive_url(path: &str) -> String {
     format!("protondrive:{path}")
@@ -45,6 +59,77 @@ fn notify_files_changed(urls: &[String]) {
         return;
     }
     emit_string_list("org.kde.KDirNotify", "FilesChanged", urls);
+}
+
+fn fetch_listing(runner: &dyn CommandRunner, parent: &str) -> Result<Vec<NodeEntry>, DriveError> {
+    Ok(cli::list_dir(runner, parent)?
+        .into_iter()
+        .filter_map(|item| match item {
+            ListItem::Node(node) => Some(node),
+            ListItem::Section(_) => None,
+        })
+        .collect())
+}
+
+fn child_paths(parent: &str, nodes: &[NodeEntry]) -> Vec<String> {
+    nodes
+        .iter()
+        .map(|n| format!("{}/{}", parent.trim_end_matches('/'), n.display_name()))
+        .collect()
+}
+
+/// Whether `parent` is due for a revalidation, recording it as revalidated
+/// now if so. Also forgets entries older than the cooldown, so the map only
+/// ever holds the last few seconds' worth of folders.
+fn claim_revalidation(parent: &str) -> bool {
+    let mut last = LAST_REVALIDATED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    last.retain(|_, at| at.elapsed() < REVALIDATE_COOLDOWN);
+    if last.contains_key(parent) {
+        return false;
+    }
+    last.insert(parent.to_string(), Instant::now());
+    true
+}
+
+/// Stale-while-revalidate for one folder: the worker has just served
+/// `parent`'s listing from the cache (instantly, possibly stale) and asked
+/// for it to be checked against Drive. If what Drive has now differs from
+/// what was served, the cache is updated and Dolphin told to list the folder
+/// again — so a change made elsewhere shows up a few seconds after opening
+/// or refreshing (F5) the folder, instead of after the next
+/// [`refresh_all`] sweep.
+///
+/// `FilesAdded(<folder>)`, not [`refresh_all`]'s per-child `FilesChanged`:
+/// KIO re-lists the whole folder on it, which also picks up children that
+/// were added or removed, and still works on a folder that was empty.
+/// Nothing is emitted when the listing didn't change, so the re-list it
+/// triggers ends the cycle (along with [`REVALIDATE_COOLDOWN`]).
+pub fn revalidate_listing(runner: &dyn CommandRunner, cache: &Cache, parent: &str) -> bool {
+    if !claim_revalidation(parent) {
+        return false;
+    }
+    let previous = cache.cached_listing(parent).ok().flatten();
+    match fetch_listing(runner, parent) {
+        Ok(nodes) => {
+            if previous.as_deref() == Some(nodes.as_slice()) {
+                return false;
+            }
+            let _ = cache.store_listing(parent, &nodes);
+            emit_string("org.kde.KDirNotify", "FilesAdded", &drive_url(parent));
+            notify_paths_changed(&child_paths(parent, &nodes));
+            true
+        }
+        Err(DriveError::NotFound(_)) => {
+            let _ = cache.invalidate_listing(parent);
+            false
+        }
+        Err(err) => {
+            log::debug!("revalidate: listing {parent} failed, keeping cached entry: {err}");
+            false
+        }
+    }
 }
 
 /// Re-fetches every cached stat path and listing, replacing what's cached
@@ -96,19 +181,9 @@ pub fn refresh_all(runner: &dyn CommandRunner, cache: &Cache) {
         }
     };
     for parent in listing_parents {
-        match cli::list_dir(runner, &parent) {
-            Ok(items) => {
-                let nodes: Vec<_> = items
-                    .into_iter()
-                    .filter_map(|item| match item {
-                        ListItem::Node(node) => Some(node),
-                        ListItem::Section(_) => None,
-                    })
-                    .collect();
-                let child_paths: Vec<String> = nodes
-                    .iter()
-                    .map(|n| format!("{}/{}", parent.trim_end_matches('/'), n.display_name()))
-                    .collect();
+        match fetch_listing(runner, &parent) {
+            Ok(nodes) => {
+                let child_paths = child_paths(&parent, &nodes);
                 let urls: Vec<String> = child_paths.iter().map(|p| drive_url(p)).collect();
                 let _ = cache.store_listing(&parent, &nodes);
                 notify_files_changed(&urls);
@@ -241,6 +316,66 @@ mod tests {
         refresh_all(&NotFoundRunner, &cache);
 
         assert!(cache.cached_stat("/my-files/gone.txt").unwrap().is_none());
+    }
+
+    fn list_runner(parent: &str, names: &[&str]) -> ScriptedRunner {
+        let json = names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| node_json(&format!("uid-{i}"), name))
+            .collect::<Vec<_>>()
+            .join(",");
+        ScriptedRunner::new(vec![(
+            vec!["filesystem", "list", "-j", parent],
+            &format!("[{json}]"),
+        )])
+    }
+
+    // Each test uses its own folder: the cooldown map is process-wide.
+
+    #[test]
+    fn revalidate_stores_a_listing_that_changed_remotely() {
+        let (_dir, cache) = cache();
+        cache
+            .store_listing("/reval-changed", &[node("uid-0", "a.txt")])
+            .unwrap();
+        let runner = list_runner("/reval-changed", &["a.txt", "new.txt"]);
+
+        assert!(revalidate_listing(&runner, &cache, "/reval-changed"));
+
+        let names: Vec<String> = cache
+            .cached_listing("/reval-changed")
+            .unwrap()
+            .unwrap()
+            .iter()
+            .map(|n| n.display_name().to_string())
+            .collect();
+        assert_eq!(names, ["a.txt", "new.txt"]);
+    }
+
+    #[test]
+    fn revalidate_reports_no_change_for_an_identical_listing() {
+        let (_dir, cache) = cache();
+        let runner = list_runner("/reval-same", &["a.txt"]);
+        let nodes = fetch_listing(&runner, "/reval-same").unwrap();
+        cache.store_listing("/reval-same", &nodes).unwrap();
+
+        let runner = list_runner("/reval-same", &["a.txt"]);
+        assert!(!revalidate_listing(&runner, &cache, "/reval-same"));
+    }
+
+    #[test]
+    fn revalidate_ignores_a_folder_within_its_cooldown() {
+        let (_dir, cache) = cache();
+        cache
+            .store_listing("/reval-cooldown", &[node("uid-0", "a.txt")])
+            .unwrap();
+        let runner = list_runner("/reval-cooldown", &["b.txt"]);
+        assert!(revalidate_listing(&runner, &cache, "/reval-cooldown"));
+
+        // Unscripted: a second CLI call would panic.
+        let runner = ScriptedRunner::new(vec![]);
+        assert!(!revalidate_listing(&runner, &cache, "/reval-cooldown"));
     }
 
     #[test]

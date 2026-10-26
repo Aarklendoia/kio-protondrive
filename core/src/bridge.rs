@@ -12,6 +12,7 @@ use std::thread;
 use crate::cache::Cache;
 use crate::cli::{self, RealCommandRunner};
 use crate::entry::{ListItem, NodeEntry};
+use crate::local_ctrl;
 use crate::photos;
 use crate::sharing;
 use crate::transfer::{Direction, TransferPoll};
@@ -188,6 +189,12 @@ fn list_dir(path: &str) -> Result<Vec<FfiEntry>, String> {
     // failure just means always-live browsing, never a hard failure.
     if let Ok(cache) = open_cache() {
         if let Ok(Some(nodes)) = cache.cached_listing(path) {
+            // Served as-is (instant), then checked against Drive by the
+            // daemon, which makes Dolphin re-list if it changed — see
+            // daemon/src/fs_refresh.rs's revalidate_listing. Fire-and-forget:
+            // without a running daemon the cache just stays as fresh as its
+            // last sweep, like before.
+            let _ = local_ctrl::daemon_request("/revalidate", path);
             return Ok(nodes.iter().map(node_to_ffi).collect());
         }
         let items = cli::list_dir(&runner, path).map_err(|e| e.to_string())?;
@@ -438,6 +445,11 @@ fn unpin_tree(remote_path: &str, force: bool) -> Result<(), String> {
 /// anything to be told about it). A stale hit is evicted here rather than
 /// left for the daemon's sweep to eventually catch, so the very next
 /// download replaces it immediately instead of orphaning the old copy.
+///
+/// The stat is a live CLI call, never [`stat_path`]'s fs cache: that cache
+/// has no TTL, so checking against it would keep serving the old copy of a
+/// file changed elsewhere. The fresh stat is stored back, so `get()`'s own
+/// `stat_path` right after sees it too.
 fn lookup_cached(remote_path: &str) -> Result<String, String> {
     let cache = open_cache()?;
     let Some((local_path, cached_mtime)) =
@@ -445,7 +457,8 @@ fn lookup_cached(remote_path: &str) -> Result<String, String> {
     else {
         return Ok(String::new());
     };
-    let current = stat_path(remote_path)?;
+    let current = cli::stat_path(&RealCommandRunner, remote_path).map_err(|e| e.to_string())?;
+    let _ = cache.store_stat(remote_path, &current);
     if current.modification_time == cached_mtime {
         let _ = cache.touch_cached_file(remote_path);
         Ok(local_path.to_string_lossy().into_owned())
