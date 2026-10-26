@@ -7,301 +7,87 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3--or--later-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org)
 
-A native KIO worker that lets [Dolphin](https://apps.kde.org/dolphin/) (and
-any other KIO-aware KDE application) browse, download, upload and manage
-files on [Proton Drive](https://proton.me/drive) directly, via the
-`protondrive://` protocol — no separate sync client, no local mirror.
+**Proton Drive in Dolphin.** Browse, open, upload and manage your
+[Proton Drive](https://proton.me/drive) files directly from
+[Dolphin](https://apps.kde.org/dolphin/) and any other KDE application,
+through the `protondrive:/` address — like `sftp://`, `smb://` or Google
+Drive's `kio-gdrive`.
 
-Proton doesn't (yet) ship a native Linux GUI client or a Dolphin
-integration — only an [official CLI](https://proton.me/support/drive-cli).
-This project wraps that CLI in a real KIO worker, so `protondrive:/my-files`
-shows up in Dolphin's location bar and sidebar like any other remote
-protocol (`sftp://`, `smb://`, Google Drive's `kio-gdrive`, ...).
+Proton doesn't ship a Linux desktop client or a Dolphin integration (yet),
+only an [official command-line tool](https://proton.me/support/drive-cli).
+kio-protondrive builds on that CLI, so Proton Drive shows up in Dolphin's
+location bar and sidebar like any other network location: no separate sync
+app, no full local mirror of your Drive.
 
-## How it works
+> [!NOTE]
+> This is an independent community project, **not affiliated with or
+> endorsed by Proton AG**. It drives Proton's official `proton-drive` CLI and
+> never handles your password or encryption keys itself. Proton describes
+> its CLI and SDK as not yet stable for third-party use, so a CLI update can
+> occasionally break something here until a fix is released.
 
-```text
-Dolphin  ──KIO protocol──▶  kio_protondrive (KF6::KIOCore plugin, C++)
-                                  │
-                                  │  cxx FFI bridge
-                                  ▼
-                          protondrive-core (Rust)
-                                  │
-                                  │  subprocess + JSON (-j)
-                                  ▼
-                          proton-drive CLI  ──▶  Proton Drive
+## Quick start
+
+On **Ubuntu 26.04 LTS or 26.10** (other distributions:
+[Installing](#installing)):
+
+```bash
+sudo add-apt-repository ppa:aarklendoia-edtech/kio-protondrive
+sudo apt update
+sudo apt install kio-protondrive-full
 ```
 
-- **`core/`** (Rust) — all the actual logic: shells out to the official
-  `proton-drive` CLI, parses its JSON output, maps KIO paths to Proton Drive
-  paths, and maps CLI errors to something the worker can report. Fully unit
-  tested against recorded JSON fixtures (see `core/src/cli.rs`) — no network
-  access or live Proton Drive session needed to run `cargo test`.
-- **`worker/`** — a thin C++ shim (there's no Rust binding for
-  `KIO::WorkerBase`) implementing the KIO protocol methods
-  (`listDir`/`stat`/`mimetype`/`get`/`put`/`mkdir`/`del`/`rename`/`copy`)
-  and calling into
-  `core/` through a [`cxx`](https://cxx.rs) bridge.
-- Built with [Corrosion](https://github.com/corrosion-rs/corrosion), which
-  drives the Rust build from CMake and links the resulting static library
-  into the worker plugin.
+Then run **kio-protondrive-wizard** from your application menu (it also
+opens by itself the first time it's needed). It installs the Proton Drive
+CLI if it's missing, signs you in, and can add **Proton Drive** to
+Dolphin's Places panel. Once that's done, open `protondrive:/` in Dolphin.
 
-Files are fetched **on demand** when opened (like `sftp://`), not
-synchronized to a local folder in the background — see
-[docs/DESIGN.md](docs/DESIGN.md) for why a sync daemon is a deliberately
-separate concern.
+## Features
 
-## Local caching and pinning
-
-Files are fetched **on demand** when opened, like `sftp://` — but a file
-stays available locally afterward too (see
-[#60](https://github.com/Aarklendoia/kio-protondrive/issues/60)), so
-reopening it is instant instead of re-downloading, until it's automatically
-evicted after a configurable number of days of not being reopened (30 by
-default — set it during first-run setup, or edit `daemon.toml` directly).
-Saving a file behaves the same way: it's uploaded immediately, and the
-just-uploaded copy also stays available locally.
-
-If you want a file or folder to stay available **indefinitely** instead —
-including offline, and never auto-evicted — right-click it in Dolphin and
-choose **Keep Available Offline**. This downloads a local copy that the
-KIO worker then serves straight from disk for `get`/`stat`, no CLI
-round-trip. **Remove Local Copy** un-pins it again — the local copy is deleted immediately, the file on Drive is
-untouched.
-
-Dolphin marks each item with up to two small status badges, similar to
-OneDrive's cloud/checkmark/pin icons: a checkmark for "available locally"
-(whether cached or pinned) and a star on top specifically for pinned files
-(Breeze has no dedicated pin emblem, so this stands in for one).
-
-A separate package, `kio-protondrive-sync-daemon`, provides the background
-piece both of these need — install `kio-protondrive-full` to get it along
-with the KIO worker and the [setup wizard](#setup-wizard). It's a
-`systemd --user` service that:
-
-- runs the `pin`/`unpin` action requested from Dolphin's context menu, and
-  watches already-pinned files for local edits, uploading changed ones back
-  to Drive automatically;
-- periodically sweeps the opportunistic local cache above, evicting
-  anything past its retention window (pinned files are never affected);
-- periodically refreshes the persistent directory listing/stat cache (see
-  [docs/DESIGN.md](docs/DESIGN.md)), so a rename/delete made elsewhere
-  doesn't go unnoticed in Dolphin for too long;
-- checks whether a newer `proton-drive` CLI release is available,
-  notifies you if so (with a more urgent notification when the installed
-  CLI is older than the minimum supported version, see "Installing" below), and — if the setup wizard is installed and the CLI
-  is one this daemon can write to — offers to install it with one click
-  (see "Installing" below) —
-  [#26](https://github.com/Aarklendoia/kio-protondrive/issues/26),
-  [#65](https://github.com/Aarklendoia/kio-protondrive/issues/65).
-
-**Scope for pinning**: one-way local → Drive upload for *pinned* files only.
-Picking up changes made to a pinned file from elsewhere (another device, the
-web app) happens on next access, not via continuous background polling —
-see [docs/DESIGN.md](docs/DESIGN.md) and
-[#30](https://github.com/Aarklendoia/kio-protondrive/issues/30) for the
-full design.
-
-No configuration file is required to get started. Enable and start it:
-
-```console
-$ systemctl --user enable --now kio-protondrive-sync-daemon.service
-$ journalctl --user -u kio-protondrive-sync-daemon -f
-```
-
-### Setup wizard
-
-`kio-protondrive-wizard` is a small graphical wizard that the sync daemon
-launches automatically the first time it needs you to sign in — or run it
-yourself any time (`kio-protondrive-wizard`). It walks through signing in to
-Proton Drive, choosing how the daemon persists your session (see
-"Credential persistence" below), how many days to keep unused files cached
-locally, and optionally adding Proton Drive to Dolphin's Places panel.
-
-### Credential persistence
-
-By default, the `proton-drive` CLI keeps its session in the desktop's Secret
-Service (`libsecret`/GNOME Keyring/KWallet). That's fine for the KIO worker,
-which only ever runs inside an already-unlocked Dolphin session, but it's
-the wrong fit for a `systemd --user` service that must authenticate with no
-one present to unlock a keyring — and on some setups (e.g. a Secret Service
-provider with no persistent on-disk collection) the session silently fails
-to survive a keyring-daemon restart at all, forcing a fresh
-`proton-drive auth login` every time.
-
-To avoid depending on the keyring, the packaged daemon service sets
-`PROTON_DRIVE_CREDENTIALS_STORE=unsafe_file` (an env var the CLI itself
-supports, undocumented in `--help` but present in its own source), which
-persists the session to a plain file at
-`~/.local/share/proton-drive-cli/auth-session.json` instead — created with
-`0600` permissions (readable only by you), but **not encrypted at rest**,
-unlike the keyring. If you'd rather use `pass`
-(GPG-encrypted) instead, override it:
-
-```console
-$ systemctl --user edit kio-protondrive-sync-daemon.service
-```
-
-```ini
-[Service]
-Environment=PROTON_DRIVE_CREDENTIALS_STORE=pass
-```
-
-(`pass` requires `pass` and a GPG key already set up, and `gpg-agent` able
-to decrypt without an interactive prompt for the daemon to authenticate
-unattended.)
-
-The KIO worker is a separate process (spawned inside Dolphin/klauncher) that
-never sees `daemon.toml` or the daemon's systemd `Environment=` — left to
-itself it keeps using whichever store the CLI's own default (the desktop
-keyring) or your shell environment already selects, independently of what
-the daemon is using. This used to mean Dolphin and the daemon/wizard could
-disagree about whether you're even signed in. To avoid that, the wizard's
-credential-storage page also writes a small
-`~/.config/plasma-workspace/env/kio-protondrive.sh` that exports
-`PROTON_DRIVE_CREDENTIALS_STORE` for your whole Plasma session — Plasma only
-reads that directory at login, so **log out and back in** after running the
-wizard for it to take effect. If you change the store by editing the
-systemd unit directly (as above) instead of through the wizard, that script
-doesn't get updated — set `PROTON_DRIVE_CREDENTIALS_STORE` in your session
-environment yourself (or re-run the wizard) to keep the KIO worker in sync.
-
-## Scope
-
-**Supported:**
-
-- Browsing folders, including Proton Drive's virtual top-level sections
-  (`/my-files`, `/devices`, `/shared-with-me`, `/trash`, ...)
-- Opening/downloading files, uploading/overwriting files, creating folders,
-  renaming and moving ([#5](https://github.com/Aarklendoia/kio-protondrive/issues/5))
-- Copying within `protondrive:/` happens server-side (`proton-drive
-  filesystem copy`), without going through the local disk. KIO falls back
-  to download+upload when the CLI can't do it: overwriting an existing
-  file, and anything involving `/photos`. Items in `/trash` can't be copied
-  out at all (the CLI refuses both copying and downloading them). See
-  [#109](https://github.com/Aarklendoia/kio-protondrive/issues/109).
-- Deleting a file or folder moves it to Proton Drive's own trash (browsable
-  as `/trash`). A right-click on a trashed item offers "Restore" (back to
-  its original location); a right-click on the Trash entry itself offers
-  "Empty Trash" (permanent, with a confirmation dialog — irreversible).
-  Deleting an item already in `/trash` permanently deletes it instead of
-  re-trashing it. There's no native Dolphin trash toolbar/chrome the way
-  `trash:/` has — Dolphin's restore mechanism there is a private,
-  undocumented protocol between it and `kio_trash` specifically, not
-  something any KIO worker can opt into. See `docs/DESIGN.md`'s "Restorable
-  trash via context menu" section. See
-  [#7](https://github.com/Aarklendoia/kio-protondrive/issues/7).
-- Browsing `/photos`, read-only: `filesystem list`/`info` genuinely don't
-  support Photos (see "Blocked upstream" below), but CLI 0.7.0+ exposes it
-  through a separate, non-path-based `photo` command family instead, which
-  this worker wraps into a flat, real-filename listing. A **Filter Photos**
-  context-menu action narrows it to one category (favorites, screenshots,
-  videos, live photos, selfies, portraits, bursts, panoramas, RAW) — see
-  [#68](https://github.com/Aarklendoia/kio-protondrive/issues/68). No upload (the CLI's
-  own `photo upload` always lands in "My Photos", flat, regardless of
-  destination) and no albums. See [#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
-- A persistent listing/stat cache, so repeat browsing (and Dolphin's
-  breadcrumb, which stats every path segment on its own) is instant instead
-  of re-hitting the CLI every time — kept fresh by the sync daemon's
-  periodic sweep and by this app's own writes, not by a fixed expiry. See
-  `docs/DESIGN.md`'s "Filesystem listing/stat cache" section for the
-  consistency tradeoff this accepts. See [#8](https://github.com/Aarklendoia/kio-protondrive/issues/8).
-- Cancellable uploads/downloads (Dolphin's Cancel button actually stops the
-  transfer), with an approximate, time-based progress bar rather than
-  real byte-accurate progress — the `proton-drive` CLI has no stable
-  progress API to report real numbers from. See `docs/DESIGN.md`'s
-  "Cancellable transfers and approximate progress" section.
-  See [#9](https://github.com/Aarklendoia/kio-protondrive/issues/9).
-- An opportunistic local file cache: any file you open (or save) stays
-  available locally afterward instead of being deleted immediately, so
-  reopening it is instant — until it's evicted after a configurable number
-  of days since last use (30 by default, set during setup). Pinned files
-  ("Keep Available Offline") are never evicted this way. Dolphin shows up to two
-  status badges per item — a checkmark for "available locally" (pinned or
-  cached) and a star on top specifically for pinned files, OneDrive-style
-  (Breeze has no dedicated pin emblem, so a star stands in). See
-  `docs/DESIGN.md`'s "Opportunistic local file cache" section for
-  how cache hits stay correct (unlike pinning, a hit here is re-verified
-  against the remote before being trusted). See
-  [#60](https://github.com/Aarklendoia/kio-protondrive/issues/60).
-- Sharing and public links: a "Share via Proton Drive" context-menu action
-  manages a node's members, pending invitations, and public link. A
-  shared-item badge shows directly in the folder view, kept live by the
-  same D-Bus broadcast the pin/local-cache badges use. Note: a public
-  link's password is passed to the `proton-drive` CLI as a command-line
-  argument (its only supported input method), so it's readable by other
-  local users via `ps`/`/proc` for the CLI call's short lifetime — an
-  upstream CLI limitation, not something this project can avoid on its own.
-  See [#6](https://github.com/Aarklendoia/kio-protondrive/issues/6),
-  [#70](https://github.com/Aarklendoia/kio-protondrive/issues/70),
-  [#72](https://github.com/Aarklendoia/kio-protondrive/issues/72).
-
-**Not yet implemented** (contributions welcome):
-
-- Albums, uploading to Photos ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18))
-
-**Blocked upstream** (checked with `proton-drive` CLI 0.9.0): these are
-limits of the CLI itself, not something a KIO worker can work around. See
-[#18](https://github.com/Aarklendoia/kio-protondrive/issues/18).
-
-- `/albums` fails every operation with "Path type albums is not
-  supported".
-- `/photos-shared-by-me`, `/photos-shared-with-me` and `/photos-trash` can
-  be browsed (listed), but their files can't be opened or copied out: the
-  CLI's `filesystem download` rejects those paths with "Path ... is not
-  supported".
-
-**Known limitation: no thumbnails.** Dolphin/KIO's `PreviewJob` enforces a
-hard, non-configurable 2-second timeout per file (`startTimer(2s)` in KDE
-Frameworks' `filepreviewjob.cpp`, confirmed against the installed KF6 6.24.0
-sources). Every `proton-drive` CLI invocation carries 1.2-4.3s of its own
-fixed overhead regardless of file size — confirmed live with `time
-proton-drive filesystem info` (1.2s) and `time proton-drive photo download`
-(1.8-4.3s for files under 2.5 MB); `user`+`sys` account for well under a
-second of that, so the rest is the CLI's own Node.js/SDK session startup on
-every call, not network transfer. No caching or worker-side optimization can
-close a gap this structural: the CLI alone routinely takes longer than
-Dolphin allows for the entire preview attempt, so every thumbnail request
-times out before the download can even finish. Fixing this for real would
-mean keeping a long-lived, already-authenticated `proton-drive` session warm
-across calls (a background daemon brokering CLI access instead of spawning
-it fresh per operation) — a much larger architecture change than this
-project's current on-demand, stateless design (see `docs/DESIGN.md`).
-Separately, and independently of the timeout, HEIC photos (most iPhone
-photos) have no working thumbnailer on Kubuntu 26.04 at all regardless of
-protocol: the system's only HEIF/AVIF thumbnailer (`glycin-heif`) ships as an
-external freedesktop.org `.thumbnailer` rather than a native KDE
-`ThumbCreator` plugin, and isn't picked up by KIO's plugin loader in this
-Frameworks version — a distro packaging gap, not something specific to
-Proton Drive.
+- **Browse and manage files**: your files and Proton Drive's own sections
+  (My files, Computers, Shared, Shared with me, Trash). Open, save, upload,
+  create folders, rename and move. Copies inside Proton Drive happen on the
+  server, without a round trip through your disk.
+- **Trash**: deleting moves items to Proton Drive's trash. Right-click a
+  trashed item to **Restore** it, or the Trash itself to **Empty Trash**.
+- **Fast repeat browsing**: folder contents are cached, so going back to a
+  folder is instant. Changes made elsewhere (the web app, another device)
+  show up a few seconds after you open or refresh (F5) the folder.
+- **Files stay available after opening**: an opened or saved file is kept
+  locally, so reopening it is instant. It is re-checked against Drive first,
+  and removed after a configurable number of days unused (30 by default).
+- **Keep Available Offline**: right-click a file or folder to pin a local
+  copy that is never evicted and works offline. Edits to pinned files are
+  uploaded back to Drive automatically. Status badges show what's available
+  locally (checkmark) and what's pinned (star).
+- **Sharing**: **Share via Proton Drive** in the context menu manages
+  members, invitations and public links. Shared items get a badge.
+- **Photos**: `/photos` is browsable (read-only), and **Filter Photos**
+  narrows it to favorites, screenshots, videos, selfies, panoramas, RAW...
+- **Cancellable transfers**: Dolphin's Cancel button really stops an upload
+  or download (the progress bar is an estimate, see
+  [Limitations](#limitations)).
+- **CLI updates**: you're notified when a new Proton Drive CLI is out, and
+  can install it in one click, checksum-verified.
 
 ## Installing
 
 Requires the official [Proton Drive CLI](https://proton.me/drive/download),
-version 0.9.0 or newer.
-If you install `kio-protondrive-full` (recommended — see "Local caching and
-pinning" above), its [setup wizard](#setup-wizard) installs the CLI itself
-if it's missing or too old, on top of doing the sign-in step
-(`proton-drive auth login`) for you. Otherwise, install it yourself first —
-`kio-protondrive` (the bare KIO worker package) only adds the Dolphin
-integration on top of an already-installed, already-authenticated CLI.
+version 0.9.0 or newer. The setup wizard (in `kio-protondrive-full`)
+installs it for you into `~/.local/bin` if it's missing or too old, and
+signs you in. With the bare `kio-protondrive` package, install the CLI and
+run `proton-drive auth login` yourself first.
 
-Proton doesn't provide an apt/deb repository for that CLI, so `apt upgrade`
-never touches it — but the sync daemon periodically checks
-[Proton's own release manifest](https://proton.me/download/drive/cli/version.json)
-directly (independent of the installed CLI's own version, unlike relying on
-`--version`'s self-report) and, when it can write to the existing install,
-offers a one-click, checksum-verified update via the setup wizard rather
-than just notifying. It never updates silently or escalates privileges to
-do so — if it can't write to the install (e.g. one placed outside your
-home directory), it falls back to a plain notification. You can always grab
-a version yourself from the [download page](https://proton.me/drive/download)
-too.
+The packages come in three parts, the same on every distribution:
 
-The packages come in three parts, the same on every distribution: the KIO
-worker itself, the sync daemon (offline pinning, local-cache eviction, the
-pin/unpin menu in Dolphin) and the setup wizard. Installing all three is
-recommended.
+| Package | What it does |
+| --- | --- |
+| `kio-protondrive` | The Dolphin integration itself (the `protondrive:/` KIO worker). |
+| `kio-protondrive-sync-daemon` | Background service: offline pinning, local cache cleanup, keeping folder views fresh, CLI update checks. |
+| `kio-protondrive-wizard` | Setup wizard: CLI install, sign-in, cache settings, Places entry. |
+
+Installing all three is recommended (`kio-protondrive-full` on Debian and
+Ubuntu).
 
 ### Ubuntu 26.04 LTS (resolute) and 26.10 (stonking)
 
@@ -320,10 +106,8 @@ Ubuntu 26.04 (on 26.10, prefer the PPA, whose packages are built there).
 To install them without the PPA, download the four files
 without `+deb13` in their name from the
 [Releases page](https://github.com/Aarklendoia/kio-protondrive/releases/latest)
-and install them together (not one at a time — `apt` resolves each
-package's dependency on the others from whatever repositories are
-configured, not from sibling files on disk, unless they're all given to it
-in the same command):
+and install them together, in a single command (`apt` only resolves the
+packages' dependencies on each other when they're given together):
 
 ```bash
 sudo apt install ./kio-protondrive_*.deb ./kio-protondrive-sync-daemon_*.deb \
@@ -425,31 +209,193 @@ Build from source, see [Building from source](#building-from-source).
 ### After installing
 
 On Arch, Gentoo, openSUSE and Fedora (and when building from source),
-nothing enables the sync daemon for you, unlike the Debian packages: run
-`systemctl --user enable --now kio-protondrive-sync-daemon.service` once
-(see "Local caching and pinning" above).
+nothing enables the sync daemon for you, unlike the Debian packages. Run
+this once:
 
-Then open `protondrive:/` in Dolphin's location bar (or
-`kioclient ls protondrive:/` from a terminal) to browse your Drive.
+```bash
+systemctl --user enable --now kio-protondrive-sync-daemon.service
+```
 
-### Pinning it to Dolphin's sidebar
+Then run `kio-protondrive-wizard` if you haven't yet, and open
+`protondrive:/` in Dolphin (or `kioclient ls protondrive:/` from a
+terminal).
 
-The [setup wizard](#setup-wizard) offers to do this for you. To do it by
-hand instead, browse to `protondrive:/`, then right-click the breadcrumb
-(or drag it into the **Places** panel) and choose **Add to Places**. Once
-bookmarked, Dolphin shows it as **Proton Drive** (with a cloud icon) under
-the *Remote* section of the sidebar, and uses that name in the breadcrumb
-and window title instead of the raw `protondrive:/` URL — the same way it
-does for any other bookmarked network location.
+## Using it
 
-Bookmarking the root (rather than `protondrive:/my-files` directly) is
-deliberate: Dolphin's Places panel has no concept of a bookmark with nested
-children (every entry is a flat leaf — see
+- **Getting there**: type `protondrive:/` in Dolphin's location bar, or use
+  the **Proton Drive** entry in the Places panel (the wizard adds it, or
+  right-click the breadcrumb at `protondrive:/` and choose **Add to
+  Places**). It sits under *Remote*, with a cloud icon.
+- **Context menu actions** (right-click in a `protondrive:/` folder):
+  **Keep Available Offline** / **Remove Local Copy**, **Share via Proton
+  Drive**, **Filter Photos** (in `/photos`), **Restore** (in the trash) and
+  **Empty Trash** (on the trash itself, asks for confirmation).
+- **Seeing changes made elsewhere**: open or refresh (F5) the folder;
+  Dolphin updates the view a few seconds later. A folder left open without
+  touching it is refreshed by the sync daemon every 15 minutes
+  ([#225](https://github.com/Aarklendoia/kio-protondrive/issues/225) tracks
+  doing better).
+- **Sync daemon logs**:
+  `journalctl --user -u kio-protondrive-sync-daemon -f`.
+
+<details>
+<summary>Why the Places entry is the Drive root, not "My files"</summary>
+
+Dolphin's Places panel has no concept of a bookmark with nested children
+(every entry is a flat leaf — see
 [KFilePlacesModel](https://github.com/KDE/kio/blob/master/src/filewidgets/kfileplacesmodel.h)),
-so there's no way to mirror the Proton Drive web UI's sidebar sections
-(My files, Computers, Shared, ...) as an actual tree in Dolphin's sidebar.
-One click into the **Proton Drive** bookmark gets you a folder listing of
-those same sections instead — the closest equivalent Dolphin supports.
+so there's no way to mirror the Proton Drive web UI's sidebar sections (My
+files, Computers, Shared, ...) as an actual tree in Dolphin's sidebar. One
+click into the **Proton Drive** bookmark gets you a folder listing of those
+same sections instead — the closest equivalent Dolphin supports. Once
+bookmarked, Dolphin also uses the name **Proton Drive** in the breadcrumb and
+window title instead of the raw `protondrive:/` URL.
+
+</details>
+
+## Limitations
+
+- **No thumbnails.** Dolphin gives each preview 2 seconds, and every
+  `proton-drive` CLI call alone takes 1.2-4.3 s to start. Details below.
+- **Approximate progress bars.** The CLI reports no transfer progress, so
+  the bar is a time-based estimate (cancelling still works).
+- **Photos**: read-only, no albums, no upload to Photos
+  ([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18)).
+  `/albums` doesn't work at all, and files in `/photos-shared-by-me`,
+  `/photos-shared-with-me` and `/photos-trash` can be listed but not opened.
+  Both are limits of the CLI itself (checked with CLI 0.9.0).
+- **Proton Docs** can't be opened from Dolphin yet: open them from the web
+  app ([#224](https://github.com/Aarklendoia/kio-protondrive/issues/224)).
+- **Items in the trash** can't be copied out; restore them first (the CLI
+  refuses both copying and downloading them).
+- **Public link passwords** are passed to the CLI as a command-line argument
+  (its only input method), so other local users could read one via
+  `ps`/`/proc` during that short call.
+- **Pinned files** are uploaded when edited locally; a change made to one
+  elsewhere is picked up the next time it's opened through Dolphin, not
+  continuously in the background.
+
+<details>
+<summary>Why there are no thumbnails</summary>
+
+Dolphin/KIO's `PreviewJob` enforces a hard, non-configurable 2-second
+timeout per file (`startTimer(2s)` in KDE Frameworks' `filepreviewjob.cpp`,
+confirmed against the installed KF6 6.24.0 sources). Every `proton-drive`
+CLI invocation carries 1.2-4.3s of its own fixed overhead regardless of file
+size — confirmed live with `time proton-drive filesystem info` (1.2s) and
+`time proton-drive photo download` (1.8-4.3s for files under 2.5 MB);
+`user`+`sys` account for well under a second of that, so the rest is the
+CLI's own Node.js/SDK session startup on every call, not network transfer.
+No caching or worker-side optimization can close a gap this structural: the
+CLI alone routinely takes longer than Dolphin allows for the entire preview
+attempt, so every thumbnail request times out before the download can even
+finish. Fixing this for real would mean keeping a long-lived,
+already-authenticated `proton-drive` session warm across calls (a background
+daemon brokering CLI access instead of spawning it fresh per operation) — a
+much larger architecture change than this project's current on-demand design
+(see [docs/DESIGN.md](docs/DESIGN.md)).
+
+Separately, and independently of the timeout, HEIC photos (most iPhone
+photos) have no working thumbnailer on Kubuntu 26.04 at all regardless of
+protocol: the system's only HEIF/AVIF thumbnailer (`glycin-heif`) ships as an
+external freedesktop.org `.thumbnailer` rather than a native KDE
+`ThumbCreator` plugin, and isn't picked up by KIO's plugin loader in this
+Frameworks version — a distro packaging gap, not something specific to
+Proton Drive.
+
+</details>
+
+## Sign-in and credential storage
+
+By default, the `proton-drive` CLI keeps its session in the desktop's Secret
+Service (`libsecret`/GNOME Keyring/KWallet). That's fine for Dolphin, which
+only runs inside an unlocked desktop session, but not for the background
+sync daemon, which must authenticate with no one present to unlock a
+keyring.
+
+The packaged daemon service therefore sets
+`PROTON_DRIVE_CREDENTIALS_STORE=unsafe_file` (supported by the CLI itself),
+which keeps the session in `~/.local/share/proton-drive-cli/auth-session.json`
+— readable only by you (`0600`), but **not encrypted at rest**, unlike the
+keyring. The setup wizard lets you pick the store, including `pass`
+(GPG-encrypted) instead.
+
+<details>
+<summary>Changing the store by hand, and keeping Dolphin in step</summary>
+
+To use `pass` without the wizard, override the service:
+
+```console
+$ systemctl --user edit kio-protondrive-sync-daemon.service
+```
+
+```ini
+[Service]
+Environment=PROTON_DRIVE_CREDENTIALS_STORE=pass
+```
+
+(`pass` requires `pass` and a GPG key already set up, and `gpg-agent` able
+to decrypt without an interactive prompt for the daemon to authenticate
+unattended.)
+
+On some setups (e.g. a Secret Service provider with no persistent on-disk
+collection), the keyring store also silently fails to keep the session
+across a keyring-daemon restart, forcing a fresh `proton-drive auth login`
+every time — another reason the daemon doesn't use it.
+
+The KIO worker runs inside Dolphin and never sees the daemon's systemd
+`Environment=`: on its own, it would keep using the CLI's default store (the
+keyring) or whatever your shell environment selects, so Dolphin and the
+daemon could disagree about whether you're signed in. To avoid that, the
+wizard's credential-storage page also writes
+`~/.config/plasma-workspace/env/kio-protondrive.sh`, which exports
+`PROTON_DRIVE_CREDENTIALS_STORE` for your whole Plasma session. Plasma only
+reads that directory at login, so **log out and back in** after running the
+wizard. If you change the store by editing the systemd unit directly (as
+above), that script isn't updated: set `PROTON_DRIVE_CREDENTIALS_STORE` in
+your session environment yourself, or re-run the wizard.
+
+</details>
+
+## How it works
+
+```text
+Dolphin  ──KIO protocol──▶  kio_protondrive (KF6::KIOCore plugin, C++)
+                                  │
+                                  │  cxx FFI bridge
+                                  ▼
+                          protondrive-core (Rust)  ◀──▶  local cache (SQLite)
+                                  │
+                                  │  subprocess + JSON (-j)
+                                  ▼
+                          proton-drive CLI  ──▶  Proton Drive
+
+kio-protondrive-daemon (systemd --user): pinned-file sync, cache cleanup,
+cache revalidation, CLI update checks
+```
+
+- **`core/`** (Rust): all the actual logic. It runs the official
+  `proton-drive` CLI, parses its JSON output, maps KIO paths to Proton Drive
+  paths and CLI errors to KIO errors, and owns the local caches. Unit tested
+  against recorded JSON fixtures (see `core/src/cli.rs`), so `cargo test`
+  needs no network access or Proton Drive session.
+- **`worker/`**: a thin C++ shim (there's no Rust binding for
+  `KIO::WorkerBase`) implementing the KIO protocol methods
+  (`listDir`/`stat`/`mimetype`/`get`/`put`/`mkdir`/`del`/`rename`/`copy`)
+  and the Dolphin plugins (context-menu actions, status badges, share
+  dialog), calling into `core/` through a [`cxx`](https://cxx.rs) bridge.
+- **`daemon/`** (Rust): the background service. It uploads local edits to
+  pinned files, evicts unused cached files, re-checks folders Dolphin just
+  showed from the cache and tells Dolphin to refresh them when they changed,
+  sweeps the whole cache every 15 minutes, and checks for CLI updates.
+- **`wizard/`** (Rust + QML): the setup wizard.
+- Built with [Corrosion](https://github.com/corrosion-rs/corrosion), which
+  drives the Rust build from CMake.
+
+Files are fetched **on demand**, like `sftp://`, not synchronized to a local
+folder in the background: only what you open or pin is stored locally. See
+[docs/DESIGN.md](docs/DESIGN.md) for the design decisions behind the caches,
+pinning, transfers and trash.
 
 ## Building from source
 
@@ -468,6 +414,20 @@ full development workflow (including the dependency constraints imposed by
 the packaged builds), and [docs/LAUNCHPAD.md](docs/LAUNCHPAD.md) for the
 Debian/Launchpad release process.
 
+## Contributing
+
+Bug reports, ideas and pull requests are welcome on
+[GitHub](https://github.com/Aarklendoia/kio-protondrive/issues). Open items
+include albums and uploading to Photos
+([#18](https://github.com/Aarklendoia/kio-protondrive/issues/18)), opening
+Proton Docs ([#224](https://github.com/Aarklendoia/kio-protondrive/issues/224))
+and refreshing open folders automatically
+([#225](https://github.com/Aarklendoia/kio-protondrive/issues/225)). Start
+with [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 [GPL-3.0-or-later](LICENSE).
+
+Proton and Proton Drive are trademarks of Proton AG. This project is not
+affiliated with Proton AG.
