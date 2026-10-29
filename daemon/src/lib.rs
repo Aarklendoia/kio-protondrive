@@ -12,6 +12,7 @@ pub mod control;
 pub mod error;
 pub mod fs_refresh;
 pub mod notification;
+pub mod open_folders;
 pub mod sync;
 pub mod version_check;
 pub mod watcher;

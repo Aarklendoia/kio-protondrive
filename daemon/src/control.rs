@@ -24,7 +24,7 @@ use protondrive_core::local_ctrl::{
     read_request, request_path, write_owner_only_file, DAEMON_TOKEN_HEADER,
 };
 
-use crate::{fs_refresh, notification};
+use crate::{fs_refresh, notification, open_folders};
 
 fn ctrl_port_path() -> PathBuf {
     local_ctrl::daemon_ctrl_path("port")
@@ -181,6 +181,7 @@ fn route_revalidate(req: &str) -> String {
             )
         }
     };
+    open_folders::touch(&path);
     fs_refresh::revalidate_listing(&RealCommandRunner, &cache, &path);
     r#"{"ok":true}"#.to_string()
 }

@@ -20,7 +20,7 @@ use protondrive_core::cli::RealCommandRunner;
 use kio_protondrive_daemon::config::Config;
 use kio_protondrive_daemon::watcher::{self, WatchEvent};
 use kio_protondrive_daemon::{
-    cache_eviction, control, fs_refresh, notification, sync, version_check,
+    cache_eviction, control, fs_refresh, notification, open_folders, sync, version_check,
 };
 
 /// How often to ask the installed `proton-drive` CLI whether a newer
@@ -39,6 +39,12 @@ const VERSION_CHECK_RETRY_INTERVAL: Duration = Duration::from_secs(15 * 60);
 /// and not hammering the CLI: each cached path costs its own ~1-4s CLI call,
 /// sequential, so a large cache does take a while to fully sweep.
 const FS_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// How often to revalidate the folders open in Dolphin (see
+/// [`open_folders`], #225): one ~1-4s CLI call per open folder, for as long
+/// as it stays open, so a change made elsewhere shows up within about a
+/// minute without the user doing anything.
+const OPEN_FOLDERS_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 /// How often to sweep `core::cache`'s opportunistic file cache for entries
 /// past the configured retention window (see [`cache_eviction`], issue
@@ -136,6 +142,7 @@ fn main() {
     };
 
     control::start();
+    open_folders::start();
 
     let runner = RealCommandRunner;
     let notifier = notification::RealNotifier;
@@ -189,10 +196,12 @@ fn main() {
     // first sweep at startup, so this also starts now — in wall-clock time,
     // like `last_version_check`, since its interval is a daily one too.
     let mut last_cache_eviction = SystemTime::now();
+    let mut last_open_folders_refresh = Instant::now();
     loop {
         let wait = version_check_interval
             .saturating_sub(wall_clock_elapsed(last_version_check))
             .min(FS_CACHE_REFRESH_INTERVAL.saturating_sub(last_fs_refresh.elapsed()))
+            .min(OPEN_FOLDERS_REFRESH_INTERVAL.saturating_sub(last_open_folders_refresh.elapsed()))
             .min(CACHE_EVICTION_INTERVAL.saturating_sub(wall_clock_elapsed(last_cache_eviction)));
         match events.recv_timeout(wait) {
             Ok(batch) => {
@@ -245,6 +254,15 @@ fn main() {
         if last_fs_refresh.elapsed() >= FS_CACHE_REFRESH_INTERVAL {
             fs_refresh::refresh_all(&runner, &cache);
             last_fs_refresh = Instant::now();
+        }
+
+        if last_open_folders_refresh.elapsed() >= OPEN_FOLDERS_REFRESH_INTERVAL {
+            for path in open_folders::current() {
+                if fs_refresh::revalidate_listing(&runner, &cache, &path) {
+                    log::debug!("open folder {path} changed on Drive, Dolphin told to re-list it");
+                }
+            }
+            last_open_folders_refresh = Instant::now();
         }
 
         if wall_clock_elapsed(last_cache_eviction) >= CACHE_EVICTION_INTERVAL {
