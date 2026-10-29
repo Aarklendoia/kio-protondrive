@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.14.1...v0.15.0) (2026-10-29)
+
+
+### Features
+
+* refresh the folders open in Dolphin without user action ([#233](https://github.com/Aarklendoia/kio-protondrive/issues/233)) ([61e2ed4](https://github.com/Aarklendoia/kio-protondrive/commit/61e2ed4e2a6e09f13d8b18eac528f5617c85e8a6))
+
+
+### Bug Fixes
+
+* link SQLite3::SQLite3 when CMake provides it ([#230](https://github.com/Aarklendoia/kio-protondrive/issues/230)) ([7b53c4f](https://github.com/Aarklendoia/kio-protondrive/commit/7b53c4f1b1f87fc480cc63d9ac739280bd57a61a))
+* open Proton Docs documents and spreadsheets in the browser ([#231](https://github.com/Aarklendoia/kio-protondrive/issues/231)) ([afa304e](https://github.com/Aarklendoia/kio-protondrive/commit/afa304ebca74f50f306a48666c545c7d492e3b5c))
+
 ## [0.14.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.14.0...v0.14.1) (2026-10-26)
 
 
