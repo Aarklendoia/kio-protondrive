@@ -81,4 +81,9 @@ protondrive_link_core(protondrive_fileitemaction)
 
 set_target_properties(protondrive_fileitemaction PROPERTIES OUTPUT_NAME "protondrive_fileitemaction")
 
+# Proton Docs documents and spreadsheets (#224): their media types, and the
+# handler that opens the docs.proton.me target URL the worker gives them.
+install(FILES kio-protondrive-docs.xml DESTINATION ${KDE_INSTALL_MIMEDIR})
+install(FILES kio-protondrive-docs.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+
 add_subdirectory(tests)

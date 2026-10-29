@@ -1,0 +1,23 @@
+# Opens Proton Docs documents and spreadsheets in the web browser (#224).
+# The worker gives them a docs.proton.me UDS_TARGET_URL, which Dolphin passes
+# here instead of the protondrive: URL; X-KDE-Protocols=https keeps KIO from
+# downloading that page to a temporary file first. Hidden from menus: it's
+# only meant as these two types' handler.
+[Desktop Entry]
+Type=Application
+Name=Proton Docs
+Comment=Open Proton Docs documents and spreadsheets in the web browser
+Comment[ar]=فتح مستندات Proton Docs وجداول البيانات في متصفح الويب
+Comment[de]=Proton-Docs-Dokumente und -Tabellen im Webbrowser öffnen
+Comment[es]=Abrir documentos y hojas de cálculo de Proton Docs en el navegador web
+Comment[fr]=Ouvrir les documents et feuilles de calcul Proton Docs dans le navigateur web
+Comment[hi]=Proton Docs दस्तावेज़ और स्प्रेडशीट वेब ब्राउज़र में खोलें
+Comment[ja]=Proton Docs のドキュメントとスプレッドシートをウェブブラウザーで開きます
+Comment[pt_BR]=Abrir documentos e planilhas do Proton Docs no navegador da web
+Comment[ru]=Открывать документы и таблицы Proton Docs в веб-браузере
+Comment[zh_CN]=在网页浏览器中打开 Proton Docs 文档和电子表格
+Icon=internet-web-browser
+Exec=xdg-open %u
+NoDisplay=true
+MimeType=application/vnd.proton.doc;application/vnd.proton.sheet;
+X-KDE-Protocols=https

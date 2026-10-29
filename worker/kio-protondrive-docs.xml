@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Proton Docs documents and spreadsheets, as Proton Drive's CLI types them
+     (#224). No shared-mime-info release knows these: without this, Dolphin
+     shows them as unknown files. Online-only, so no glob or magic. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.proton.doc">
+    <comment>Proton Docs document</comment>
+    <comment xml:lang="ar">مستند Proton Docs</comment>
+    <comment xml:lang="de">Proton-Docs-Dokument</comment>
+    <comment xml:lang="es">Documento de Proton Docs</comment>
+    <comment xml:lang="fr">Document Proton Docs</comment>
+    <comment xml:lang="hi">Proton Docs दस्तावेज़</comment>
+    <comment xml:lang="ja">Proton Docs ドキュメント</comment>
+    <comment xml:lang="pt_BR">Documento do Proton Docs</comment>
+    <comment xml:lang="ru">Документ Proton Docs</comment>
+    <comment xml:lang="zh_CN">Proton Docs 文档</comment>
+    <generic-icon name="x-office-document"/>
+  </mime-type>
+  <mime-type type="application/vnd.proton.sheet">
+    <comment>Proton Sheets spreadsheet</comment>
+    <comment xml:lang="ar">جدول بيانات Proton Sheets</comment>
+    <comment xml:lang="de">Proton-Sheets-Tabelle</comment>
+    <comment xml:lang="es">Hoja de cálculo de Proton Sheets</comment>
+    <comment xml:lang="fr">Feuille de calcul Proton Sheets</comment>
+    <comment xml:lang="hi">Proton Sheets स्प्रेडशीट</comment>
+    <comment xml:lang="ja">Proton Sheets スプレッドシート</comment>
+    <comment xml:lang="pt_BR">Planilha do Proton Sheets</comment>
+    <comment xml:lang="ru">Таблица Proton Sheets</comment>
+    <comment xml:lang="zh_CN">Proton Sheets 电子表格</comment>
+    <generic-icon name="x-office-spreadsheet"/>
+  </mime-type>
+</mime-info>

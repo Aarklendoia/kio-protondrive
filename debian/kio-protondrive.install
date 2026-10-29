@@ -1,3 +1,5 @@
 usr/lib/*/qt6/plugins/kf6/kio/protondrive.so
 usr/lib/*/qt6/plugins/kf6/overlayicon/protondrive_overlayicon.so
 usr/share/locale/*/LC_MESSAGES/kio_protondrive.mo
+usr/share/mime/packages/kio-protondrive-docs.xml
+usr/share/applications/kio-protondrive-docs.desktop

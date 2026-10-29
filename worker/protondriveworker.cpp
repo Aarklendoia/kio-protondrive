@@ -94,7 +94,7 @@ void notifyOverlayChanged(const QString &remotePath)
 KIO::UDSEntry entryFromFfi(const FfiEntry &entry, const QString &nameOverride = QString())
 {
     KIO::UDSEntry uds;
-    uds.reserve(6);
+    uds.reserve(7);
     uds.fastInsert(KIO::UDSEntry::UDS_NAME, nameOverride.isEmpty() ? toQString(entry.name) : nameOverride);
     uds.fastInsert(KIO::UDSEntry::UDS_FILE_TYPE, entry.is_folder ? S_IFDIR : S_IFREG);
     uds.fastInsert(KIO::UDSEntry::UDS_ACCESS, entry.is_folder ? 0755 : 0644);
@@ -106,6 +106,15 @@ KIO::UDSEntry entryFromFfi(const FfiEntry &entry, const QString &nameOverride = 
     const QString mediaType = toQString(entry.media_type);
     if (!mediaType.isEmpty()) {
         uds.fastInsert(KIO::UDSEntry::UDS_MIME_TYPE, mediaType);
+    }
+
+    // Proton Docs documents and spreadsheets (#224): Dolphin opens an item's
+    // target URL rather than its protondrive: one, so double-clicking hands
+    // the docs.proton.me address to the handler worker/kio-protondrive-docs.desktop
+    // registers for their media types.
+    const QString targetUrl = toQString(entry.target_url);
+    if (!targetUrl.isEmpty()) {
+        uds.fastInsert(KIO::UDSEntry::UDS_TARGET_URL, targetUrl);
     }
 
     const QString modificationTime = toQString(entry.modification_time);
@@ -527,11 +536,25 @@ KIO::WorkerResult ProtonDriveWorker::get(const QUrl &url)
     // (#8).
     KIO::filesize_t totalBytes = 0;
     QString modificationTime;
+    QString targetUrl;
     try {
         const FfiEntry entry = stat_path(path.toStdString());
         totalBytes = entry.size;
         modificationTime = toQString(entry.modification_time);
+        targetUrl = toQString(entry.target_url);
     } catch (const rust::Error &) {
+    }
+
+    // A Proton Docs document or spreadsheet has no file behind it: the CLI
+    // skips it on download, which would otherwise surface as a bare "could
+    // not read" (#224). Reached when something copies the item or opens its
+    // protondrive: URL directly instead of following the target URL.
+    if (!targetUrl.isEmpty()) {
+        return KIO::WorkerResult::fail(KIO::ERR_WORKER_DEFINED,
+                                       i18nd("kio_protondrive",
+                                             "\"%1\" is a Proton Docs document and can only be opened in a web browser:\n%2",
+                                             fileName,
+                                             targetUrl));
     }
     totalSize(totalBytes);
 

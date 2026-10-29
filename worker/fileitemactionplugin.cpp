@@ -39,6 +39,15 @@ bool isPinned(const QString &remotePath)
     }
 }
 
+// Proton Docs documents and spreadsheets have no file to download (#224), so
+// they never get "Keep Available Offline" — the daemon would only refuse.
+// Their media type comes straight from the worker's UDS_MIME_TYPE.
+bool isOnlineOnly(const KFileItem &item)
+{
+    const QString mimeType = item.mimetype();
+    return mimeType == QLatin1String("application/vnd.proton.doc") || mimeType == QLatin1String("application/vnd.proton.sheet");
+}
+
 // Kept as plain duplicated literals rather than shared with
 // protondriveworker.cpp's own trashPrefix/photosPrefix — single small
 // stable strings not worth a shared header for (unlike photo_categories.h's
@@ -112,6 +121,7 @@ public:
         // from being asked in that case, but that's a hint to the loader,
         // not something this code should rely on for correctness.
         QStringList urls;
+        QStringList pinnableUrls;
         QStringList paths;
         bool anyPinned = false;
         bool anyNotPinned = false;
@@ -125,8 +135,9 @@ public:
             paths << url.path();
             if (isPinned(url.path())) {
                 anyPinned = true;
-            } else {
+            } else if (!isOnlineOnly(item)) {
                 anyNotPinned = true;
+                pinnableUrls << url.toString();
             }
             if (!url.path().startsWith(trashPrefix)) {
                 allUnderTrash = false;
@@ -170,8 +181,8 @@ public:
         if (anyNotPinned) {
             QAction *pin = new QAction(i18nd("kio_protondrive", "Keep Available Offline"), parentWidget);
             pin->setIcon(QIcon::fromTheme(QStringLiteral("folder-download")));
-            connect(pin, &QAction::triggered, parentWidget, [urls]() {
-                for (const QString &url : urls) {
+            connect(pin, &QAction::triggered, parentWidget, [pinnableUrls]() {
+                for (const QString &url : pinnableUrls) {
                     QProcess::startDetached(QStringLiteral("kio-protondrive-daemon"), {QStringLiteral("pin"), url});
                 }
             });

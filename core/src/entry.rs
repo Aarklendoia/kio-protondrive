@@ -107,6 +107,41 @@ impl NodeEntry {
     pub fn display_name(&self) -> &str {
         self.name.value.as_deref().unwrap_or(&self.uid)
     }
+
+    /// Where a Proton Docs document or spreadsheet opens in the browser, or
+    /// `None` for any other node (#224). These are online-only: the CLI lists
+    /// them as files (`application/vnd.proton.doc` / `.sheet`) but skips
+    /// them on download, so there's no content for the worker to serve. The
+    /// URL format was taken from docs.proton.me's own address bar: `volumeId`
+    /// and `linkId` are the two halves of the node's `uid`, split on `~`.
+    pub fn web_url(&self) -> Option<String> {
+        let kind = match self.media_type.as_deref()? {
+            "application/vnd.proton.doc" => "doc",
+            "application/vnd.proton.sheet" => "sheet",
+            _ => return None,
+        };
+        let (volume_id, link_id) = self.uid.split_once('~')?;
+        Some(format!(
+            "https://docs.proton.me/{kind}?mode=open&volumeId={}&linkId={}",
+            percent_encode(volume_id),
+            percent_encode(link_id)
+        ))
+    }
+}
+
+/// Percent-encodes everything outside RFC 3986's unreserved set — in
+/// practice the `=` padding (and `+`/`/`, should a uid ever use standard
+/// base64) of the ids [`NodeEntry::web_url`] puts in a query string.
+fn percent_encode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
 }
 
 /// The root path (`/`) doesn't list real nodes: it lists Proton Drive's
@@ -239,4 +274,59 @@ pub struct PublicLink {
     pub expiration_time: Option<String>,
     #[serde(default)]
     pub number_of_initialized_downloads: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(media_type: &str, uid: &str) -> NodeEntry {
+        serde_json::from_value(serde_json::json!({
+            "uid": uid,
+            "name": {"ok": true, "value": "Untitled document"},
+            "type": "file",
+            "mediaType": media_type,
+            "creationTime": "2026-10-29T08:26:30.000Z",
+            "modificationTime": "2026-10-29T08:26:30.000Z",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn web_url_opens_a_proton_doc_in_docs_proton_me() {
+        let doc = node("application/vnd.proton.doc", "vol-A_1==~link-B_2==");
+        assert_eq!(
+            doc.web_url().as_deref(),
+            Some(
+                "https://docs.proton.me/doc?mode=open&volumeId=vol-A_1%3D%3D&linkId=link-B_2%3D%3D"
+            )
+        );
+    }
+
+    #[test]
+    fn web_url_opens_a_proton_sheet_in_docs_proton_me() {
+        let sheet = node("application/vnd.proton.sheet", "vol==~link==");
+        assert_eq!(
+            sheet.web_url().as_deref(),
+            Some("https://docs.proton.me/sheet?mode=open&volumeId=vol%3D%3D&linkId=link%3D%3D")
+        );
+    }
+
+    #[test]
+    fn web_url_encodes_standard_base64_characters() {
+        let doc = node("application/vnd.proton.doc", "a+b/c~d");
+        assert_eq!(
+            doc.web_url().as_deref(),
+            Some("https://docs.proton.me/doc?mode=open&volumeId=a%2Bb%2Fc&linkId=d")
+        );
+    }
+
+    #[test]
+    fn web_url_is_none_for_ordinary_files_and_unsplittable_uids() {
+        assert_eq!(node("application/pdf", "vol~link").web_url(), None);
+        assert_eq!(
+            node("application/vnd.proton.doc", "no-separator").web_url(),
+            None
+        );
+    }
 }
