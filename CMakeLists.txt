@@ -68,7 +68,13 @@ corrosion_import_crate(MANIFEST_PATH core/Cargo.toml CRATES protondrive-core)
 # and with -Wl,--as-needed (Arch's default LDFLAGS) a libsqlite3.so placed
 # before its last occurrence is dropped as unneeded, leaving sqlite3_*
 # undefined. As an interface dependency, CMake puts it after every one.
-target_link_libraries(protondrive_core INTERFACE SQLite::SQLite3)
+# CMake 4.3 renamed FindSQLite3's target to SQLite3::SQLite3 and deprecated
+# the old name; older CMake (e.g. Ubuntu's) only provides SQLite::SQLite3.
+if(TARGET SQLite3::SQLite3)
+    target_link_libraries(protondrive_core INTERFACE SQLite3::SQLite3)
+else()
+    target_link_libraries(protondrive_core INTERFACE SQLite::SQLite3)
+endif()
 
 corrosion_add_cxxbridge(protondrive-core-cxxbridge
     CRATE protondrive_core
