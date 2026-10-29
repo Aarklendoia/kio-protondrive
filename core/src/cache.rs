@@ -301,6 +301,13 @@ impl Cache {
                 "{remote_path} is a folder — only individual files can be pinned"
             )));
         }
+        // The CLI skips these on download, which would otherwise surface
+        // as a bare "No such file or directory" below (#224).
+        if entry.web_url().is_some() {
+            return Err(DriveError::Cli(format!(
+                "{remote_path} is a Proton Docs document — it only exists online, open it in a web browser instead"
+            )));
+        }
 
         if !force {
             if let Some(existing_local) = self.lookup(remote_path)? {
@@ -931,6 +938,7 @@ mod tests {
     struct DownloadingMockRunner {
         content: &'static [u8],
         is_folder: bool,
+        is_proton_doc: bool,
     }
 
     impl DownloadingMockRunner {
@@ -938,6 +946,7 @@ mod tests {
             Self {
                 content,
                 is_folder: false,
+                is_proton_doc: false,
             }
         }
 
@@ -945,6 +954,15 @@ mod tests {
             Self {
                 content: b"",
                 is_folder: true,
+                is_proton_doc: false,
+            }
+        }
+
+        fn proton_doc() -> Self {
+            Self {
+                content: b"",
+                is_folder: false,
+                is_proton_doc: true,
             }
         }
     }
@@ -953,9 +971,14 @@ mod tests {
         fn run(&self, args: &[&str], _timeout: Duration) -> Result<CommandOutput, DriveError> {
             if args[0..2] == ["filesystem", "info"] {
                 let node_type = if self.is_folder { "folder" } else { "file" };
+                let media_type = if self.is_proton_doc {
+                    "application/vnd.proton.doc"
+                } else {
+                    "text/plain"
+                };
                 return Ok(CommandOutput {
                     stdout: format!(
-                        r#"{{"uid":"uid-1","name":{{"ok":true,"value":"x"}},"type":"{node_type}","isShared":false,"creationTime":"2026-01-01T00:00:00.000Z","modificationTime":"2026-01-01T00:00:00.000Z"}}"#
+                        r#"{{"uid":"vol-1~uid-1","name":{{"ok":true,"value":"x"}},"type":"{node_type}","mediaType":"{media_type}","isShared":false,"creationTime":"2026-01-01T00:00:00.000Z","modificationTime":"2026-01-01T00:00:00.000Z"}}"#
                     ),
                     stderr: String::new(),
                     success: true,
@@ -1033,6 +1056,18 @@ mod tests {
         // Nothing was written under the cache root at all — the rejection
         // happens before create_dir_all/download, not as cleanup after.
         assert!(!dir.path().join("files/my-files/Reports").exists());
+    }
+
+    #[test]
+    fn pin_rejects_a_proton_doc_without_downloading_anything() {
+        let (dir, cache) = cache();
+        let runner = DownloadingMockRunner::proton_doc();
+
+        let err = cache.pin(&runner, "/my-files/Notes", false).unwrap_err();
+
+        assert!(err.to_string().contains("Proton Docs"));
+        assert_eq!(cache.lookup("/my-files/Notes").unwrap(), None);
+        assert!(!dir.path().join("files/my-files").exists());
     }
 
     #[test]

@@ -77,6 +77,13 @@ msgstr "写真のゴミ箱"
 msgid "Not logged in to Proton Drive. Run \"proton-drive auth login\" in a terminal, then try again."
 msgstr "Proton Drive にログインしていません。ターミナルで「proton-drive auth login」を実行してから、もう一度お試しください。"
 
+#. Shown as a KIO error when something tries to download a Proton Docs
+#. document or spreadsheet, which only exists online. %1 is its name,
+#. %2 its docs.proton.me address.
+#: worker/protondriveworker.cpp:0
+msgid "\"%1\" is a Proton Docs document and can only be opened in a web browser:\n%2"
+msgstr "「%1」は Proton Docs のドキュメントのため、ウェブブラウザーでのみ開けます：\n%2"
+
 #. Right-click menu action (KAbstractFileItemActionPlugin): downloads the
 #. selected item(s) and keeps them available locally indefinitely, shown
 #. when at least one selected item isn't pinned yet.

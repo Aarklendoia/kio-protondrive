@@ -159,7 +159,7 @@ package_kio-protondrive() {
   while IFS= read -r f; do
     rel="${f#"$srcdir"/fakeroot/}"
     install -Dm644 "$f" "$pkgdir/$rel"
-  done < <(find "$srcdir/fakeroot" -type f -name 'kio_protondrive.mo')
+  done < <(find "$srcdir/fakeroot" -type f \( -name 'kio_protondrive.mo' -o -name 'kio-protondrive-docs.*' \))
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

@@ -23,7 +23,10 @@ mod ffi {
     /// consumption by the C++ `KIO::WorkerBase` implementation. `media_type`
     /// and `modification_time` are empty strings when unknown/not applicable
     /// (e.g. a folder has no media type) rather than an `Option`, since cxx
-    /// shared structs can't hold `Option<String>` directly.
+    /// shared structs can't hold `Option<String>` directly. `target_url`
+    /// follows the same convention: empty except on a Proton Docs document
+    /// or spreadsheet, where it's the docs.proton.me address the worker
+    /// hands Dolphin as `UDS_TARGET_URL` (see `NodeEntry::web_url`).
     struct FfiEntry {
         name: String,
         is_folder: bool,
@@ -32,6 +35,7 @@ mod ffi {
         creation_time: String,
         modification_time: String,
         is_shared_by_url: bool,
+        target_url: String,
     }
 
     /// Result of one poll of an in-flight [`TransferHandle`]. `ok`/`error`
@@ -151,6 +155,7 @@ fn node_to_ffi(node: &NodeEntry) -> FfiEntry {
         creation_time: node.creation_time.clone(),
         modification_time: node.modification_time.clone(),
         is_shared_by_url: node.is_shared_by_url,
+        target_url: node.web_url().unwrap_or_default(),
     }
 }
 
@@ -165,6 +170,7 @@ fn item_to_ffi(item: &ListItem) -> FfiEntry {
             creation_time: String::new(),
             is_shared_by_url: false,
             modification_time: String::new(),
+            target_url: String::new(),
         },
     }
 }

@@ -142,6 +142,8 @@ ctest --test-dir build --output-on-failure
 %dir %{_libdir}/qt6/plugins/kf6/overlayicon
 %{_libdir}/qt6/plugins/kf6/kio/protondrive.so
 %{_libdir}/qt6/plugins/kf6/overlayicon/protondrive_overlayicon.so
+%{_datadir}/mime/packages/kio-protondrive-docs.xml
+%{_datadir}/applications/kio-protondrive-docs.desktop
 
 %files sync-daemon -f kio_protondrive_daemon.lang
 %license LICENSE
