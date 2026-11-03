@@ -37,7 +37,7 @@ thiserror = "2"
 # than rusqlite's "bundled" copy: compiling that 9 MB amalgamation was most
 # of the Rust build time, twice per package build, and the plugins linked
 # the system library anyway (#192).
-rusqlite = "0.40"
+rusqlite = "0.41"
 
 [build-dependencies]
 cxx-build = "=1.0.205"
