@@ -12,6 +12,8 @@ updates:
       - "dependencies"
     # Dependabot adds the ":" itself, and include: "scope" adds "(deps)" /
     # "(deps-dev)": titles come out as "chore(deps): Update ...".
+    # Security updates are retitled "fix(deps): ..." so that they trigger a
+    # release (workflows/dependabot-security.yml).
     commit-message:
       prefix: "chore"
       prefix-development: "chore"

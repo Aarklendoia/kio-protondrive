@@ -1,0 +1,68 @@
+name: Dependabot security release
+
+# Dependabot titles every Rust PR "chore(deps): ..." (dependabot.yml), and
+# release-please hides "chore" and never releases for it. That's right for
+# routine bumps, but a fix for a security advisory has to reach users: this
+# workflow retitles such PRs "fix(deps): ... [GHSA-...]". The repo only
+# allows squash merges with the PR title as the commit title, so that's the
+# commit release-please sees — a patch release with a "Bug Fixes" entry.
+#
+# Only cargo is concerned: an advisory on a GitHub Action affects CI, not
+# what we ship, and stays "ci(deps)".
+#
+# pull_request_target (not pull_request): Dependabot-triggered pull_request
+# runs get a read-only token and no secrets. This workflow never checks out
+# or runs the PR's code, which is what keeps pull_request_target safe here.
+#
+# Needs the DEPENDABOT_ALERTS_TOKEN repository secret: a fine-grained PAT
+# limited to this repository with "Dependabot alerts: Read-only". The
+# built-in GITHUB_TOKEN can't read Dependabot alerts.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  retitle:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check the alerts token
+        env:
+          ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+        run: |
+          if [ -z "$ALERTS_TOKEN" ]; then
+            echo "::error::DEPENDABOT_ALERTS_TOKEN is not set: security updates can't be detected and won't trigger a release (see this workflow's header)."
+            exit 1
+          fi
+
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          alert-lookup: true
+          github-token: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+
+      - name: Retitle security updates as fixes
+        if: steps.meta.outputs.package-ecosystem == 'cargo' && steps.meta.outputs.ghsa-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          GHSA_ID: ${{ steps.meta.outputs.ghsa-id }}
+        run: |
+          # "chore(deps): Update x ..." -> "fix(deps): Update x ... [GHSA-...]"
+          new_title="$(printf '%s' "$PR_TITLE" | sed -E 's/^[a-z]+(\([^)]*\))?!?: /fix(deps): /')"
+          case "$new_title" in
+            *"$GHSA_ID"*) ;;
+            *) new_title="$new_title [$GHSA_ID]" ;;
+          esac
+          if [ "$new_title" != "$PR_TITLE" ]; then
+            gh pr edit "$PR_NUMBER" --title "$new_title"
+            echo "Retitled #$PR_NUMBER: $new_title"
+          fi
