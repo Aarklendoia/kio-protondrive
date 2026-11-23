@@ -19,7 +19,7 @@
 
 Name:           kio-protondrive
 # x-release-please-start-version
-Version:        0.15.0
+Version:        0.15.1
 # x-release-please-end
 Release:        0%{?dist}
 Summary:        KIO worker for Proton Drive
