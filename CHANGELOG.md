@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.15.0...v0.15.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **deps:** update rusqlite to 0.43 (use-after-free fixes) ([7e121f8](https://github.com/Aarklendoia/kio-protondrive/commit/7e121f80e0210b3df26d9bbce90c68d6ff67fa42))
+
 ## [0.15.0](https://github.com/Aarklendoia/kio-protondrive/compare/v0.14.1...v0.15.0) (2026-10-29)
 
 
