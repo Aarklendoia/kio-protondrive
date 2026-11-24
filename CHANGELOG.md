@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/Aarklendoia/kio-protondrive/compare/v0.15.1...v0.15.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **cli:** prefer the wizard's ~/.local/bin install over PATH ([#240](https://github.com/Aarklendoia/kio-protondrive/issues/240)) ([0ee7c22](https://github.com/Aarklendoia/kio-protondrive/commit/0ee7c223e36afd61507dabdb0eb05393d249b484))
+
 ## [0.15.1](https://github.com/Aarklendoia/kio-protondrive/compare/v0.15.0...v0.15.1) (2026-11-23)
 
 
