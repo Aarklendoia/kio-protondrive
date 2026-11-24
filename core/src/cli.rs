@@ -107,11 +107,17 @@ pub(crate) fn is_transient_lock_contention(out: &CommandOutput) -> bool {
 /// Where `kio-protondrive-wizard` installs the CLI, relative to `$HOME`.
 pub const USER_INSTALL_PATH: &str = ".local/bin/proton-drive";
 
-/// The `proton-drive` binary to run: the first one on `$PATH`, else the
-/// wizard's own install under `~/.local/bin` (#223). That directory is
-/// usually on a login shell's `PATH`, but not necessarily on the systemd
-/// user manager's when the daemon starts: seen live, it started with a PATH
-/// lacking it and every CLI call failed for the whole session.
+/// The `proton-drive` binary to run: the wizard's own install under
+/// `~/.local/bin` when it exists, else the first one on `$PATH` (#223).
+///
+/// The wizard's install comes first, not as a fallback: that directory is
+/// usually on a login shell's `PATH` but not necessarily on the systemd
+/// user manager's, so with a second, older CLI elsewhere on `PATH` (e.g. a
+/// hand-copied `/usr/local/bin/proton-drive`) the daemon resolved that one
+/// while the user's shell — and the wizard's updates — saw `~/.local/bin`'s.
+/// Seen live: the daemon kept warning that 0.8.0 was unsupported after the
+/// user had updated to 0.9.0. Checking it first makes every process agree
+/// regardless of the `PATH` it inherited.
 pub fn find_binary() -> Option<PathBuf> {
     resolve_binary(local_ctrl::which_path, std::env::var_os("HOME"))
 }
@@ -120,10 +126,9 @@ fn resolve_binary(
     which_path: impl Fn(&str) -> Option<PathBuf>,
     home: Option<OsString>,
 ) -> Option<PathBuf> {
-    which_path("proton-drive").or_else(|| {
-        let candidate = PathBuf::from(home?).join(USER_INSTALL_PATH);
-        candidate.is_file().then_some(candidate)
-    })
+    home.map(|home| PathBuf::from(home).join(USER_INSTALL_PATH))
+        .filter(|candidate| candidate.is_file())
+        .or_else(|| which_path("proton-drive"))
 }
 
 /// [`find_binary`], or the bare name when there's none, so spawning it still
@@ -776,10 +781,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_binary_prefers_the_one_on_path() {
+    fn resolve_binary_prefers_the_wizard_install_over_path() {
         let home = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(home.path().join(".local/bin")).unwrap();
         std::fs::write(home.path().join(USER_INSTALL_PATH), "").unwrap();
+
+        let found = resolve_binary(
+            |_| Some(PathBuf::from("/usr/local/bin/proton-drive")),
+            Some(home.path().into()),
+        );
+
+        assert_eq!(found, Some(home.path().join(USER_INSTALL_PATH)));
+    }
+
+    #[test]
+    fn resolve_binary_falls_back_to_path_without_a_wizard_install() {
+        let home = tempfile::tempdir().unwrap();
 
         let found = resolve_binary(
             |_| Some(PathBuf::from("/usr/bin/proton-drive")),
@@ -787,10 +804,14 @@ mod tests {
         );
 
         assert_eq!(found, Some(PathBuf::from("/usr/bin/proton-drive")));
+        assert_eq!(
+            resolve_binary(|_| Some(PathBuf::from("/usr/bin/proton-drive")), None),
+            Some(PathBuf::from("/usr/bin/proton-drive"))
+        );
     }
 
     #[test]
-    fn resolve_binary_falls_back_to_the_wizard_install() {
+    fn resolve_binary_finds_the_wizard_install_off_path() {
         let home = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(home.path().join(".local/bin")).unwrap();
         std::fs::write(home.path().join(USER_INSTALL_PATH), "").unwrap();
